@@ -1,0 +1,828 @@
+"""
+AUV dynamics model training pipeline.
+
+Supports all models in the ablation chain:
+  ph_se3_full       -- AUVHamNODE (structured open pH core, decomposed D/J/V/B)
+  ph_se3_nomassinit -- AUVHamNODE without physics-based mass initialization
+  ph_se3_diagd      -- AUVHamNODE with diagonal damping only
+  ph_se3_noj        -- AUVHamNODE without learned skew-symmetric lift
+  ph_se3_buonly     -- AUVHamNODE with B(u) only
+  ph_se3_mergednc   -- pH core with merged non-conservative force branch
+  ph_se3_qforce     -- structured pH model with generalized q-force instead of scalar V(q)
+  mom_se3_unstruct  -- exact SE(3) + constant mass matrix in momentum coordinates
+  ham_se3_unstruct  -- SE(3) Hamiltonian equations with single H_net + F_net
+  se3_unstruct      -- exact SE(3) kinematics + black-box acceleration
+  bb_free_unstruct  -- fully unstructured (even kinematics learned)
+
+Legacy aliases such as ``hamnode``, ``merged_nc``, ``unstructured_ham``,
+``unstructured_se3``, and ``blackbox`` are still accepted.
+
+Usage:
+    python train_auv_hamnode.py --dataset ./data/auv_dataset.pkl
+    python train_auv_hamnode.py --dataset ./data/dataset.pkl --model_type se3_unstruct
+    python train_auv_hamnode.py --dataset ./data/dataset.pkl --model_type bb_free_unstruct --batch_size 2048 --total_steps 7000 --epochs 200
+    python train_auv_hamnode.py --dataset ./data/dataset.pkl --init_state_noise --observation_noise
+"""
+
+import torch
+import torch.nn as nn
+from torch.utils.data import DataLoader
+from torch.optim.lr_scheduler import LambdaLR
+import numpy as np
+from typing import Dict, Optional, Tuple
+from collections import defaultdict
+from pathlib import Path
+from copy import deepcopy
+import pickle
+import time
+import argparse
+
+from torchdiffeq import odeint
+
+from train_utils import (
+    TrainConfig, StateNormalizer, TrainingLogger,
+    create_dataloaders, se3_trajectory_loss,
+    save_checkpoint, evaluate_trajectory_prediction,
+    print_evaluation_results, setup_logging,
+    load_dataset, get_train_blocks, evaluate_heldout_trajectories,
+    print_heldout_evaluation_results, save_heldout_evaluation_results,
+    save_block_evaluation_results, apply_initial_condition_noise,
+    apply_trajectory_observation_noise,
+    adapt_state_array_for_model,
+    validate_depth_conditioning_support,
+    get_dataset_training_defaults,
+    infer_dataset_kind_from_path,
+)
+
+
+def _load_mass_init(source: str, path: Optional[str]):
+    """Load an optional mass-matrix prior from a named source."""
+    source = (source or "none").lower()
+    if source == "none":
+        return None
+    if source == "remus":
+        from remus100_core import Remus100Dynamics
+        return Remus100Dynamics().M
+    if source == "file":
+        if not path:
+            raise ValueError("--mass_init_path is required when --mass_init file.")
+        payload = np.load(path)
+        if isinstance(payload, np.ndarray):
+            matrix = payload
+        else:
+            if "M" in payload:
+                matrix = payload["M"]
+            elif payload.files:
+                matrix = payload[payload.files[0]]
+            else:
+                raise ValueError(f"No arrays found in mass init file: {path}")
+        matrix = np.asarray(matrix, dtype=np.float32)
+        if matrix.shape != (6, 6):
+            raise ValueError(f"Mass init must have shape (6, 6), got {matrix.shape}.")
+        return matrix
+    raise ValueError(f"Unsupported mass init source: {source}")
+
+
+CANONICAL_MODEL_TYPES = [
+    "ph_se3_full",
+    "ph_se3_nomassinit",
+    "ph_se3_diagd",
+    "ph_se3_noj",
+    "ph_se3_buonly",
+    "ph_se3_mergednc",
+    "ph_se3_qforce",
+    "mom_se3_unstruct",
+    "ham_se3_unstruct",
+    "se3_unstruct",
+    "bb_free_unstruct",
+]
+
+MODEL_TYPE_ALIASES = {
+    "ph_se3_full": "ph_se3_full",
+    "hamnode": "ph_se3_full",
+    "hamnode_full": "ph_se3_full",
+    "ph_se3_nomassinit": "ph_se3_nomassinit",
+    "hamnode_noinit": "ph_se3_nomassinit",
+    "ph_se3_diagd": "ph_se3_diagd",
+    "hamnode_diag_d": "ph_se3_diagd",
+    "ph_se3_noj": "ph_se3_noj",
+    "hamnode_no_j": "ph_se3_noj",
+    "ph_se3_buonly": "ph_se3_buonly",
+    "hamnode_bu_only": "ph_se3_buonly",
+    "ph_se3_mergednc": "ph_se3_mergednc",
+    "merged_nc": "ph_se3_mergednc",
+    "ph_se3_qforce": "ph_se3_qforce",
+    "hamnode_qforce": "ph_se3_qforce",
+    "hamnode_no_potential": "ph_se3_qforce",
+    "no_potential": "ph_se3_qforce",
+    "mom_se3_unstruct": "mom_se3_unstruct",
+    "momentum_se3": "mom_se3_unstruct",
+    "ham_se3_unstruct": "ham_se3_unstruct",
+    "unstructured_ham": "ham_se3_unstruct",
+    "se3_unstruct": "se3_unstruct",
+    "unstructured_se3": "se3_unstruct",
+    "bb_free_unstruct": "bb_free_unstruct",
+    "blackbox": "bb_free_unstruct",
+}
+
+MODEL_TYPE_CHOICES = CANONICAL_MODEL_TYPES + [
+    alias for alias in MODEL_TYPE_ALIASES
+    if alias not in CANONICAL_MODEL_TYPES
+]
+
+
+def canonicalize_model_type(model_type: str) -> str:
+    """Map legacy aliases to the canonical model naming scheme."""
+    key = str(model_type).strip().lower()
+    if key not in MODEL_TYPE_ALIASES:
+        valid = ", ".join(CANONICAL_MODEL_TYPES)
+        raise ValueError(f"Unknown model_type {model_type!r}. Canonical choices: {valid}")
+    return MODEL_TYPE_ALIASES[key]
+
+
+def _build_model(model_type, device, hidden_dim=128, M_init=None, **kwargs):
+    """Instantiate the requested model type with appropriate hidden dimensions."""
+    model_type = canonicalize_model_type(model_type)
+
+    if model_type in {
+        'ph_se3_full',
+        'ph_se3_nomassinit',
+        'ph_se3_diagd',
+        'ph_se3_noj',
+        'ph_se3_buonly',
+    }:
+        from AUVHamNODE import AUVHamNODE
+        use_mass_init = model_type != 'ph_se3_nomassinit'
+        return AUVHamNODE(
+            device=device,
+            hidden_dim=hidden_dim,
+            coupled_damping=(
+                kwargs.get('coupled_damping', True)
+                if model_type != 'ph_se3_diagd' else False
+            ),
+            include_depth_in_potential=kwargs.get('include_depth_in_potential', False),
+            M_init=M_init if use_mass_init else None,
+            ocean_current=kwargs.get('ocean_current', False),
+            learn_lift=(model_type != 'ph_se3_noj'),
+            actuation_condition_on_velocity=(model_type != 'ph_se3_buonly'),
+            actuation_current_feature=(
+                kwargs.get('actuation_current_feature', 'current_body')
+                if model_type != 'ph_se3_buonly' else 'none'
+            ),
+            dj_current_feature=kwargs.get('dj_current_feature', 'none'),
+            T_actuator_init=kwargs.get('t_actuator_init'),
+            u_act_scale=kwargs.get('u_act_scale'),
+            u_dim=kwargs.get('u_dim', 3),
+            absolute_depth_context=kwargs.get('absolute_depth_context', False),
+        ).to(device)
+
+    from auv_baselines import BASELINE_MODELS
+
+    oc = kwargs.get('ocean_current', False)
+
+    if model_type == 'ph_se3_mergednc':
+        return BASELINE_MODELS['merged_nc'](
+            device=device, hidden_dim=hidden_dim, M_init=M_init,
+            include_depth_in_potential=kwargs.get('include_depth_in_potential', False),
+            ocean_current=oc,
+            T_actuator_init=kwargs.get('t_actuator_init'),
+            u_act_scale=kwargs.get('u_act_scale'),
+            u_dim=kwargs.get('u_dim', 3),
+            absolute_depth_context=kwargs.get('absolute_depth_context', False),
+        ).to(device)
+
+    if model_type == 'ph_se3_qforce':
+        return BASELINE_MODELS['hamnode_no_potential'](
+            device=device, hidden_dim=hidden_dim, M_init=M_init,
+            include_depth=kwargs.get('include_depth_in_potential', False),
+            ocean_current=oc,
+            coupled_damping=kwargs.get('coupled_damping', True),
+            learn_lift=True,
+            actuation_condition_on_velocity=True,
+            actuation_current_feature=kwargs.get('actuation_current_feature', 'current_body'),
+            dj_current_feature=kwargs.get('dj_current_feature', 'none'),
+            T_actuator_init=kwargs.get('t_actuator_init'),
+            u_act_scale=kwargs.get('u_act_scale'),
+            u_dim=kwargs.get('u_dim', 3),
+            absolute_depth_context=kwargs.get('absolute_depth_context', False),
+        ).to(device)
+
+    if model_type == 'mom_se3_unstruct':
+        return BASELINE_MODELS['momentum_se3'](
+            device=device, hidden_dim=hidden_dim, M_init=M_init,
+            include_depth=kwargs.get('include_depth_in_potential', False),
+            ocean_current=oc,
+            T_actuator_init=kwargs.get('t_actuator_init'),
+            u_act_scale=kwargs.get('u_act_scale'),
+            u_dim=kwargs.get('u_dim', 3),
+            absolute_depth_context=kwargs.get('absolute_depth_context', False),
+        ).to(device)
+
+    if model_type == 'ham_se3_unstruct':
+        return BASELINE_MODELS['unstructured_ham'](
+            device=device, hidden_dim=hidden_dim, M_init=M_init,
+            ocean_current=oc,
+            T_actuator_init=kwargs.get('t_actuator_init'),
+            u_act_scale=kwargs.get('u_act_scale'),
+            u_dim=kwargs.get('u_dim', 3),
+            absolute_depth_context=kwargs.get('absolute_depth_context', False),
+        ).to(device)
+
+    if model_type == 'se3_unstruct':
+        h = int(hidden_dim * 1.88)
+        return BASELINE_MODELS['unstructured_se3'](
+            device=device, hidden_dim=h,
+            include_depth=kwargs.get('include_depth_in_potential', False),
+            ocean_current=oc,
+            T_actuator_init=kwargs.get('t_actuator_init'),
+            u_act_scale=kwargs.get('u_act_scale'),
+            u_dim=kwargs.get('u_dim', 3),
+            absolute_depth_context=kwargs.get('absolute_depth_context', False),
+        ).to(device)
+
+    if model_type == 'bb_free_unstruct':
+        h = int(hidden_dim * 1.78)
+        return BASELINE_MODELS['blackbox'](
+            device=device, hidden_dim=h,
+            ocean_current=oc,
+            T_actuator_init=kwargs.get('t_actuator_init'),
+            u_act_scale=kwargs.get('u_act_scale'),
+            u_dim=kwargs.get('u_dim', 3),
+        ).to(device)
+
+    raise ValueError(f"Unknown model_type: {model_type}")
+
+
+class AUVHamNODETrainer:
+    """Handles model creation, training loop, validation, and checkpointing."""
+
+    def __init__(self, config: TrainConfig,
+                 model_class=None,
+                 normalizer: Optional[StateNormalizer] = None,
+                 M_init=None):
+        self.config = config
+        self.config.model_type = canonicalize_model_type(self.config.model_type)
+        self.device = torch.device(config.device)
+        self.normalizer = normalizer
+
+        self.run_dir = config.get_run_dir()
+        self.run_dir.mkdir(parents=True, exist_ok=True)
+        self.logger = setup_logging(self.run_dir)
+        config.save(str(self.run_dir / "config.json"))
+
+        torch.manual_seed(config.seed)
+        np.random.seed(config.seed)
+
+        if model_class is None:
+            self.model = _build_model(
+                config.model_type, self.device,
+                hidden_dim=config.hidden_dim,
+                M_init=M_init,
+                coupled_damping=config.coupled_damping,
+                include_depth_in_potential=config.include_depth_in_potential,
+                ocean_current=config.ocean_current,
+                actuation_current_feature=config.actuation_current_feature,
+                dj_current_feature=config.dj_current_feature,
+                t_actuator_init=config.t_actuator_init,
+                u_act_scale=config.u_act_scale,
+                u_dim=config.u_dim,
+                absolute_depth_context=config.absolute_depth_context,
+            )
+        else:
+            self.model = model_class(
+                device=self.device,
+                hidden_dim=config.hidden_dim,
+                coupled_damping=config.coupled_damping,
+                include_depth_in_potential=config.include_depth_in_potential,
+                M_init=M_init,
+                actuation_current_feature=config.actuation_current_feature,
+                dj_current_feature=config.dj_current_feature,
+                T_actuator_init=config.t_actuator_init,
+                u_act_scale=config.u_act_scale,
+                u_dim=config.u_dim,
+                absolute_depth_context=config.absolute_depth_context,
+            ).to(self.device)
+
+        n_params = sum(p.numel() for p in self.model.parameters())
+        self.logger.info(f"Model parameters: {n_params:,}")
+        if config.dataset_id is not None:
+            self.logger.info(
+                "Training dataset: id=%s | path=%s",
+                config.dataset_id,
+                config.dataset_path or "n/a",
+            )
+        if M_init is not None:
+            self.logger.info("Mass matrix initialized from physics")
+
+        self.optimizer = torch.optim.AdamW(
+            self.model.parameters(),
+            lr=config.learning_rate,
+            weight_decay=config.weight_decay,
+        )
+
+        self.metrics = TrainingLogger(self.run_dir)
+        self.best_loss = float("inf")
+        self.best_failure_rate = float("inf")
+        self.best_selection_key = (float("inf"), float("inf"))
+        self.best_epoch = None
+        self.best_state = None
+
+    def _build_scheduler(self) -> LambdaLR:
+        """Step-based linear warmup followed by cosine decay."""
+        cfg = self.config
+        total_steps = max(1, int(cfg.total_steps))
+        warmup_steps = max(0, min(int(cfg.warmup_steps), total_steps - 1))
+        min_lr = min(float(cfg.min_learning_rate), float(cfg.learning_rate))
+        min_lr_ratio = min_lr / float(cfg.learning_rate) if cfg.learning_rate > 0 else 0.0
+
+        def lr_lambda(step: int) -> float:
+            if warmup_steps > 0 and step < warmup_steps:
+                progress = float(step + 1) / float(warmup_steps)
+                return min_lr_ratio + (1.0 - min_lr_ratio) * progress
+
+            if total_steps <= warmup_steps + 1:
+                return min_lr_ratio
+
+            progress = float(step - warmup_steps) / float(total_steps - warmup_steps - 1)
+            progress = min(max(progress, 0.0), 1.0)
+            cosine = 0.5 * (1.0 + np.cos(np.pi * progress))
+            return min_lr_ratio + (1.0 - min_lr_ratio) * cosine
+
+        return LambdaLR(self.optimizer, lr_lambda=lr_lambda)
+
+    def _set_initial_learning_rate(self):
+        """Set the optimizer LR to the warmup start value before the first step."""
+        cfg = self.config
+        initial_lr = (
+            float(cfg.min_learning_rate)
+            if int(cfg.warmup_steps) > 0 else float(cfg.learning_rate)
+        )
+        for group in self.optimizer.param_groups:
+            group["lr"] = initial_lr
+
+    def _run_epoch(self, loader: DataLoader,
+                   t_eval: torch.Tensor, train: bool = True,
+                   epoch: int = 1,
+                   scheduler: Optional[LambdaLR] = None,
+                   global_step: int = 0) -> Tuple[Dict, int]:
+        """Run one epoch and return averaged metrics with failure statistics."""
+        self.model.train() if train else self.model.eval()
+        t_eval_dev = t_eval.to(self.device)
+
+        totals: Dict[str, float] = defaultdict(float)
+        attempted_batches = 0
+        successful_batches = 0
+        solver_failed_batches = 0
+        invalid_prediction_batches = 0
+        invalid_gradient_batches = 0
+
+        for batch, _ in loader:
+            if train and global_step >= self.config.total_steps:
+                break
+
+            batch = batch.to(self.device)
+            attempted_batches += 1
+            self.model.reset_nfe()
+
+            # Convert initial conditions to ODE convention (relative velocity)
+            y0 = self.model.to_ode_state(batch[:, 0])
+            if train and self.config.init_state_noise:
+                y0 = apply_initial_condition_noise(y0, self.config, epoch)
+
+            try:
+                pred = odeint(
+                    self.model,
+                    y0,
+                    t_eval_dev,
+                    method=self.config.ode_solver,
+                )
+            except (ValueError, RuntimeError):
+                solver_failed_batches += 1
+                continue
+
+            pred_ode = pred.permute(1, 0, 2)
+            if torch.isnan(pred_ode).any() or torch.isinf(pred_ode).any():
+                invalid_prediction_batches += 1
+                continue
+
+            # Observation noise on ground-truth targets (training only)
+            if train and self.config.observation_noise:
+                batch_target = apply_trajectory_observation_noise(
+                    batch, self.config, epoch, t_eval=t_eval_dev)
+            else:
+                batch_target = batch
+
+            # Convert targets to ODE convention for velocity comparison;
+            # position, rotation, and actuator are identical in both conventions.
+            target_ode = self.model.to_ode_state(batch_target)
+
+            loss, comp = se3_trajectory_loss(
+                target_ode,
+                pred_ode,
+                self.normalizer,
+                weights={"actuator": self.config.actuator_loss_weight},
+                so3_regularization_weight=self.config.so3_regularization_weight,
+            )
+
+            if train:
+                self.optimizer.zero_grad(set_to_none=True)
+                loss.backward()
+                nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
+
+                bad_grad = any(
+                    p.grad is not None and
+                    (torch.isnan(p.grad).any() or torch.isinf(p.grad).any())
+                    for p in self.model.parameters()
+                )
+                if bad_grad:
+                    invalid_gradient_batches += 1
+                    self.optimizer.zero_grad(set_to_none=True)
+                    continue
+
+                self.optimizer.step()
+                if scheduler is not None:
+                    scheduler.step()
+                global_step += 1
+
+            for k, v in comp.items():
+                if isinstance(v, torch.Tensor) and v.dim() == 0:
+                    totals[k] += v.item()
+
+            successful_batches += 1
+
+        skipped_batches = (
+            solver_failed_batches
+            + invalid_prediction_batches
+            + invalid_gradient_batches
+        )
+
+        metrics = {
+            "attempted_batches": float(attempted_batches),
+            "successful_batches": float(successful_batches),
+            "solver_failed_batches": float(solver_failed_batches),
+            "invalid_prediction_batches": float(invalid_prediction_batches),
+            "invalid_gradient_batches": float(invalid_gradient_batches),
+            "skipped_batches": float(skipped_batches),
+            "success_rate": (successful_batches / attempted_batches) if attempted_batches else 0.0,
+            "failure_rate": (skipped_batches / attempted_batches) if attempted_batches else 0.0,
+        }
+
+        if successful_batches == 0:
+            metrics["total"] = float("inf")
+            return metrics, global_step
+
+        for k, v in totals.items():
+            metrics[k] = v / successful_batches
+        return metrics, global_step
+
+    def train(self, train_loader: DataLoader,
+              test_loader: DataLoader,
+              t_eval: torch.Tensor) -> Dict:
+        """Full training loop with validation, scheduling, and checkpointing."""
+        cfg = self.config
+        scheduler = self._build_scheduler()
+        self._set_initial_learning_rate()
+        global_step = 0
+
+        self.logger.info(
+            "Training: epochs<=%d, target_steps=%d, warmup_steps=%d, lr=%.2e -> %.2e, "
+            "solver=%s, so3_reg=%.2e",
+            cfg.num_epochs,
+            cfg.total_steps,
+            cfg.warmup_steps,
+            cfg.learning_rate,
+            cfg.min_learning_rate,
+            cfg.ode_solver,
+            cfg.so3_regularization_weight,
+        )
+        self.logger.info(f"Train samples: {len(train_loader.dataset)}, "
+                         f"Test samples: {len(test_loader.dataset)}")
+
+        for epoch in range(1, cfg.num_epochs + 1):
+            t0 = time.time()
+
+            train_m, global_step = self._run_epoch(
+                train_loader,
+                t_eval,
+                train=True,
+                epoch=epoch,
+                scheduler=scheduler,
+                global_step=global_step,
+            )
+            if train_m["total"] == float("inf"):
+                self.logger.warning(
+                    f"Epoch {epoch}: no successful training batches "
+                    f"(solver={int(train_m['solver_failed_batches'])}, "
+                    f"pred={int(train_m['invalid_prediction_batches'])}, "
+                    f"grad={int(train_m['invalid_gradient_batches'])})"
+                )
+                continue
+
+            test_m, _ = self._run_epoch(test_loader, t_eval, train=False)
+
+            lr = self.optimizer.param_groups[0]["lr"]
+            dt = time.time() - t0
+
+            self.metrics.log(epoch, train_m, test_m, lr, dt)
+            self.metrics.history["global_step"].append(global_step)
+
+            if epoch % cfg.log_interval == 0:
+                self.logger.info(
+                    f"Epoch {epoch:4d} | "
+                    f"Step {global_step:5d}/{cfg.total_steps:5d} | "
+                    f"Train {train_m['total']:.4e} | "
+                    f"Test {test_m['total']:.4e} | "
+                    f"SO3(train/test) {train_m.get('so3_orth', float('nan')):.2e}/"
+                    f"{test_m.get('so3_orth', float('nan')):.2e} | "
+                    f"Fail(train/test) {int(train_m['skipped_batches'])}/"
+                    f"{int(test_m['skipped_batches'])} | "
+                    f"LR {lr:.2e} | {dt:.1f}s"
+                )
+
+            test_loss = test_m["total"]
+            test_failure_rate = float(test_m.get("failure_rate", 1.0))
+            selection_key = (test_failure_rate, test_loss)
+            if selection_key < self.best_selection_key:
+                self.best_selection_key = selection_key
+                self.best_failure_rate = test_failure_rate
+                self.best_loss = test_loss
+                self.best_epoch = epoch
+                self.best_state = deepcopy(self.model.state_dict())
+                save_checkpoint(
+                    self.model, self.optimizer, epoch, self.best_loss,
+                    cfg, str(self.run_dir / "best_model.pt"),
+                    normalizer=self.normalizer,
+                )
+
+            if epoch % cfg.save_interval == 0:
+                save_checkpoint(
+                    self.model, self.optimizer, epoch, test_loss,
+                    cfg, str(self.run_dir / f"checkpoint_{epoch}.pt"),
+                    normalizer=self.normalizer,
+                )
+
+            if global_step >= cfg.total_steps:
+                self.logger.info(
+                    "Reached target optimizer steps: %d/%d",
+                    global_step,
+                    cfg.total_steps,
+                )
+                break
+
+        if global_step < cfg.total_steps:
+            self.logger.warning(
+                "Stopped at epoch limit before target steps were reached: %d/%d",
+                global_step,
+                cfg.total_steps,
+            )
+
+        if self.best_state is not None:
+            self.model.load_state_dict(self.best_state)
+        self.metrics.save()
+
+        summary = self.metrics.get_summary()
+        if self.best_epoch is not None:
+            summary["best_test_loss"] = self.best_loss
+            summary["best_failure_rate"] = self.best_failure_rate
+            summary["best_epoch"] = self.best_epoch
+        if summary["best_test_loss"] is None:
+            self.logger.warning("Done. No valid test epoch was recorded.")
+        else:
+            self.logger.info(
+                f"Done. Best validation score: failure_rate={self.best_failure_rate:.4f}, "
+                f"test_loss={summary['best_test_loss']:.4e} "
+                f"(epoch {summary['best_epoch']})"
+            )
+        return summary
+
+    def get_model(self) -> nn.Module:
+        return self.model
+
+
+def train_auv_hamnode(
+    dataset_path: str,
+    config: Optional[TrainConfig] = None,
+    model_class=None,
+    M_init=None,
+) -> Tuple[nn.Module, Dict]:
+    """
+    End-to-end training: load data -> train -> evaluate -> save.
+
+    Args:
+        dataset_path: path to pickled dataset
+        config:       training configuration
+        model_class:  AUVHamNODE or compatible class
+        M_init:       6x6 mass matrix for physics initialization (optional)
+
+    Returns:
+        model:   trained model (best checkpoint)
+        summary: training summary dict
+    """
+    if config is None:
+        config = TrainConfig()
+
+    logger = setup_logging(config.get_run_dir())
+    logger.info("Loading dataset...")
+
+    train_loader, test_loader, t_eval, data_cfg = create_dataloaders(
+        dataset_path, batch_size=config.batch_size)
+    logger.info(f"Loaded: {len(train_loader.dataset)} train, "
+                f"{len(test_loader.dataset)} test, t_eval={t_eval.numpy()}")
+    logger.info(
+        "Dataset split: %s | train trajectories: %s | test trajectories: %s",
+        data_cfg.get("split_level", "block"),
+        data_cfg.get("num_train_trajectories", "n/a"),
+        data_cfg.get("num_test_trajectories", "n/a"),
+    )
+    config.dataset_path = str(Path(dataset_path).resolve())
+    config.dataset_id = data_cfg.get("dataset_id")
+    config.dataset_velocity_convention = data_cfg.get("velocity_convention")
+    config.dataset_description = data_cfg.get("description")
+    config.dataset_generation_config = data_cfg.get("generation_config")
+    if "state_dim" in data_cfg:
+        config.dataset_state_dim = int(data_cfg["state_dim"])
+    config.ocean_current = bool(data_cfg.get("ocean_current", config.ocean_current))
+    config.absolute_depth_context = bool(
+        data_cfg.get("absolute_depth_available", config.absolute_depth_context)
+    )
+    config.u_dim = int(data_cfg.get("u_dim", config.u_dim))
+    if config.dataset_id is not None:
+        logger.info("Dataset ID: %s", config.dataset_id)
+    logger.info(
+        "Dataset path: %s | velocity convention: %s | state dim: %s",
+        config.dataset_path,
+        config.dataset_velocity_convention or "n/a",
+        config.dataset_state_dim if config.dataset_state_dim is not None else "n/a",
+    )
+    validate_depth_conditioning_support(
+        data_cfg,
+        config.include_depth_in_potential,
+        context="Training pipeline",
+    )
+    dataset = load_dataset(dataset_path)
+    train_blocks = get_train_blocks(dataset)
+    train_blocks = adapt_state_array_for_model(
+        train_blocks,
+        dataset_cfg=data_cfg,
+        ocean_current=config.ocean_current,
+    )
+    normalizer = StateNormalizer.from_dataset(
+        train_blocks,
+        device=config.device,
+        u_dim=config.u_dim,
+    )
+    logger.info(normalizer.summary())
+
+    trainer = AUVHamNODETrainer(config, model_class,
+                                normalizer=normalizer, M_init=M_init)
+    summary = trainer.train(train_loader, test_loader, t_eval)
+
+    logger.info("Running detailed evaluation...")
+    model = trainer.get_model()
+    results = evaluate_trajectory_prediction(
+        model, test_loader, t_eval,
+        torch.device(config.device),
+        ode_solver=config.ode_solver,
+        n_samples=min(500, len(test_loader.dataset)),
+    )
+    print_evaluation_results(results, logger)
+    save_block_evaluation_results(results, trainer.run_dir)
+
+    with open(trainer.run_dir / "evaluation_results.pkl", "wb") as f:
+        pickle.dump(results, f)
+
+    logger.info("Running held-out trajectory evaluation...")
+    heldout_results = evaluate_heldout_trajectories(
+        model,
+        dataset,
+        t_eval,
+        torch.device(config.device),
+        ode_solver=config.ode_solver,
+    )
+    print_heldout_evaluation_results(heldout_results, logger)
+    save_heldout_evaluation_results(heldout_results, trainer.run_dir)
+
+    with open(trainer.run_dir / "heldout_evaluation.pkl", "wb") as f:
+        pickle.dump(heldout_results, f)
+
+    return model, summary
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Train AUV dynamics models (AUVHamNODE + baselines)")
+    parser.add_argument("--dataset", type=str, required=True)
+    parser.add_argument("--model_type", type=str, default="ph_se3_full",
+                        choices=MODEL_TYPE_CHOICES,
+                        help="Model architecture to train; legacy aliases are accepted")
+    parser.add_argument("--run_name", type=str, default=None)
+    parser.add_argument("--save_dir", type=str, default="./checkpoints")
+    parser.add_argument("--batch_size", type=int, default=None,
+                        help="Dataset-aware default when omitted: noc=2048, oc=4096")
+    parser.add_argument("--epochs", type=int, default=None,
+                        help="Maximum epoch budget; dataset-aware default when omitted")
+    parser.add_argument("--total_steps", type=int, default=None,
+                        help="Target number of optimizer steps for training; dataset-aware default when omitted")
+    parser.add_argument("--lr", type=float, default=None,
+                        help="Peak learning rate used after warmup; dataset-aware default when omitted")
+    parser.add_argument("--min_lr", type=float, default=None,
+                        help="Final learning rate floor for cosine decay; dataset-aware default when omitted")
+    parser.add_argument("--warmup_steps", type=int, default=None,
+                        help="Number of optimizer steps for linear warmup; dataset-aware default when omitted")
+    parser.add_argument("--hidden_dim", type=int, default=128)
+    parser.add_argument("--so3_reg", type=float, default=1e-3)
+    parser.add_argument("--actuator_loss_weight", type=float, default=0.2,
+                        help="Weight for supervised actuator-state loss")
+    parser.add_argument("--include_depth_in_potential", action="store_true",
+                        help="Condition potential / force baselines on depth")
+    parser.add_argument("--device", type=str,
+                        default="cuda" if torch.cuda.is_available() else "cpu")
+    parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--init_state_noise", action="store_true",
+                        help="Enable initial navigation/actuation state perturbations")
+    parser.add_argument("--observation_noise", action="store_true",
+                        help="Enable correlated navigation-style observation noise")
+    parser.add_argument("--observation_bias", action="store_true",
+                        help="Enable persistent block-wise velocity bias")
+    parser.add_argument("--noise_ramp_epochs", type=int, default=100,
+                        help="Ramp training noise from 0 to full over N epochs")
+    parser.add_argument("--ocean_current", action="store_true",
+                        help="Enable ocean current awareness (requires 27D dataset)")
+    parser.add_argument("--condition_dj_on_current", action="store_true",
+                        help="Condition D_net/J_net on body-frame current in ocean-current runs")
+    parser.add_argument("--dj_current_feature", type=str, default=None,
+                        choices=["none", "current_body", "total_velocity"],
+                        help="Extra 3D context appended to D_net/J_net in ocean-current runs")
+    parser.add_argument("--actuation_current_feature", type=str, default=None,
+                        choices=["none", "current_body", "total_velocity"],
+                        help="Extra 3D context appended to B_net in ocean-current runs")
+    parser.add_argument("--mass_init", type=str, default=None,
+                        choices=["none", "remus", "file"],
+                        help="Mass-matrix prior source; dataset-aware default when omitted")
+    parser.add_argument("--mass_init_path", type=str, default=None,
+                        help="Path to a .npy/.npz mass matrix file when --mass_init file")
+    parser.add_argument("--t_actuator_init", type=float, nargs="+", default=None,
+                        help="Actuator time-constant prior(s); length 1 or u_dim")
+    parser.add_argument("--u_act_scale", type=float, nargs="+", default=None,
+                        help="Actuator scaling used by B_net; length 1 or u_dim")
+    args = parser.parse_args()
+
+    dataset_kind = infer_dataset_kind_from_path(args.dataset)
+    dataset_defaults = get_dataset_training_defaults(dataset_kind=dataset_kind)
+
+    dj_current_feature = args.dj_current_feature
+    if dj_current_feature is None:
+        dj_current_feature = dataset_defaults["dj_current_feature"]
+    if args.condition_dj_on_current and dj_current_feature == "none":
+        dj_current_feature = "current_body"
+
+    actuation_current_feature = args.actuation_current_feature
+    if actuation_current_feature is None:
+        actuation_current_feature = dataset_defaults["actuation_current_feature"]
+
+    mass_init = args.mass_init if args.mass_init is not None else dataset_defaults["mass_init"]
+    t_actuator_init = (
+        deepcopy(args.t_actuator_init)
+        if args.t_actuator_init is not None else deepcopy(dataset_defaults["t_actuator_init"])
+    )
+    u_act_scale = (
+        deepcopy(args.u_act_scale)
+        if args.u_act_scale is not None else deepcopy(dataset_defaults["u_act_scale"])
+    )
+
+    config = TrainConfig(
+        model_type=canonicalize_model_type(args.model_type),
+        batch_size=args.batch_size if args.batch_size is not None else dataset_defaults["batch_size"],
+        num_epochs=args.epochs if args.epochs is not None else dataset_defaults["num_epochs"],
+        total_steps=args.total_steps if args.total_steps is not None else dataset_defaults["total_steps"],
+        learning_rate=args.lr if args.lr is not None else dataset_defaults["learning_rate"],
+        min_learning_rate=args.min_lr if args.min_lr is not None else dataset_defaults["min_learning_rate"],
+        warmup_steps=args.warmup_steps if args.warmup_steps is not None else dataset_defaults["warmup_steps"],
+        hidden_dim=args.hidden_dim,
+        so3_regularization_weight=args.so3_reg,
+        actuator_loss_weight=args.actuator_loss_weight,
+        include_depth_in_potential=args.include_depth_in_potential,
+        save_dir=args.save_dir,
+        run_name=args.run_name,
+        device=args.device,
+        seed=args.seed,
+        init_state_noise=args.init_state_noise,
+        observation_noise=args.observation_noise,
+        observation_bias=args.observation_bias,
+        noise_ramp_epochs=args.noise_ramp_epochs,
+        ocean_current=args.ocean_current,
+        dj_current_feature=dj_current_feature,
+        actuation_current_feature=actuation_current_feature,
+        mass_init=mass_init,
+        mass_init_path=args.mass_init_path,
+        t_actuator_init=t_actuator_init,
+        u_act_scale=u_act_scale,
+    )
+
+    M_init = _load_mass_init(mass_init, args.mass_init_path)
+    model, summary = train_auv_hamnode(args.dataset, config, M_init=M_init)
+    print(f"\nTraining finished. Results: {config.get_run_dir()}")
+
+
+if __name__ == "__main__":
+    main()
