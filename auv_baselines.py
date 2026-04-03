@@ -3,21 +3,19 @@ Baseline models for AUV dynamics on SE(3).
 
 These models are organized as structural comparisons against ``AUVHamNODE``:
 
-  - ``AUVHamNODEMergedNC``:
+  - ``PHNodeMergedForce``:
       keep mass + scalar potential + co-adjoint + exact SE(3), but merge
       D/J/B into one learned non-conservative force
-  - ``AUVHamNODEQForce``:
+  - ``PHNodeQForce``:
       keep mass + co-adjoint + exact SE(3) + separate D/J/B, but replace the
       conservative force induced by a scalar potential V(q) with a generic
       configuration-dependent generalized force g(q)
-  - ``AUVMomentumSE3NODE``:
+  - ``SE3MomentumBlackBox``:
       keep mass / momentum coordinates + exact SE(3), remove co-adjoint and
       explicit conservative/non-conservative decomposition
-  - ``AUVUnstructuredHamNODE``:
-      keep SE(3) Hamiltonian equations with a single learned H(q, p)
-  - ``AUVUnstructuredSE3NODE``:
+  - ``SE3AccelBlackBox``:
       keep exact SE(3) kinematics only
-  - ``AUVBlackBoxNODE``:
+  - ``FullStateBlackBox``:
       learn the full state derivative, including kinematics
 
 All models share:
@@ -303,7 +301,7 @@ class AUVMassModel(AUVBaseModel):
         return torch.einsum('ij,bj->bi', mass, nu_r)
 
 
-class AUVHamNODEMergedNC(AUVMassModel):
+class PHNodeMergedForce(AUVMassModel):
     """
     Hamiltonian NODE with merged non-conservative forces.
 
@@ -410,7 +408,7 @@ class AUVHamNODEMergedNC(AUVMassModel):
         return kinetic + potential
 
 
-class AUVHamNODEQForce(AUVMassModel):
+class PHNodeQForce(AUVMassModel):
     """
     Structured pH ablation without a scalar potential.
 
@@ -577,7 +575,7 @@ class AUVHamNODEQForce(AUVMassModel):
         return 0.5 * torch.sum(p_r * (p_r @ M_inv), dim=1)
 
 
-class AUVMomentumSE3NODE(AUVMassModel):
+class SE3MomentumBlackBox(AUVMassModel):
     """SE(3) NODE in momentum coordinates with a constant SPD mass matrix."""
 
     def __init__(
@@ -645,105 +643,7 @@ class AUVMomentumSE3NODE(AUVMassModel):
         return 0.5 * torch.sum(p_r * (p_r @ M_inv), dim=1)
 
 
-class AUVUnstructuredHamNODE(AUVMassModel):
-    """SE(3) Hamiltonian NODE with a single learned energy function."""
-
-    def __init__(
-        self,
-        device=None,
-        hidden_dim=128,
-        M_init=None,
-        T_actuator_init=None,
-        u_act_scale=None,
-        ocean_current=False,
-        u_dim=3,
-        absolute_depth_context=False,
-        **kwargs,
-    ):
-        super().__init__(
-            device=device,
-            ocean_current=ocean_current,
-            M_init=M_init,
-            T_actuator_init=T_actuator_init,
-            u_act_scale=u_act_scale,
-            u_dim=u_dim,
-            absolute_depth_context=absolute_depth_context,
-        )
-
-        h_hidden = int(hidden_dim * 1.55)
-        self.H_net = MLP(18, h_hidden, 1, gain=0.01).to(self.device)
-
-        f_in = self.NU_DIM + self.u_dim + (3 if ocean_current else 0)
-        self.F_net = MLP(f_in, hidden_dim, self.NU_DIM, gain=0.1).to(self.device)
-
-    def forward(self, t, state):
-        create_graph = self.training
-
-        with torch.enable_grad():
-            self.nfe += 1
-            q, nu_r, u_act, u_cmd, v_c_n = self._parse_state(state)
-
-            M_inv, M = self._mass_matrix()
-            p_r = self._momentum(nu_r, M)
-
-            qp = torch.cat([q, p_r], dim=1)
-            if not qp.requires_grad:
-                qp = qp.detach().requires_grad_(True)
-
-            H = self.H_net(qp).squeeze(-1)
-            dH = torch.autograd.grad(H.sum(), qp, create_graph=create_graph)[0]
-
-            dH_dx = dH[:, :3]
-            dH_dR = dH[:, 3:12]
-            dH_dpv = dH[:, 12:15]
-            dH_dpw = dH[:, 15:18]
-
-            R = q[:, 3:12].view(-1, 3, 3)
-            p_rv, p_rw = p_r[:, :3], p_r[:, 3:]
-            v_c_body = self._body_current(R, v_c_n)
-
-            linear_velocity = dH_dpv
-            if v_c_body is not None:
-                linear_velocity = linear_velocity + v_c_body
-            dx = torch.bmm(R, linear_velocity.unsqueeze(-1)).squeeze(-1)
-            dR = torch.cross(R, dH_dpw.unsqueeze(1).expand_as(R), dim=2).reshape(-1, 9)
-
-            dp_rv = p_rv.cross(dH_dpw, dim=1) - torch.bmm(
-                R.transpose(1, 2),
-                dH_dx.unsqueeze(-1),
-            ).squeeze(-1)
-
-            dH_dR_mat = dH_dR.view(-1, 3, 3)
-            dp_rw = (
-                p_rw.cross(dH_dpw, dim=1)
-                + p_rv.cross(dH_dpv, dim=1)
-                + torch.cross(R, dH_dR_mat, dim=2).sum(dim=1)
-            )
-
-            u_act_scaled = u_act * self.u_act_scale
-            parts = [nu_r]
-            if v_c_body is not None:
-                parts.append(v_c_body)
-            parts.append(u_act_scaled)
-            f_nc = self.F_net(torch.cat(parts, dim=1))
-
-            dp_r = torch.cat([dp_rv, dp_rw], dim=1) + f_nc
-            dnu_r = dp_r @ M_inv
-            du_act, du_cmd = self._actuator_deriv(u_act, u_cmd)
-
-            return self._cat_output([dx, dR, dnu_r, du_act], v_c_n)
-
-    @torch.no_grad()
-    def energy(self, state):
-        q = state[:, :self.POSE_DIM]
-        nu_r = state[:, self.layout.nu_r]
-        _, M = self._mass_matrix()
-        p_r = self._momentum(nu_r, M)
-        qp = torch.cat([q, p_r], dim=1)
-        return self.H_net(qp).squeeze(-1)
-
-
-class AUVUnstructuredSE3NODE(AUVBaseModel):
+class SE3AccelBlackBox(AUVBaseModel):
     """SE(3) NODE with exact kinematics and black-box acceleration."""
 
     def __init__(
@@ -797,7 +697,7 @@ class AUVUnstructuredSE3NODE(AUVBaseModel):
             return self._cat_output([dx, dR, dnu_r, du_act], v_c_n)
 
 
-class AUVBlackBoxNODE(AUVBaseModel):
+class FullStateBlackBox(AUVBaseModel):
     """Fully unstructured NODE, including learned kinematics."""
 
     def __init__(
@@ -842,10 +742,9 @@ class AUVBlackBoxNODE(AUVBaseModel):
 
 
 BASELINE_MODELS = {
-    'ph_se3_mergednc': AUVHamNODEMergedNC,
-    'ph_se3_qforce': AUVHamNODEQForce,
-    'mom_se3_unstruct': AUVMomentumSE3NODE,
-    'ham_se3_unstruct': AUVUnstructuredHamNODE,
-    'se3_unstruct': AUVUnstructuredSE3NODE,
-    'bb_free_unstruct': AUVBlackBoxNODE,
+    'phnode_merged_force': PHNodeMergedForce,
+    'phnode_qforce': PHNodeQForce,
+    'se3_momentum_blackbox': SE3MomentumBlackBox,
+    'se3_accel_blackbox': SE3AccelBlackBox,
+    'blackbox_fullstate': FullStateBlackBox,
 }

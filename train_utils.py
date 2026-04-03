@@ -112,7 +112,7 @@ def setup_logging(log_dir: Path, name: str = "training") -> logging.Logger:
 class TrainConfig:
     """Training configuration."""
 
-    model_type: str = "ph_se3_full"
+    model_type: str = "phnode_full"
     hidden_dim: int = 128
     coupled_damping: bool = True
     include_depth_in_potential: bool = False

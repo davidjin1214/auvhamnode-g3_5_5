@@ -251,6 +251,13 @@ def write_summary_report(path, summary_json):
     lines.append("=" * 80)
     lines.append(f"Checkpoint: {config['checkpoint']}")
     lines.append(f"Dataset: {config.get('dataset') or 'n/a'}")
+    lines.append(
+        "Model: "
+        f"{config.get('model_display_name', config.get('model_type', 'n/a'))}"
+        f" [{config.get('model_family', 'n/a')}/{config.get('model_group', 'n/a')}]"
+    )
+    lines.append(f"Canonical model type: {config.get('model_type', 'n/a')}")
+    lines.append(f"Energy semantics: {config.get('energy_semantics', 'n/a')}")
     lines.append(f"Device: {config['device']}")
     lines.append(f"Mode: {config.get('mode', 'n/a')}")
     lines.append(f"Generation config source: {config.get('generation_config_source', 'n/a')}")

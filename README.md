@@ -100,7 +100,7 @@ Alongside the `.pkl`, the generator also writes:
 
 ### Important behavior
 
-- The training script uses canonical model names only.
+- The documentation uses canonical model names only.
 - Training defaults depend on dataset kind inferred from the dataset filename.
 - Keep `noc` or `oc` in the dataset filename. This matters because the script uses that name to choose default hyperparameters.
 - The dataset metadata is authoritative for `ocean_current`, `u_dim`, and related state layout settings.
@@ -110,21 +110,26 @@ Alongside the `.pkl`, the generator also writes:
 The main structured model is:
 
 ```text
---model_type ph_se3_full
+--model_type phnode_full
 ```
 
 Other supported model types:
 
-- `ph_se3_nomassinit`
-- `ph_se3_diagd`
-- `ph_se3_noj`
-- `ph_se3_buonly`
-- `ph_se3_mergednc`
-- `ph_se3_qforce`
-- `mom_se3_unstruct`
-- `ham_se3_unstruct`
-- `se3_unstruct`
-- `bb_free_unstruct`
+Core models:
+
+- `phnode_full`
+- `phnode_merged_force`
+- `phnode_qforce`
+- `se3_momentum_blackbox`
+- `se3_accel_blackbox`
+- `blackbox_fullstate`
+
+Ablations:
+
+- `ablate_no_mass_prior`
+- `ablate_diag_damping`
+- `ablate_no_lift`
+- `ablate_bu_only`
 
 ### Clean training
 
@@ -133,7 +138,7 @@ No current, no noise:
 ```bash
 python train_auv_hamnode.py \
   --dataset ./data/noc/auv_noc_traj500_blk150_s42_<dataset_id>.pkl \
-  --model_type ph_se3_full \
+  --model_type phnode_full \
   --save_dir ./checkpoints
 ```
 
@@ -142,7 +147,7 @@ With current, no noise:
 ```bash
 python train_auv_hamnode.py \
   --dataset ./data/oc/auv_oc_traj500_blk150_s42_<dataset_id>.pkl \
-  --model_type ph_se3_full \
+  --model_type phnode_full \
   --save_dir ./checkpoints
 ```
 
@@ -153,7 +158,7 @@ No current, with training noise:
 ```bash
 python train_auv_hamnode.py \
   --dataset ./data/noc/auv_noc_traj500_blk150_s42_<dataset_id>.pkl \
-  --model_type ph_se3_full \
+  --model_type phnode_full \
   --save_dir ./checkpoints \
   --init_state_noise \
   --observation_noise
@@ -164,7 +169,7 @@ With current, with training noise:
 ```bash
 python train_auv_hamnode.py \
   --dataset ./data/oc/auv_oc_traj500_blk150_s42_<dataset_id>.pkl \
-  --model_type ph_se3_full \
+  --model_type phnode_full \
   --save_dir ./checkpoints \
   --init_state_noise \
   --observation_noise
@@ -299,7 +304,7 @@ Training:
 ```bash
 python train_auv_hamnode.py \
   --dataset ./data/noc/auv_noc_traj500_blk150_s42_<dataset_id>.pkl \
-  --model_type ph_se3_full
+  --model_type phnode_full
 ```
 
 Evaluation:
@@ -317,7 +322,7 @@ Training:
 ```bash
 python train_auv_hamnode.py \
   --dataset ./data/noc/auv_noc_traj500_blk150_s42_<dataset_id>.pkl \
-  --model_type ph_se3_full \
+  --model_type phnode_full \
   --init_state_noise \
   --observation_noise
 ```
@@ -338,7 +343,7 @@ Training:
 ```bash
 python train_auv_hamnode.py \
   --dataset ./data/oc/auv_oc_traj500_blk150_s42_<dataset_id>.pkl \
-  --model_type ph_se3_full
+  --model_type phnode_full
 ```
 
 ### D. Current, noisy
@@ -348,7 +353,7 @@ Training:
 ```bash
 python train_auv_hamnode.py \
   --dataset ./data/oc/auv_oc_traj500_blk150_s42_<dataset_id>.pkl \
-  --model_type ph_se3_full \
+  --model_type phnode_full \
   --init_state_noise \
   --observation_noise
 ```
@@ -432,12 +437,12 @@ python data_collection.py \
   --current_speed_max 0.5
 ```
 
-Train `ph_se3_full` with noise:
+Train `phnode_full` with noise:
 
 ```bash
 python train_auv_hamnode.py \
   --dataset "$DATASET" \
-  --model_type ph_se3_full \
+  --model_type phnode_full \
   --save_dir ./checkpoints \
   --init_state_noise \
   --observation_noise

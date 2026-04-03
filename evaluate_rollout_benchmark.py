@@ -6,6 +6,7 @@ from pathlib import Path
 import time
 
 import numpy as np
+from auv_model_registry import get_model_spec
 
 from rollout_benchmark_engine import (
     aggregate_horizon_rows,
@@ -360,6 +361,7 @@ def main():
     ground_truth_cache_dir = Path(args.output_dir) / "_gt_cache"
 
     model, train_cfg = build_model(args.checkpoint, device)
+    model_spec = get_model_spec(train_cfg.model_type)
     dataset_path = resolve_dataset_path(train_cfg, args.dataset)
     dataset = load_dataset_artifact(dataset_path) if dataset_path and dataset_path.exists() else None
     generation_config, generation_config_source = resolve_generation_config_payload(
@@ -513,6 +515,11 @@ def main():
         "checkpoint": args.checkpoint,
         "dataset": str(dataset_path) if dataset_path else None,
         "device": str(device),
+        "model_type": train_cfg.model_type,
+        "model_display_name": model_spec.display_name,
+        "model_family": model_spec.family,
+        "model_group": model_spec.group,
+        "energy_semantics": getattr(model, "energy_semantics", "not_comparable"),
         "mode": args.mode,
         "generation_config_source": generation_config_source,
         "num_traj_per_scenario": args.num_traj_per_scenario,

@@ -2,22 +2,21 @@
 AUV dynamics model training pipeline.
 
 Supports all models in the ablation chain:
-  ph_se3_full       -- AUVHamNODE (structured open pH core, decomposed D/J/V/B)
-  ph_se3_nomassinit -- AUVHamNODE without physics-based mass initialization
-  ph_se3_diagd      -- AUVHamNODE with diagonal damping only
-  ph_se3_noj        -- AUVHamNODE without learned skew-symmetric lift
-  ph_se3_buonly     -- AUVHamNODE with B(u) only
-  ph_se3_mergednc   -- pH core with merged non-conservative force branch
-  ph_se3_qforce     -- structured pH model with generalized q-force instead of scalar V(q)
-  mom_se3_unstruct  -- exact SE(3) + constant mass matrix in momentum coordinates
-  ham_se3_unstruct  -- SE(3) Hamiltonian equations with single H_net + F_net
-  se3_unstruct      -- exact SE(3) kinematics + black-box acceleration
-  bb_free_unstruct  -- fully unstructured (even kinematics learned)
+  phnode_full            -- AUVHamNODE (structured open pH core, decomposed D/J/V/B)
+  phnode_merged_force    -- pH core with merged non-conservative force branch
+  phnode_qforce          -- structured pH model with generalized q-force instead of scalar V(q)
+  se3_momentum_blackbox  -- exact SE(3) + constant mass matrix in momentum coordinates
+  se3_accel_blackbox     -- exact SE(3) kinematics + black-box acceleration
+  blackbox_fullstate     -- fully unstructured (even kinematics learned)
+  ablate_no_mass_prior   -- AUVHamNODE without physics-based mass initialization
+  ablate_diag_damping    -- AUVHamNODE with diagonal damping only
+  ablate_no_lift         -- AUVHamNODE without learned skew-symmetric lift
+  ablate_bu_only         -- AUVHamNODE with B(u) only
 
 Usage:
     python train_auv_hamnode.py --dataset ./data/auv_dataset.pkl
-    python train_auv_hamnode.py --dataset ./data/dataset.pkl --model_type se3_unstruct
-    python train_auv_hamnode.py --dataset ./data/dataset.pkl --model_type bb_free_unstruct --batch_size 2048 --total_steps 7000 --epochs 200
+    python train_auv_hamnode.py --dataset ./data/dataset.pkl --model_type se3_accel_blackbox
+    python train_auv_hamnode.py --dataset ./data/dataset.pkl --model_type blackbox_fullstate --batch_size 2048 --total_steps 7000 --epochs 200
     python train_auv_hamnode.py --dataset ./data/dataset.pkl --init_state_noise --observation_noise
 """
 
@@ -51,6 +50,12 @@ from train_utils import (
     get_dataset_training_defaults,
     infer_dataset_kind_from_path,
 )
+from auv_model_registry import (
+    canonicalize_model_type,
+    format_model_type_help,
+    get_model_spec,
+    instantiate_model,
+)
 
 
 def _load_mass_init(source: str, path: Optional[str]):
@@ -81,143 +86,15 @@ def _load_mass_init(source: str, path: Optional[str]):
     raise ValueError(f"Unsupported mass init source: {source}")
 
 
-CANONICAL_MODEL_TYPES = [
-    "ph_se3_full",
-    "ph_se3_nomassinit",
-    "ph_se3_diagd",
-    "ph_se3_noj",
-    "ph_se3_buonly",
-    "ph_se3_mergednc",
-    "ph_se3_qforce",
-    "mom_se3_unstruct",
-    "ham_se3_unstruct",
-    "se3_unstruct",
-    "bb_free_unstruct",
-]
-
-MODEL_TYPE_CHOICES = list(CANONICAL_MODEL_TYPES)
-
-
-def canonicalize_model_type(model_type: str) -> str:
-    """Validate and return the canonical model type name."""
-    key = str(model_type).strip()
-    if key not in CANONICAL_MODEL_TYPES:
-        valid = ", ".join(CANONICAL_MODEL_TYPES)
-        raise ValueError(f"Unknown model_type {model_type!r}. Canonical choices: {valid}")
-    return key
-
-
 def _build_model(model_type, device, hidden_dim=128, M_init=None, **kwargs):
-    """Instantiate the requested model type with appropriate hidden dimensions."""
-    model_type = canonicalize_model_type(model_type)
-
-    if model_type in {
-        'ph_se3_full',
-        'ph_se3_nomassinit',
-        'ph_se3_diagd',
-        'ph_se3_noj',
-        'ph_se3_buonly',
-    }:
-        from AUVHamNODE import AUVHamNODE
-        use_mass_init = model_type != 'ph_se3_nomassinit'
-        return AUVHamNODE(
-            device=device,
-            hidden_dim=hidden_dim,
-            coupled_damping=(
-                kwargs.get('coupled_damping', True)
-                if model_type != 'ph_se3_diagd' else False
-            ),
-            include_depth_in_potential=kwargs.get('include_depth_in_potential', False),
-            M_init=M_init if use_mass_init else None,
-            ocean_current=kwargs.get('ocean_current', False),
-            learn_lift=(model_type != 'ph_se3_noj'),
-            actuation_condition_on_velocity=(model_type != 'ph_se3_buonly'),
-            actuation_current_feature=(
-                kwargs.get('actuation_current_feature', 'current_body')
-                if model_type != 'ph_se3_buonly' else 'none'
-            ),
-            dj_current_feature=kwargs.get('dj_current_feature', 'none'),
-            T_actuator_init=kwargs.get('t_actuator_init'),
-            u_act_scale=kwargs.get('u_act_scale'),
-            u_dim=kwargs.get('u_dim', 3),
-            absolute_depth_context=kwargs.get('absolute_depth_context', False),
-        ).to(device)
-
-    from auv_baselines import BASELINE_MODELS
-
-    oc = kwargs.get('ocean_current', False)
-
-    if model_type == 'ph_se3_mergednc':
-        return BASELINE_MODELS['ph_se3_mergednc'](
-            device=device, hidden_dim=hidden_dim, M_init=M_init,
-            include_depth_in_potential=kwargs.get('include_depth_in_potential', False),
-            ocean_current=oc,
-            T_actuator_init=kwargs.get('t_actuator_init'),
-            u_act_scale=kwargs.get('u_act_scale'),
-            u_dim=kwargs.get('u_dim', 3),
-            absolute_depth_context=kwargs.get('absolute_depth_context', False),
-        ).to(device)
-
-    if model_type == 'ph_se3_qforce':
-        return BASELINE_MODELS['ph_se3_qforce'](
-            device=device, hidden_dim=hidden_dim, M_init=M_init,
-            include_depth=kwargs.get('include_depth_in_potential', False),
-            ocean_current=oc,
-            coupled_damping=kwargs.get('coupled_damping', True),
-            learn_lift=True,
-            actuation_condition_on_velocity=True,
-            actuation_current_feature=kwargs.get('actuation_current_feature', 'current_body'),
-            dj_current_feature=kwargs.get('dj_current_feature', 'none'),
-            T_actuator_init=kwargs.get('t_actuator_init'),
-            u_act_scale=kwargs.get('u_act_scale'),
-            u_dim=kwargs.get('u_dim', 3),
-            absolute_depth_context=kwargs.get('absolute_depth_context', False),
-        ).to(device)
-
-    if model_type == 'mom_se3_unstruct':
-        return BASELINE_MODELS['mom_se3_unstruct'](
-            device=device, hidden_dim=hidden_dim, M_init=M_init,
-            include_depth=kwargs.get('include_depth_in_potential', False),
-            ocean_current=oc,
-            T_actuator_init=kwargs.get('t_actuator_init'),
-            u_act_scale=kwargs.get('u_act_scale'),
-            u_dim=kwargs.get('u_dim', 3),
-            absolute_depth_context=kwargs.get('absolute_depth_context', False),
-        ).to(device)
-
-    if model_type == 'ham_se3_unstruct':
-        return BASELINE_MODELS['ham_se3_unstruct'](
-            device=device, hidden_dim=hidden_dim, M_init=M_init,
-            ocean_current=oc,
-            T_actuator_init=kwargs.get('t_actuator_init'),
-            u_act_scale=kwargs.get('u_act_scale'),
-            u_dim=kwargs.get('u_dim', 3),
-            absolute_depth_context=kwargs.get('absolute_depth_context', False),
-        ).to(device)
-
-    if model_type == 'se3_unstruct':
-        h = int(hidden_dim * 1.88)
-        return BASELINE_MODELS['se3_unstruct'](
-            device=device, hidden_dim=h,
-            include_depth=kwargs.get('include_depth_in_potential', False),
-            ocean_current=oc,
-            T_actuator_init=kwargs.get('t_actuator_init'),
-            u_act_scale=kwargs.get('u_act_scale'),
-            u_dim=kwargs.get('u_dim', 3),
-            absolute_depth_context=kwargs.get('absolute_depth_context', False),
-        ).to(device)
-
-    if model_type == 'bb_free_unstruct':
-        h = int(hidden_dim * 1.78)
-        return BASELINE_MODELS['bb_free_unstruct'](
-            device=device, hidden_dim=h,
-            ocean_current=oc,
-            T_actuator_init=kwargs.get('t_actuator_init'),
-            u_act_scale=kwargs.get('u_act_scale'),
-            u_dim=kwargs.get('u_dim', 3),
-        ).to(device)
-
-    raise ValueError(f"Unknown model_type: {model_type}")
+    """Instantiate the requested model type via the centralized model registry."""
+    return instantiate_model(
+        model_type,
+        device,
+        hidden_dim=hidden_dim,
+        M_init=M_init,
+        **kwargs,
+    )
 
 
 class AUVHamNODETrainer:
@@ -269,6 +146,15 @@ class AUVHamNODETrainer:
                 u_dim=config.u_dim,
                 absolute_depth_context=config.absolute_depth_context,
             ).to(self.device)
+
+        spec = get_model_spec(self.config.model_type)
+        self.logger.info(
+            "Model: %s [%s/%s] | canonical type: %s",
+            spec.display_name,
+            spec.family,
+            spec.group,
+            spec.name,
+        )
 
         n_params = sum(p.numel() for p in self.model.parameters())
         self.logger.info(f"Model parameters: {n_params:,}")
@@ -690,9 +576,16 @@ def main():
     parser = argparse.ArgumentParser(
         description="Train AUV dynamics models (AUVHamNODE + baselines)")
     parser.add_argument("--dataset", type=str, required=True)
-    parser.add_argument("--model_type", type=str, default="ph_se3_full",
-                        choices=MODEL_TYPE_CHOICES,
-                        help="Model architecture to train")
+    parser.add_argument(
+        "--model_type",
+        type=str,
+        default="phnode_full",
+        help=(
+            "Model architecture to train. Canonical names:\n"
+            f"{format_model_type_help()}\n"
+            "Legacy aliases from older checkpoints/configs are also accepted."
+        ),
+    )
     parser.add_argument("--run_name", type=str, default=None)
     parser.add_argument("--save_dir", type=str, default="./checkpoints")
     parser.add_argument("--batch_size", type=int, default=None,

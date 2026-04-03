@@ -961,7 +961,8 @@ def _build_rollout_result_from_prediction(
     gt_nu_total = payload.gt_nu_total[:pred_len]
     time = payload.time[:pred_len]
 
-    if hasattr(model, "energy"):
+    energy_semantics = getattr(model, "energy_semantics", "not_comparable")
+    if hasattr(model, "energy") and energy_semantics == "mechanical_energy":
         torch = get_torch()
         pred_energy = model.energy(
             torch.tensor(pred_abs_states, dtype=torch.float32, device=device)
