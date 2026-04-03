@@ -14,9 +14,6 @@ Supports all models in the ablation chain:
   se3_unstruct      -- exact SE(3) kinematics + black-box acceleration
   bb_free_unstruct  -- fully unstructured (even kinematics learned)
 
-Legacy aliases such as ``hamnode``, ``merged_nc``, ``unstructured_ham``,
-``unstructured_se3``, and ``blackbox`` are still accepted.
-
 Usage:
     python train_auv_hamnode.py --dataset ./data/auv_dataset.pkl
     python train_auv_hamnode.py --dataset ./data/dataset.pkl --model_type se3_unstruct
@@ -41,7 +38,7 @@ from torchdiffeq import odeint
 
 from train_utils import (
     TrainConfig, StateNormalizer, TrainingLogger,
-    create_dataloaders, se3_trajectory_loss,
+    se3_trajectory_loss,
     save_checkpoint, evaluate_trajectory_prediction,
     print_evaluation_results, setup_logging,
     load_dataset, get_train_blocks, evaluate_heldout_trajectories,
@@ -50,6 +47,7 @@ from train_utils import (
     apply_trajectory_observation_noise,
     adapt_state_array_for_model,
     validate_depth_conditioning_support,
+    create_dataloaders_from_dataset,
     get_dataset_training_defaults,
     infer_dataset_kind_from_path,
 )
@@ -97,47 +95,16 @@ CANONICAL_MODEL_TYPES = [
     "bb_free_unstruct",
 ]
 
-MODEL_TYPE_ALIASES = {
-    "ph_se3_full": "ph_se3_full",
-    "hamnode": "ph_se3_full",
-    "hamnode_full": "ph_se3_full",
-    "ph_se3_nomassinit": "ph_se3_nomassinit",
-    "hamnode_noinit": "ph_se3_nomassinit",
-    "ph_se3_diagd": "ph_se3_diagd",
-    "hamnode_diag_d": "ph_se3_diagd",
-    "ph_se3_noj": "ph_se3_noj",
-    "hamnode_no_j": "ph_se3_noj",
-    "ph_se3_buonly": "ph_se3_buonly",
-    "hamnode_bu_only": "ph_se3_buonly",
-    "ph_se3_mergednc": "ph_se3_mergednc",
-    "merged_nc": "ph_se3_mergednc",
-    "ph_se3_qforce": "ph_se3_qforce",
-    "hamnode_qforce": "ph_se3_qforce",
-    "hamnode_no_potential": "ph_se3_qforce",
-    "no_potential": "ph_se3_qforce",
-    "mom_se3_unstruct": "mom_se3_unstruct",
-    "momentum_se3": "mom_se3_unstruct",
-    "ham_se3_unstruct": "ham_se3_unstruct",
-    "unstructured_ham": "ham_se3_unstruct",
-    "se3_unstruct": "se3_unstruct",
-    "unstructured_se3": "se3_unstruct",
-    "bb_free_unstruct": "bb_free_unstruct",
-    "blackbox": "bb_free_unstruct",
-}
-
-MODEL_TYPE_CHOICES = CANONICAL_MODEL_TYPES + [
-    alias for alias in MODEL_TYPE_ALIASES
-    if alias not in CANONICAL_MODEL_TYPES
-]
+MODEL_TYPE_CHOICES = list(CANONICAL_MODEL_TYPES)
 
 
 def canonicalize_model_type(model_type: str) -> str:
-    """Map legacy aliases to the canonical model naming scheme."""
-    key = str(model_type).strip().lower()
-    if key not in MODEL_TYPE_ALIASES:
+    """Validate and return the canonical model type name."""
+    key = str(model_type).strip()
+    if key not in CANONICAL_MODEL_TYPES:
         valid = ", ".join(CANONICAL_MODEL_TYPES)
         raise ValueError(f"Unknown model_type {model_type!r}. Canonical choices: {valid}")
-    return MODEL_TYPE_ALIASES[key]
+    return key
 
 
 def _build_model(model_type, device, hidden_dim=128, M_init=None, **kwargs):
@@ -181,7 +148,7 @@ def _build_model(model_type, device, hidden_dim=128, M_init=None, **kwargs):
     oc = kwargs.get('ocean_current', False)
 
     if model_type == 'ph_se3_mergednc':
-        return BASELINE_MODELS['merged_nc'](
+        return BASELINE_MODELS['ph_se3_mergednc'](
             device=device, hidden_dim=hidden_dim, M_init=M_init,
             include_depth_in_potential=kwargs.get('include_depth_in_potential', False),
             ocean_current=oc,
@@ -192,7 +159,7 @@ def _build_model(model_type, device, hidden_dim=128, M_init=None, **kwargs):
         ).to(device)
 
     if model_type == 'ph_se3_qforce':
-        return BASELINE_MODELS['hamnode_no_potential'](
+        return BASELINE_MODELS['ph_se3_qforce'](
             device=device, hidden_dim=hidden_dim, M_init=M_init,
             include_depth=kwargs.get('include_depth_in_potential', False),
             ocean_current=oc,
@@ -208,7 +175,7 @@ def _build_model(model_type, device, hidden_dim=128, M_init=None, **kwargs):
         ).to(device)
 
     if model_type == 'mom_se3_unstruct':
-        return BASELINE_MODELS['momentum_se3'](
+        return BASELINE_MODELS['mom_se3_unstruct'](
             device=device, hidden_dim=hidden_dim, M_init=M_init,
             include_depth=kwargs.get('include_depth_in_potential', False),
             ocean_current=oc,
@@ -219,7 +186,7 @@ def _build_model(model_type, device, hidden_dim=128, M_init=None, **kwargs):
         ).to(device)
 
     if model_type == 'ham_se3_unstruct':
-        return BASELINE_MODELS['unstructured_ham'](
+        return BASELINE_MODELS['ham_se3_unstruct'](
             device=device, hidden_dim=hidden_dim, M_init=M_init,
             ocean_current=oc,
             T_actuator_init=kwargs.get('t_actuator_init'),
@@ -230,7 +197,7 @@ def _build_model(model_type, device, hidden_dim=128, M_init=None, **kwargs):
 
     if model_type == 'se3_unstruct':
         h = int(hidden_dim * 1.88)
-        return BASELINE_MODELS['unstructured_se3'](
+        return BASELINE_MODELS['se3_unstruct'](
             device=device, hidden_dim=h,
             include_depth=kwargs.get('include_depth_in_potential', False),
             ocean_current=oc,
@@ -242,7 +209,7 @@ def _build_model(model_type, device, hidden_dim=128, M_init=None, **kwargs):
 
     if model_type == 'bb_free_unstruct':
         h = int(hidden_dim * 1.78)
-        return BASELINE_MODELS['blackbox'](
+        return BASELINE_MODELS['bb_free_unstruct'](
             device=device, hidden_dim=h,
             ocean_current=oc,
             T_actuator_init=kwargs.get('t_actuator_init'),
@@ -376,7 +343,7 @@ class AUVHamNODETrainer:
         invalid_prediction_batches = 0
         invalid_gradient_batches = 0
 
-        for batch, _ in loader:
+        for batch in loader:
             if train and global_step >= self.config.total_steps:
                 break
 
@@ -415,10 +382,19 @@ class AUVHamNODETrainer:
             # Convert targets to ODE convention for velocity comparison;
             # position, rotation, and actuator are identical in both conventions.
             target_ode = self.model.to_ode_state(batch_target)
+            loss_target = target_ode
+            loss_pred = pred_ode
+            if (
+                train
+                and target_ode.shape[1] > 1
+                and (self.config.init_state_noise or self.config.observation_noise)
+            ):
+                loss_target = target_ode[:, 1:]
+                loss_pred = pred_ode[:, 1:]
 
             loss, comp = se3_trajectory_loss(
-                target_ode,
-                pred_ode,
+                loss_target,
+                loss_pred,
                 self.normalizer,
                 weights={"actuator": self.config.actuator_loss_weight},
                 so3_regularization_weight=self.config.so3_regularization_weight,
@@ -611,7 +587,7 @@ def train_auv_hamnode(
     Args:
         dataset_path: path to pickled dataset
         config:       training configuration
-        model_class:  AUVHamNODE or compatible class
+        model_class:  custom model class with the AUVHamNODE interface
         M_init:       6x6 mass matrix for physics initialization (optional)
 
     Returns:
@@ -624,8 +600,11 @@ def train_auv_hamnode(
     logger = setup_logging(config.get_run_dir())
     logger.info("Loading dataset...")
 
-    train_loader, test_loader, t_eval, data_cfg = create_dataloaders(
-        dataset_path, batch_size=config.batch_size)
+    dataset = load_dataset(dataset_path)
+    train_loader, test_loader, t_eval, data_cfg = create_dataloaders_from_dataset(
+        dataset,
+        batch_size=config.batch_size,
+    )
     logger.info(f"Loaded: {len(train_loader.dataset)} train, "
                 f"{len(test_loader.dataset)} test, t_eval={t_eval.numpy()}")
     logger.info(
@@ -659,7 +638,6 @@ def train_auv_hamnode(
         config.include_depth_in_potential,
         context="Training pipeline",
     )
-    dataset = load_dataset(dataset_path)
     train_blocks = get_train_blocks(dataset)
     train_blocks = adapt_state_array_for_model(
         train_blocks,
@@ -714,7 +692,7 @@ def main():
     parser.add_argument("--dataset", type=str, required=True)
     parser.add_argument("--model_type", type=str, default="ph_se3_full",
                         choices=MODEL_TYPE_CHOICES,
-                        help="Model architecture to train; legacy aliases are accepted")
+                        help="Model architecture to train")
     parser.add_argument("--run_name", type=str, default=None)
     parser.add_argument("--save_dir", type=str, default="./checkpoints")
     parser.add_argument("--batch_size", type=int, default=None,
@@ -748,8 +726,6 @@ def main():
                         help="Ramp training noise from 0 to full over N epochs")
     parser.add_argument("--ocean_current", action="store_true",
                         help="Enable ocean current awareness (requires 27D dataset)")
-    parser.add_argument("--condition_dj_on_current", action="store_true",
-                        help="Condition D_net/J_net on body-frame current in ocean-current runs")
     parser.add_argument("--dj_current_feature", type=str, default=None,
                         choices=["none", "current_body", "total_velocity"],
                         help="Extra 3D context appended to D_net/J_net in ocean-current runs")
@@ -773,8 +749,6 @@ def main():
     dj_current_feature = args.dj_current_feature
     if dj_current_feature is None:
         dj_current_feature = dataset_defaults["dj_current_feature"]
-    if args.condition_dj_on_current and dj_current_feature == "none":
-        dj_current_feature = "current_body"
 
     actuation_current_feature = args.actuation_current_feature
     if actuation_current_feature is None:

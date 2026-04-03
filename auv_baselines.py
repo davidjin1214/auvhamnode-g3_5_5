@@ -842,12 +842,10 @@ class AUVBlackBoxNODE(AUVBaseModel):
 
 
 BASELINE_MODELS = {
-    'merged_nc': AUVHamNODEMergedNC,
-    'hamnode_no_potential': AUVHamNODEQForce,
-    'hamnode_qforce': AUVHamNODEQForce,
-    'no_potential': AUVHamNODEQForce,
-    'momentum_se3': AUVMomentumSE3NODE,
-    'unstructured_ham': AUVUnstructuredHamNODE,
-    'unstructured_se3': AUVUnstructuredSE3NODE,
-    'blackbox': AUVBlackBoxNODE,
+    'ph_se3_mergednc': AUVHamNODEMergedNC,
+    'ph_se3_qforce': AUVHamNODEQForce,
+    'mom_se3_unstruct': AUVMomentumSE3NODE,
+    'ham_se3_unstruct': AUVUnstructuredHamNODE,
+    'se3_unstruct': AUVUnstructuredSE3NODE,
+    'bb_free_unstruct': AUVBlackBoxNODE,
 }

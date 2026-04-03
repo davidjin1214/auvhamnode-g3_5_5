@@ -112,7 +112,7 @@ def setup_logging(log_dir: Path, name: str = "training") -> logging.Logger:
 class TrainConfig:
     """Training configuration."""
 
-    model_type: str = "hamnode"
+    model_type: str = "ph_se3_full"
     hidden_dim: int = 128
     coupled_damping: bool = True
     include_depth_in_potential: bool = False
@@ -226,11 +226,6 @@ class TrainConfig:
 
     @classmethod
     def from_dict(cls, data: Dict) -> "TrainConfig":
-        data = dict(data)
-        if "dj_current_feature" not in data and "condition_dj_on_current" in data:
-            data["dj_current_feature"] = (
-                "current_body" if data.pop("condition_dj_on_current") else "none"
-            )
         valid = {field.name for field in dataclasses.fields(cls)}
         unknown = sorted(set(data) - valid)
         if unknown:
@@ -476,6 +471,64 @@ def _correlated_gaussian_noise(
     return noise
 
 
+def _body_current_from_state_rotation(
+    state: torch.Tensor,
+    v_c_slice: slice,
+) -> torch.Tensor:
+    """Compute body-frame current R^T v_c^n for flattened state batches."""
+    R = state[:, 3:12].reshape(-1, 3, 3)
+    v_c_n = state[:, v_c_slice]
+    return torch.bmm(R.transpose(1, 2), v_c_n.unsqueeze(-1)).squeeze(-1)
+
+
+def _apply_velocity_and_current_noise(
+    state: torch.Tensor,
+    vel_noise: torch.Tensor,
+    current_noise: Optional[torch.Tensor],
+    *,
+    u_dim: int,
+    ocean_current: bool,
+    state_convention: str,
+) -> torch.Tensor:
+    """Apply velocity/current noise while preserving the ocean-current kinematic contract."""
+    result = state.clone()
+
+    _, _, v_c_slice = actuator_slices(u_dim, ocean_current)
+    if state_convention == "data":
+        result[..., 12:18] += vel_noise
+        if (
+            ocean_current
+            and v_c_slice is not None
+            and result.shape[-1] >= v_c_slice.stop
+            and current_noise is not None
+        ):
+            result[..., v_c_slice] += current_noise
+        return result
+
+    if state_convention == "ode":
+        flat_state = state.reshape(-1, state.shape[-1])
+        flat_result = result.reshape(-1, result.shape[-1])
+        vel_noise_flat = vel_noise.reshape(-1, vel_noise.shape[-1])
+
+        if ocean_current and v_c_slice is not None and state.shape[-1] >= v_c_slice.stop:
+            old_v_c_body = _body_current_from_state_rotation(flat_state, v_c_slice)
+            noisy_total = flat_state[:, 12:18].clone()
+            noisy_total[:, :3] += old_v_c_body
+            noisy_total += vel_noise_flat
+
+            if current_noise is not None:
+                flat_result[:, v_c_slice] += current_noise.reshape(-1, current_noise.shape[-1])
+            new_v_c_body = _body_current_from_state_rotation(flat_result, v_c_slice)
+            flat_result[:, 12:15] = noisy_total[:, :3] - new_v_c_body
+            flat_result[:, 15:18] = noisy_total[:, 3:]
+            return flat_result.reshape(result.shape)
+
+        flat_result[:, 12:18] = flat_state[:, 12:18] + vel_noise_flat
+        return flat_result.reshape(result.shape)
+
+    raise ValueError(f"Unsupported state_convention: {state_convention!r}")
+
+
 def apply_initial_condition_noise(
     y0: torch.Tensor,
     config: TrainConfig,
@@ -528,8 +581,7 @@ def apply_initial_condition_noise(
     # --- Velocity noise ---
     vel_std = torch.tensor(
         config.velocity_noise_std, dtype=torch.float32, device=device)
-    y0n[:, 12:18] += scale * vel_std * torch.randn(
-        y0.shape[0], 6, device=device)
+    vel_noise = scale * vel_std * torch.randn(y0.shape[0], 6, device=device)
 
     # --- Actuator state noise ---
     u_act_slice, _, v_c_slice = actuator_slices(config.u_dim, config.ocean_current)
@@ -542,13 +594,23 @@ def apply_initial_condition_noise(
     if config.observation_bias:
         bias_std = torch.tensor(
             config.velocity_bias_std, dtype=torch.float32, device=device)
-        y0n[:, 12:18] += scale * bias_std * torch.randn(
+        vel_noise = vel_noise + scale * bias_std * torch.randn(
             y0.shape[0], 6, device=device)
 
     # --- Ocean current estimation noise ---
+    current_noise = None
     if v_c_slice is not None and y0.shape[1] >= v_c_slice.stop:
-        y0n[:, v_c_slice] += scale * config.current_noise_std * torch.randn(
+        current_noise = scale * config.current_noise_std * torch.randn(
             y0.shape[0], 3, device=device)
+
+    y0n = _apply_velocity_and_current_noise(
+        y0n,
+        vel_noise,
+        current_noise,
+        u_dim=config.u_dim,
+        ocean_current=config.ocean_current,
+        state_convention="ode",
+    )
 
     return y0n
 
@@ -600,8 +662,7 @@ def apply_trajectory_observation_noise(
 
     vel_std = s * torch.tensor(
         config.velocity_noise_std, dtype=target.dtype, device=device)
-    vel_noise = _correlated_gaussian_noise(
-        B, T, 6, vel_std, device=device)
+    vel_noise = _correlated_gaussian_noise(B, T, 6, vel_std, device=device)
 
     if config.observation_bias:
         bias_std = s * torch.tensor(
@@ -609,7 +670,20 @@ def apply_trajectory_observation_noise(
         vel_noise = vel_noise + bias_std.view(1, 1, 6) * torch.randn(
             B, 1, 6, device=device)
 
-    target_n[..., 12:18] += vel_noise
+    _, _, v_c_slice = actuator_slices(config.u_dim, config.ocean_current)
+    current_noise = None
+    if v_c_slice is not None and target.shape[-1] >= v_c_slice.stop:
+        current_std = torch.full((3,), s * config.current_noise_std, dtype=target.dtype, device=device)
+        current_noise = _correlated_gaussian_noise(B, T, 3, current_std, device=device)
+
+    target_n = _apply_velocity_and_current_noise(
+        target_n,
+        vel_noise,
+        current_noise,
+        u_dim=config.u_dim,
+        ocean_current=config.ocean_current,
+        state_convention="data",
+    )
 
     # Integrate translational velocity error to obtain relative-position error.
     R_ref = target[..., 3:12].reshape(B, T, 3, 3)
@@ -647,18 +721,42 @@ class AUVDataset(Dataset):
     def __init__(
         self,
         data: np.ndarray,
-        t_eval: np.ndarray,
         dataset_cfg: Dict,
     ):
         validate_dataset_config(dataset_cfg)
         self.data = torch.tensor(data, dtype=torch.float32)
-        self.t_eval = torch.tensor(t_eval, dtype=torch.float32)
 
     def __len__(self):
         return len(self.data)
 
     def __getitem__(self, idx):
-        return self.data[idx], self.t_eval
+        return self.data[idx]
+
+
+def create_dataloaders_from_dataset(
+    dataset: Dict,
+    batch_size: int,
+    num_workers: int = 0,
+) -> Tuple[DataLoader, DataLoader, torch.Tensor, Dict]:
+    """Create train/test DataLoaders from an in-memory dataset payload."""
+    train_blocks = dataset.get("train_blocks", dataset["train_data"])
+    test_blocks = dataset.get("test_blocks", dataset["test_data"])
+    t_eval = torch.tensor(dataset["t_eval"], dtype=torch.float32)
+
+    cfg = dataset["config"]
+    validate_dataset_config(cfg)
+
+    train_loader = DataLoader(
+        AUVDataset(train_blocks, dataset_cfg=cfg),
+        batch_size=batch_size, shuffle=True,
+        num_workers=num_workers, pin_memory=True, drop_last=True,
+    )
+    test_loader = DataLoader(
+        AUVDataset(test_blocks, dataset_cfg=cfg),
+        batch_size=batch_size, shuffle=False,
+        num_workers=num_workers, pin_memory=True,
+    )
+    return train_loader, test_loader, t_eval, cfg
 
 
 def create_dataloaders(
@@ -668,25 +766,11 @@ def create_dataloaders(
 ) -> Tuple[DataLoader, DataLoader, torch.Tensor, Dict]:
     """Create train/test DataLoaders from a pickled dataset file."""
     dataset = load_dataset(dataset_path)
-
-    train_blocks = dataset.get("train_blocks", dataset["train_data"])
-    test_blocks = dataset.get("test_blocks", dataset["test_data"])
-    t_eval = torch.tensor(dataset["t_eval"], dtype=torch.float32)
-
-    cfg = dataset["config"]
-    validate_dataset_config(cfg)
-
-    train_loader = DataLoader(
-        AUVDataset(train_blocks, dataset["t_eval"], dataset_cfg=cfg),
-        batch_size=batch_size, shuffle=True,
-        num_workers=num_workers, pin_memory=True, drop_last=True,
+    return create_dataloaders_from_dataset(
+        dataset,
+        batch_size=batch_size,
+        num_workers=num_workers,
     )
-    test_loader = DataLoader(
-        AUVDataset(test_blocks, dataset["t_eval"], dataset_cfg=cfg),
-        batch_size=batch_size, shuffle=False,
-        num_workers=num_workers, pin_memory=True,
-    )
-    return train_loader, test_loader, t_eval, dataset["config"]
 
 
 def get_train_blocks(dataset: Dict) -> np.ndarray:
@@ -1164,7 +1248,7 @@ def evaluate_trajectory_prediction(
     invalid_prediction_batches = 0
     count = 0
 
-    for batch, _ in test_loader:
+    for batch in test_loader:
         if count >= n_samples:
             break
 

@@ -138,7 +138,6 @@ class AUVHamNODE(nn.Module):
         actuation_condition_on_velocity=True,
         actuation_current_feature="none",
         dj_current_feature="none",
-        condition_dj_on_current=None,
         u_dim=3,
         absolute_depth_context=False,
     ):
@@ -165,8 +164,6 @@ class AUVHamNODE(nn.Module):
         self.actuation_current_feature = (
             actuation_current_feature if ocean_current else "none"
         )
-        if condition_dj_on_current is not None and dj_current_feature == "none":
-            dj_current_feature = "current_body" if condition_dj_on_current else "none"
         self.dj_current_feature = dj_current_feature if ocean_current else "none"
         self.u_dim = int(u_dim)
         self.layout = StateLayout(
