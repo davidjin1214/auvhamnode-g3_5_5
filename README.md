@@ -229,6 +229,58 @@ Each run creates a directory under `./checkpoints/`, containing at least:
 - `evaluation_results.pkl`
 - `heldout_evaluation.pkl`
 
+### Batch sweep scripts
+
+For repeated benchmark sweeps, use the scripts in [scripts/](/Users/xiangjin/Library/CloudStorage/OneDrive-Personal/我的/Code/auv_se3node/g3_5_5/scripts).
+
+Train all core models and ablations on the default `oc` dataset with seeds `42 43 44`:
+
+```bash
+./scripts/batch_train_models.sh
+```
+
+Run the matching rollout benchmark for every trained run in that sweep:
+
+```bash
+./scripts/batch_eval_models.sh \
+  --suite-dir ./checkpoints/<suite_name>
+```
+
+Run both stages end-to-end:
+
+```bash
+./scripts/run_all.sh
+```
+
+This wrapper now runs training, rollout evaluation, and final sweep summarization in one pass.
+
+Summarize a completed sweep across seeds and models:
+
+```bash
+python ./scripts/summarize_sweep.py \
+  --suite-dir ./checkpoints/<suite_name>
+```
+
+Useful sweep controls:
+
+```bash
+--profile oc
+--group core
+--group ablation
+--group all
+--seeds "42 43 44"
+--prefix oc_core_default
+--device cuda:0
+```
+
+Each sweep creates a suite directory under `./checkpoints/`, for example:
+
+```text
+checkpoints/sweep_oc_all_default_auv_oc_traj1000_blk150_s23_d0be9434_s42-43-44_<timestamp>/
+```
+
+Inside that suite, every run gets its own training folder, and each rollout benchmark is written back into the corresponding run directory under `rollout_benchmark/`.
+
 ## 3. Evaluate Rollout Benchmark
 
 Evaluation is run from a trained checkpoint, usually `best_model.pt`.

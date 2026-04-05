@@ -320,7 +320,19 @@ def resolve_dataset_path(train_cfg, dataset_path=None):
     if not candidate:
         return None
     path = Path(candidate).expanduser()
-    return path.resolve() if path.exists() else path
+    if path.exists():
+        return path.resolve()
+
+    repo_root = Path(__file__).resolve().parent
+    fallback = repo_root / "data" / path.name
+    if fallback.exists():
+        return fallback.resolve()
+
+    cwd_fallback = Path.cwd() / "data" / path.name
+    if cwd_fallback.exists():
+        return cwd_fallback.resolve()
+
+    return path
 
 
 def resolve_generation_config_payload(train_cfg, dataset=None, dataset_path=None):
