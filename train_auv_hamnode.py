@@ -17,7 +17,7 @@ Usage:
     python train_auv_hamnode.py --dataset ./data/auv_dataset.pkl
     python train_auv_hamnode.py --dataset ./data/dataset.pkl --model_type se3_accel_blackbox
     python train_auv_hamnode.py --dataset ./data/dataset.pkl --model_type blackbox_fullstate --batch_size 2048 --total_steps 7000 --epochs 200
-    python train_auv_hamnode.py --dataset ./data/dataset.pkl --init_state_noise --observation_noise
+    python train_auv_hamnode.py --dataset ./data/dataset.pkl --noise_level 2
 """
 
 import torch
@@ -42,8 +42,7 @@ from train_utils import (
     print_evaluation_results, setup_logging,
     load_dataset, get_train_blocks, evaluate_heldout_trajectories,
     print_heldout_evaluation_results, save_heldout_evaluation_results,
-    save_block_evaluation_results, apply_initial_condition_noise,
-    apply_trajectory_observation_noise,
+    save_block_evaluation_results, build_noisy_training_pair,
     adapt_state_array_for_model,
     validate_depth_conditioning_support,
     create_dataloaders_from_dataset,
@@ -237,10 +236,17 @@ class AUVHamNODETrainer:
             attempted_batches += 1
             self.model.reset_nfe()
 
-            # Convert initial conditions to ODE convention (relative velocity)
-            y0 = self.model.to_ode_state(batch[:, 0])
-            if train and self.config.init_state_noise:
-                y0 = apply_initial_condition_noise(y0, self.config, epoch)
+            # Build (possibly noisy) initial condition; supervision is always clean.
+            noise_cfg = self.config.get_noise_config()
+            if train and noise_cfg.is_active:
+                noisy_block = build_noisy_training_pair(
+                    batch, noise_cfg, epoch, t_eval_dev,
+                    u_dim=self.config.u_dim,
+                    ocean_current=self.config.ocean_current,
+                )
+                y0 = self.model.to_ode_state(noisy_block[:, 0])
+            else:
+                y0 = self.model.to_ode_state(batch[:, 0])
 
             try:
                 pred = odeint(
@@ -258,23 +264,14 @@ class AUVHamNODETrainer:
                 invalid_prediction_batches += 1
                 continue
 
-            # Observation noise on ground-truth targets (training only)
-            if train and self.config.observation_noise:
-                batch_target = apply_trajectory_observation_noise(
-                    batch, self.config, epoch, t_eval=t_eval_dev)
-            else:
-                batch_target = batch
-
-            # Convert targets to ODE convention for velocity comparison;
-            # position, rotation, and actuator are identical in both conventions.
-            target_ode = self.model.to_ode_state(batch_target)
+            # Target is always the clean ground-truth trajectory.
+            # Convert to ODE convention; position/rotation/actuator are identical.
+            target_ode = self.model.to_ode_state(batch)
             loss_target = target_ode
             loss_pred = pred_ode
-            if (
-                train
-                and target_ode.shape[1] > 1
-                and (self.config.init_state_noise or self.config.observation_noise)
-            ):
+            if train and noise_cfg.is_active and target_ode.shape[1] > 1:
+                # Skip t=0: y0 is noisy but target[:, 0] is clean, so the
+                # t=0 residual reflects the injected IC noise, not dynamics error.
                 loss_target = target_ode[:, 1:]
                 loss_pred = pred_ode[:, 1:]
 
@@ -609,14 +606,24 @@ def main():
     parser.add_argument("--device", type=str,
                         default="cuda" if torch.cuda.is_available() else "cpu")
     parser.add_argument("--seed", type=int, default=42)
-    parser.add_argument("--init_state_noise", action="store_true",
-                        help="Enable initial navigation/actuation state perturbations")
-    parser.add_argument("--observation_noise", action="store_true",
-                        help="Enable correlated navigation-style observation noise")
-    parser.add_argument("--observation_bias", action="store_true",
-                        help="Enable persistent block-wise velocity bias")
-    parser.add_argument("--noise_ramp_epochs", type=int, default=100,
-                        help="Ramp training noise from 0 to full over N epochs")
+    parser.add_argument(
+        "--noise_level", type=int, default=0, choices=[0, 1, 2, 3],
+        help=(
+            "Training-time sensor noise level: "
+            "0=clean (no noise), "
+            "1=ic (white Gaussian on initial condition only), "
+            "2=nav (full-trajectory AR(1) DVL/IMU noise + bias), "
+            "3=nav_deg (nav + DVL dropout + random-walk bias + multiplicative noise)"
+        ),
+    )
+    parser.add_argument(
+        "--noise_scale", type=float, default=1.0,
+        help="Global noise magnitude multiplier (default 1.0); use <1 for ablation",
+    )
+    parser.add_argument(
+        "--noise_ramp", type=int, default=100,
+        help="Curriculum ramp: noise increases linearly from 0 to full over N epochs",
+    )
     parser.add_argument("--ocean_current", action="store_true",
                         help="Enable ocean current awareness (requires 27D dataset)")
     parser.add_argument("--dj_current_feature", type=str, default=None,
@@ -673,10 +680,9 @@ def main():
         run_name=args.run_name,
         device=args.device,
         seed=args.seed,
-        init_state_noise=args.init_state_noise,
-        observation_noise=args.observation_noise,
-        observation_bias=args.observation_bias,
-        noise_ramp_epochs=args.noise_ramp_epochs,
+        noise_level=args.noise_level,
+        noise_scale=args.noise_scale,
+        noise_ramp_epochs=args.noise_ramp,
         ocean_current=args.ocean_current,
         dj_current_feature=dj_current_feature,
         actuation_current_feature=actuation_current_feature,
