@@ -48,6 +48,8 @@ from train_utils import (
     create_dataloaders_from_dataset,
     get_dataset_training_defaults,
     infer_dataset_kind_from_path,
+    noise_cfg_from_profile,
+    resolve_noise_profiles,
 )
 from auv_model_registry import (
     canonicalize_model_type,
@@ -468,6 +470,8 @@ def train_auv_hamnode(
     config: Optional[TrainConfig] = None,
     model_class=None,
     M_init=None,
+    block_eval_noise_profiles=None,
+    heldout_eval_noise_profiles=None,
 ) -> Tuple[nn.Module, Dict]:
     """
     End-to-end training: load data -> train -> evaluate -> save.
@@ -546,9 +550,14 @@ def train_auv_hamnode(
     logger.info("Running detailed evaluation...")
     model = trainer.get_model()
     eval_device = torch.device(config.device)
+    block_profile_names = resolve_noise_profiles(
+        block_eval_noise_profiles,
+        default_profiles=["clean", "nominal_eval"],
+        allow_none=True,
+    )
     block_eval_profiles = {
-        "clean": None,
-        "nominal_eval": NoiseConfig(profile="nominal_eval", warmup_epochs=0, ramp_epochs=1),
+        profile_name: noise_cfg_from_profile(profile_name)
+        for profile_name in block_profile_names
     }
     results = {}
     for profile_name, noise_cfg in block_eval_profiles.items():
@@ -572,10 +581,14 @@ def train_auv_hamnode(
         pickle.dump(results, f)
 
     logger.info("Running held-out trajectory evaluation...")
+    heldout_profile_names = resolve_noise_profiles(
+        heldout_eval_noise_profiles,
+        default_profiles=["clean", "nominal_eval", "degraded_eval"],
+        allow_none=True,
+    )
     heldout_eval_profiles = {
-        "clean": None,
-        "nominal_eval": NoiseConfig(profile="nominal_eval", warmup_epochs=0, ramp_epochs=1),
-        "degraded_eval": NoiseConfig(profile="degraded_eval", warmup_epochs=0, ramp_epochs=1),
+        profile_name: noise_cfg_from_profile(profile_name)
+        for profile_name in heldout_profile_names
     }
     heldout_results = {}
     for profile_name, noise_cfg in heldout_eval_profiles.items():
@@ -672,6 +685,28 @@ def main():
         "--noise_mix_ratio", type=float, default=0.5,
         help="Fraction of training batches using noisy IC after warmup",
     )
+    parser.add_argument(
+        "--block_eval_noise_profiles",
+        type=str,
+        nargs="+",
+        default=["clean", "nominal_eval"],
+        help=(
+            "Noise profiles for post-training block evaluation. "
+            "Choose any of: clean nominal_eval degraded_eval all none. "
+            "Default: clean nominal_eval"
+        ),
+    )
+    parser.add_argument(
+        "--heldout_eval_noise_profiles",
+        type=str,
+        nargs="+",
+        default=["clean", "nominal_eval", "degraded_eval"],
+        help=(
+            "Noise profiles for post-training held-out evaluation. "
+            "Choose any of: clean nominal_eval degraded_eval all none. "
+            "Default: clean nominal_eval degraded_eval"
+        ),
+    )
     parser.add_argument("--ocean_current", action="store_true",
                         help="Enable ocean current awareness (requires 27D dataset)")
     parser.add_argument("--dj_current_feature", type=str, default=None,
@@ -744,7 +779,13 @@ def main():
     )
 
     M_init = _load_mass_init(mass_init, args.mass_init_path)
-    model, summary = train_auv_hamnode(args.dataset, config, M_init=M_init)
+    model, summary = train_auv_hamnode(
+        args.dataset,
+        config,
+        M_init=M_init,
+        block_eval_noise_profiles=args.block_eval_noise_profiles,
+        heldout_eval_noise_profiles=args.heldout_eval_noise_profiles,
+    )
     print(f"\nTraining finished. Results: {config.get_run_dir()}")
 
 

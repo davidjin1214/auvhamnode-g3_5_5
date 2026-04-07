@@ -191,6 +191,8 @@ OC 场景下海流误差使用各轴独立预算：
 - `--noise_warmup_epochs`
 - `--noise_ramp`
 - `--noise_mix_ratio`
+- `--block_eval_noise_profiles`
+- `--heldout_eval_noise_profiles`
 
 默认建议：
 
@@ -208,6 +210,32 @@ OC 场景下海流误差使用各轴独立预算：
 3. 达到稳态后，大约一半训练样本使用 noisy IC，另一半保持 clean。
 
 这样可以减少 noisy IC 直接把优化过程打崩的风险。
+
+训练完成后，脚本还会自动运行 profile-aware 评估：
+
+- block evaluation 默认：`clean nominal_eval`
+- held-out trajectory evaluation 默认：`clean nominal_eval degraded_eval`
+
+可以按需修改，例如：
+
+```bash
+--block_eval_noise_profiles clean degraded_eval
+--heldout_eval_noise_profiles all
+```
+
+如果你只想保留 clean 自动评估，也可以写：
+
+```bash
+--block_eval_noise_profiles clean
+--heldout_eval_noise_profiles clean
+```
+
+如果你想完全跳过某个评估阶段，使用 `none`：
+
+```bash
+--block_eval_noise_profiles none
+--heldout_eval_noise_profiles none
+```
 
 ## 7.1 不同实验目标下的参数取向
 
@@ -258,6 +286,24 @@ OC 场景下海流误差使用各轴独立预算：
 - held-out trajectory: `clean` + `nominal_eval` + `degraded_eval`
 
 这些评估使用固定 noise seed，以保证不同模型之间可直接比较。
+
+当前 rollout benchmark 也支持相同的初值噪声 profile 选择。CLI 入口为：
+
+```bash
+python evaluate_rollout_benchmark.py \
+  --checkpoint ./checkpoints/<run>/best_model.pt \
+  --mode heldout \
+  --noise_profiles clean nominal_eval degraded_eval \
+  --noise_seed 2024
+```
+
+说明：
+
+- `--noise_profiles` 可以传一个、多个，或者 `all`
+- `clean` 表示不注 noisy IC
+- `nominal_eval` 和 `degraded_eval` 会在 rollout 初值上注入与训练端一致的 profile 噪声
+
+如果传入多个 profile，benchmark 会按 profile 分目录写结果。
 
 ---
 

@@ -36,12 +36,16 @@ train_model_builder = None
 canonicalize_model_type = None
 compute_rotation_matrix = None
 geodesic_distance_so3 = None
+NoiseConfig = None
+StateNormalizer = None
+build_noisy_initial_condition = None
 
 
 def ensure_runtime_imports():
     global torch, odeint, AUVHamNODE, TrainConfig, train_model_builder
     global canonicalize_model_type
     global compute_rotation_matrix, geodesic_distance_so3
+    global NoiseConfig, StateNormalizer, build_noisy_initial_condition
 
     if torch is not None:
         return
@@ -56,6 +60,9 @@ def ensure_runtime_imports():
     )
     from train_utils import (
         TrainConfig as TrainConfig_cls,
+        NoiseConfig as NoiseConfig_cls,
+        StateNormalizer as StateNormalizer_cls,
+        build_noisy_initial_condition as build_noisy_initial_condition_fn,
         compute_rotation_matrix as compute_rotation_matrix_fn,
         geodesic_distance_so3 as geodesic_distance_so3_fn,
     )
@@ -68,6 +75,9 @@ def ensure_runtime_imports():
     canonicalize_model_type = canonicalize_model_type_fn
     compute_rotation_matrix = compute_rotation_matrix_fn
     geodesic_distance_so3 = geodesic_distance_so3_fn
+    NoiseConfig = NoiseConfig_cls
+    StateNormalizer = StateNormalizer_cls
+    build_noisy_initial_condition = build_noisy_initial_condition_fn
 
 
 def get_torch():
@@ -253,7 +263,10 @@ def build_model(checkpoint_path, device):
     model = _instantiate_model(model_type, device, train_cfg)
     model.load_state_dict(checkpoint["model_state_dict"])
     model.eval()
-    return model, train_cfg
+    normalizer = None
+    if "normalizer" in checkpoint:
+        normalizer = StateNormalizer.from_dict(checkpoint["normalizer"], device=device)
+    return model, train_cfg, normalizer
 
 
 def load_dataset_artifact(dataset_path):
@@ -1008,6 +1021,9 @@ def _rollout_model_against_ground_truth_payloads(
     sim_cfg,
     payloads,
     device,
+    noise_cfg=None,
+    normalizer=None,
+    noise_seed=None,
 ):
     torch = get_torch()
     layout = model.layout
@@ -1034,6 +1050,39 @@ def _rollout_model_against_ground_truth_payloads(
                 "pred_nu_total_chunks": [],
             }
         )
+
+    if noise_cfg is not None and noise_cfg.is_active:
+        if normalizer is None:
+            raise ValueError("normalizer is required for noisy rollout benchmarking.")
+        active_runtimes = [
+            runtime
+            for runtime in runtimes
+            if runtime["current_state"] is not None
+        ]
+        if active_runtimes:
+            init_states = torch.stack(
+                [runtime["current_state"] for runtime in active_runtimes],
+                dim=0,
+            )
+            sample_ids = torch.tensor(
+                [
+                    int(runtime["payload"].seed) + 100000 * (idx + 1)
+                    for idx, runtime in enumerate(active_runtimes)
+                ],
+                dtype=torch.long,
+            )
+            noisy_states = build_noisy_initial_condition(
+                init_states,
+                noise_cfg,
+                model,
+                normalizer,
+                epoch=noise_cfg.warmup_epochs + noise_cfg.ramp_epochs,
+                sample_ids=sample_ids,
+                base_seed=noise_seed,
+                state_is_ode=True,
+            )
+            for runtime, noisy_state in zip(active_runtimes, noisy_states):
+                runtime["current_state"] = noisy_state
 
     max_blocks = max((payload.completed_blocks for payload in payloads), default=0)
     with torch.no_grad():
@@ -1173,6 +1222,9 @@ def rollout_trajectory_batch(
     specs,
     device,
     ground_truth_cache_dir=None,
+    noise_cfg=None,
+    normalizer=None,
+    noise_seed=None,
 ):
     use_current = getattr(model, "ocean_current", False)
     u_dim = getattr(train_cfg, "u_dim", 3)
@@ -1194,6 +1246,9 @@ def rollout_trajectory_batch(
             sim_cfg=sim_cfg,
             payloads=payloads,
             device=device,
+            noise_cfg=noise_cfg,
+            normalizer=normalizer,
+            noise_seed=noise_seed,
         )
 
     results = []
@@ -1205,6 +1260,9 @@ def rollout_trajectory_batch(
                 sim_cfg=sim_cfg,
                 payloads=[payload],
                 device=device,
+                noise_cfg=noise_cfg,
+                normalizer=normalizer,
+                noise_seed=noise_seed,
             )
         )
     return results
@@ -1221,6 +1279,9 @@ def rollout_single_trajectory(
     contract_mode,
     device,
     ground_truth_cache_dir=None,
+    noise_cfg=None,
+    normalizer=None,
+    noise_seed=None,
 ):
     spec = TrajectorySpec(
         scenario_type=scenario_type,
@@ -1236,6 +1297,9 @@ def rollout_single_trajectory(
         specs=[spec],
         device=device,
         ground_truth_cache_dir=ground_truth_cache_dir,
+        noise_cfg=noise_cfg,
+        normalizer=normalizer,
+        noise_seed=noise_seed,
     )[0]
 
 

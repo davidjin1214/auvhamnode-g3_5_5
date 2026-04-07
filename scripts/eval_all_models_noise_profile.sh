@@ -16,6 +16,8 @@ DEVICE=""
 PROGRESS_EVERY=5
 NUM_DIAGNOSTIC_PLOTS=6
 SUMMARY_HORIZON=60
+NOISE_PROFILES="clean nominal_eval degraded_eval"
+NOISE_SEED=2024
 EXTRA_EVAL_ARGS=()
 
 usage() {
@@ -39,6 +41,9 @@ Options:
   --progress-every N           Default: 5
   --num-diagnostic-plots N     Default: 6
   --summary-horizon N          Default: 60
+  --noise-profiles "A B"       Rollout init-noise profiles forwarded to benchmark.
+                               Default: "clean nominal_eval degraded_eval"
+  --noise-seed N               Base seed for noisy initialization. Default: 2024
   --extra-eval-arg ARG         Extra arg forwarded to evaluation; repeatable
   --help                       Show this message
 
@@ -99,6 +104,14 @@ while [[ $# -gt 0 ]]; do
       SUMMARY_HORIZON="$2"
       shift 2
       ;;
+    --noise-profiles)
+      NOISE_PROFILES="$2"
+      shift 2
+      ;;
+    --noise-seed)
+      NOISE_SEED="$2"
+      shift 2
+      ;;
     --extra-eval-arg)
       EXTRA_EVAL_ARGS+=("$2")
       shift 2
@@ -144,6 +157,10 @@ eval_cmd=(
   --seed "${EVAL_SEED}"
   --progress-every "${PROGRESS_EVERY}"
   --num-diagnostic-plots "${NUM_DIAGNOSTIC_PLOTS}"
+  --extra-eval-arg "--noise_profiles"
+  --extra-eval-arg "${NOISE_PROFILES}"
+  --extra-eval-arg "--noise_seed"
+  --extra-eval-arg "${NOISE_SEED}"
 )
 if [[ -n "${DEVICE}" ]]; then
   eval_cmd+=(--device "${DEVICE}")

@@ -37,6 +37,7 @@ from rollout_benchmark_reporting import (
     write_metric_contract,
     write_summary_report,
 )
+from train_utils import noise_cfg_from_profile, resolve_noise_profiles
 
 
 # ---------------------------------------------------------------------------
@@ -291,6 +292,23 @@ def build_parser():
         help="Scenario names to evaluate",
     )
     parser.add_argument("--seed", type=int, default=42, help="Base random seed")
+    parser.add_argument(
+        "--noise_profiles",
+        type=str,
+        nargs="+",
+        default=["clean"],
+        help=(
+            "Noise profiles for rollout initialization. "
+            "Choose any of: clean nominal_eval degraded_eval all. "
+            "Examples: --noise_profiles clean nominal_eval | --noise_profiles all"
+        ),
+    )
+    parser.add_argument(
+        "--noise_seed",
+        type=int,
+        default=2024,
+        help="Base random seed used for noisy initialization profiles. Default: 2024",
+    )
     parser.add_argument("--device", type=str, default=None, help="torch device")
     parser.add_argument(
         "--mode",
@@ -331,76 +349,31 @@ def build_parser():
     return parser
 
 
-def main():
-    parser = build_parser()
-    args = parser.parse_args()
-
-    horizons = sorted({float(value) for value in args.times})
-    max_rollout_time = max(horizons)
-    scenarios = parse_scenarios(args.scenarios)
-
-    try:
-        ensure_runtime_imports()
-    except ModuleNotFoundError as exc:
-        parser.exit(
-            1,
-            "Missing runtime dependency for evaluation: "
-            f"{exc}. Use the Python environment with the training/eval packages installed.\n",
+def run_single_benchmark(
+    *,
+    args,
+    model,
+    train_cfg,
+    normalizer,
+    model_spec,
+    dataset_path,
+    generation_config_source,
+    sim_cfg,
+    scenarios,
+    horizons,
+    max_rollout_time,
+    trajectory_specs,
+    device,
+    output_dir,
+    noise_profile,
+    ground_truth_cache_dir,
+):
+    noise_cfg = noise_cfg_from_profile(noise_profile)
+    if noise_cfg is not None and normalizer is None:
+        raise ValueError(
+            "Requested noisy rollout benchmarking but the checkpoint does not contain "
+            "a saved normalizer. Re-train with the updated pipeline."
         )
-
-    torch = get_torch()
-    device = torch.device(
-        args.device if args.device else ("cuda" if torch.cuda.is_available() else "cpu")
-    )
-    output_dir = resolve_output_dir(
-        base_dir=args.output_dir,
-        checkpoint_path=args.checkpoint,
-        run_name=args.run_name,
-    )
-    output_dir.mkdir(parents=True, exist_ok=True)
-    ground_truth_cache_dir = Path(args.output_dir) / "_gt_cache"
-
-    model, train_cfg = build_model(args.checkpoint, device)
-    model_spec = get_model_spec(train_cfg.model_type)
-    dataset_path = resolve_dataset_path(train_cfg, args.dataset)
-    dataset = load_dataset_artifact(dataset_path) if dataset_path and dataset_path.exists() else None
-    generation_config, generation_config_source = resolve_generation_config_payload(
-        train_cfg=train_cfg,
-        dataset=dataset,
-        dataset_path=dataset_path,
-    )
-    if generation_config is None:
-        parser.exit(
-            1,
-            "Unable to resolve the dataset generation config. Re-train with the updated "
-            "pipeline or supply a dataset that stores generation_config metadata.\n",
-        )
-
-    sim_cfg = build_sim_config(
-        max_rollout_time,
-        generation_config=generation_config,
-        ocean_current=getattr(train_cfg, 'ocean_current', False),
-    )
-
-    if args.mode == "heldout":
-        if dataset is None:
-            parser.exit(
-                1,
-                "Heldout benchmark mode requires a dataset path or a checkpoint with dataset_path.\n",
-            )
-        trajectory_specs = build_heldout_trajectory_specs(
-            dataset=dataset,
-            scenarios=scenarios,
-            num_traj_per_scenario=args.num_traj_per_scenario,
-        )
-    else:
-        trajectory_specs = build_resampled_trajectory_specs(
-            scenarios=scenarios,
-            num_traj_per_scenario=args.num_traj_per_scenario,
-            seed=args.seed,
-            sim_cfg=sim_cfg,
-        )
-
     evaluations = []
     horizon_rows = []
     specs_by_scenario = {
@@ -415,6 +388,7 @@ def main():
         (
             f"Starting rollout benchmark | checkpoint={args.checkpoint} | device={device}"
             f" | mode={args.mode}"
+            f" | noise_profile={noise_profile}"
             f" | scenarios={','.join(s.name for s in scenarios)}"
             f" | trajectories={total_traj} | max_horizon={max_rollout_time:.1f}s"
             f" | output_dir={output_dir}"
@@ -437,6 +411,9 @@ def main():
             specs=scenario_specs,
             device=device,
             ground_truth_cache_dir=ground_truth_cache_dir if args.mode == "resampled" else None,
+            noise_cfg=noise_cfg,
+            normalizer=normalizer,
+            noise_seed=args.noise_seed,
         )
         for traj_idx, (spec, rollout) in enumerate(zip(scenario_specs, scenario_rollouts)):
             init_seed = int(spec.seed)
@@ -521,6 +498,8 @@ def main():
         "model_group": model_spec.group,
         "energy_semantics": getattr(model, "energy_semantics", "not_comparable"),
         "mode": args.mode,
+        "noise_profile": noise_profile,
+        "noise_seed": args.noise_seed,
         "generation_config_source": generation_config_source,
         "num_traj_per_scenario": args.num_traj_per_scenario,
         "horizons_s": horizons,
@@ -579,6 +558,104 @@ def main():
         )
         progress_print(f"Results written to {summary_path.parent}", args.quiet)
         print(summary_path.read_text(), end="")
+
+
+def main():
+    parser = build_parser()
+    args = parser.parse_args()
+
+    horizons = sorted({float(value) for value in args.times})
+    max_rollout_time = max(horizons)
+    scenarios = parse_scenarios(args.scenarios)
+
+    try:
+        ensure_runtime_imports()
+    except ModuleNotFoundError as exc:
+        parser.exit(
+            1,
+            "Missing runtime dependency for evaluation: "
+            f"{exc}. Use the Python environment with the training/eval packages installed.\n",
+        )
+
+    torch = get_torch()
+    device = torch.device(
+        args.device if args.device else ("cuda" if torch.cuda.is_available() else "cpu")
+    )
+    output_root = resolve_output_dir(
+        base_dir=args.output_dir,
+        checkpoint_path=args.checkpoint,
+        run_name=args.run_name,
+    )
+    output_root.mkdir(parents=True, exist_ok=True)
+
+    try:
+        noise_profiles = resolve_noise_profiles(args.noise_profiles)
+    except ValueError as exc:
+        parser.exit(1, f"{exc}\n")
+
+    model, train_cfg, normalizer = build_model(args.checkpoint, device)
+    model_spec = get_model_spec(train_cfg.model_type)
+    dataset_path = resolve_dataset_path(train_cfg, args.dataset)
+    dataset = load_dataset_artifact(dataset_path) if dataset_path and dataset_path.exists() else None
+    generation_config, generation_config_source = resolve_generation_config_payload(
+        train_cfg=train_cfg,
+        dataset=dataset,
+        dataset_path=dataset_path,
+    )
+    if generation_config is None:
+        parser.exit(
+            1,
+            "Unable to resolve the dataset generation config. Re-train with the updated "
+            "pipeline or supply a dataset that stores generation_config metadata.\n",
+        )
+
+    sim_cfg = build_sim_config(
+        max_rollout_time,
+        generation_config=generation_config,
+        ocean_current=getattr(train_cfg, 'ocean_current', False),
+    )
+
+    if args.mode == "heldout":
+        if dataset is None:
+            parser.exit(
+                1,
+                "Heldout benchmark mode requires a dataset path or a checkpoint with dataset_path.\n",
+            )
+        trajectory_specs = build_heldout_trajectory_specs(
+            dataset=dataset,
+            scenarios=scenarios,
+            num_traj_per_scenario=args.num_traj_per_scenario,
+        )
+    else:
+        trajectory_specs = build_resampled_trajectory_specs(
+            scenarios=scenarios,
+            num_traj_per_scenario=args.num_traj_per_scenario,
+            seed=args.seed,
+            sim_cfg=sim_cfg,
+        )
+    ground_truth_cache_dir = Path(args.output_dir) / "_gt_cache"
+    multi_profile = len(noise_profiles) > 1
+    for noise_profile in noise_profiles:
+        profile_output_dir = output_root / noise_profile if multi_profile else output_root
+        profile_output_dir.mkdir(parents=True, exist_ok=True)
+        run_single_benchmark(
+            args=args,
+            model=model,
+            train_cfg=train_cfg,
+            normalizer=normalizer,
+            model_spec=model_spec,
+            dataset_path=dataset_path,
+            generation_config_source=generation_config_source,
+            sim_cfg=sim_cfg,
+            scenarios=scenarios,
+            horizons=horizons,
+            max_rollout_time=max_rollout_time,
+            trajectory_specs=trajectory_specs,
+            device=device,
+            output_dir=profile_output_dir,
+            noise_profile=noise_profile,
+            ground_truth_cache_dir=ground_truth_cache_dir,
+        )
 
 
 if __name__ == "__main__":

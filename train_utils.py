@@ -109,6 +109,37 @@ class NoiseConfig:
         return min(max(ramp_progress, 0.0), 1.0) * self.scale
 
 
+AVAILABLE_NOISE_PROFILES = ("clean", "nominal_eval", "degraded_eval")
+
+
+def noise_cfg_from_profile(profile_name: str) -> Optional["NoiseConfig"]:
+    if profile_name == "clean":
+        return None
+    return NoiseConfig(profile=profile_name, warmup_epochs=0, ramp_epochs=1)
+
+
+def resolve_noise_profiles(values, default_profiles=None, allow_none=False):
+    if not values:
+        return list(default_profiles) if default_profiles else ["clean"]
+    resolved = []
+    for value in values:
+        key = str(value).strip().lower()
+        if key == "all":
+            for profile in AVAILABLE_NOISE_PROFILES:
+                if profile not in resolved:
+                    resolved.append(profile)
+            continue
+        if key == "none" and allow_none:
+            return []
+        if key not in AVAILABLE_NOISE_PROFILES:
+            extras = ["all", "none"] if allow_none else ["all"]
+            valid = ", ".join([*AVAILABLE_NOISE_PROFILES, *extras])
+            raise ValueError(f"Unsupported noise profile {value!r}. Expected one of: {valid}")
+        if key not in resolved:
+            resolved.append(key)
+    return resolved
+
+
 def setup_logging(log_dir: Path, name: str = "training") -> logging.Logger:
     """Setup file + console logging."""
     log_dir = Path(log_dir)
@@ -649,9 +680,10 @@ def build_noisy_initial_condition(
     *,
     sample_ids: Optional[torch.Tensor] = None,
     base_seed: Optional[int] = None,
+    state_is_ode: bool = False,
 ) -> torch.Tensor:
     """Perturb the clean initial state in ODE space using IC-consistent noise."""
-    y0 = model.to_ode_state(clean_state).clone()
+    y0 = clean_state.clone() if state_is_ode else model.to_ode_state(clean_state).clone()
     scale = cfg.epoch_scale(epoch)
     if scale < 1e-8:
         return y0

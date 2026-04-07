@@ -177,7 +177,9 @@ python train_auv_hamnode.py \
   --dataset ./data/oc/auv_oc_traj500_blk150_s42_<dataset_id>.pkl \
   --model_type phnode_full \
   --save_dir ./checkpoints \
-  --noise_profile nominal_train
+  --noise_profile nominal_train \
+  --block_eval_noise_profiles clean nominal_eval \
+  --heldout_eval_noise_profiles clean nominal_eval degraded_eval
 ```
 
 Useful noise-related overrides:
@@ -187,6 +189,8 @@ Useful noise-related overrides:
 --noise_ramp 80
 --noise_mix_ratio 0.5
 --noise_scale 1.0
+--block_eval_noise_profiles clean nominal_eval
+--heldout_eval_noise_profiles clean nominal_eval degraded_eval
 ```
 
 Available profiles:
@@ -198,6 +202,25 @@ Available profiles:
 
 Legacy `--noise_level {0,1,2,3}` is still accepted for backward compatibility,
 but `--noise_profile` is the preferred interface.
+
+Post-training automatic evaluation is also profile-aware:
+
+- block evaluation defaults to `clean nominal_eval`
+- held-out evaluation defaults to `clean nominal_eval degraded_eval`
+
+You can override them, for example:
+
+```bash
+--block_eval_noise_profiles clean degraded_eval
+--heldout_eval_noise_profiles all
+```
+
+Pass `none` to skip a phase entirely:
+
+```bash
+--block_eval_noise_profiles none
+--heldout_eval_noise_profiles none
+```
 
 ### Current-aware feature options
 
@@ -288,7 +311,8 @@ Run the matching benchmark, sweep summary, and experiment report:
 ```bash
 bash ./scripts/eval_all_models_noise_profile.sh \
   --suite-dir ./checkpoints/<suite_name> \
-  --mode heldout
+  --mode heldout \
+  --noise-profiles "clean nominal_eval degraded_eval"
 ```
 
 These wrappers sit on top of `batch_train_models.sh` and `batch_eval_models.sh`,
@@ -322,6 +346,8 @@ Useful noisy-sweep controls:
 --noise-warmup-epochs 20
 --noise-ramp 80
 --noise-mix-ratio 0.5
+--block-eval-noise-profiles "clean nominal_eval"
+--heldout-eval-noise-profiles "clean nominal_eval degraded_eval"
 ```
 
 Each sweep creates a suite directory under `./checkpoints/`, for example:
@@ -344,7 +370,8 @@ This uses held-out test trajectories from the dataset.
 python evaluate_rollout_benchmark.py \
   --checkpoint ./checkpoints/<run_name>/best_model.pt \
   --mode heldout \
-  --output_dir ./rollout_benchmark_results
+  --output_dir ./rollout_benchmark_results \
+  --noise_profiles clean nominal_eval degraded_eval
 ```
 
 If the checkpoint already stores the dataset path, `--dataset` is optional.
@@ -357,7 +384,8 @@ This regenerates benchmark trajectories from the stored dataset generation confi
 python evaluate_rollout_benchmark.py \
   --checkpoint ./checkpoints/<run_name>/best_model.pt \
   --mode resampled \
-  --output_dir ./rollout_benchmark_results
+  --output_dir ./rollout_benchmark_results \
+  --noise_profiles clean nominal_eval degraded_eval
 ```
 
 ### Useful evaluation options
@@ -367,10 +395,27 @@ python evaluate_rollout_benchmark.py \
 --num_traj_per_scenario 30
 --times 10 30 60
 --scenarios PRBS CHIRP OU
+--noise_profiles clean nominal_eval degraded_eval
+--noise_seed 2024
 --device cuda
 --run_name oc_noisy_eval
 --num_diagnostic_plots 6
 ```
+
+`--noise_profiles` accepts one, several, or `all`. For example:
+
+```bash
+--noise_profiles clean
+--noise_profiles nominal_eval degraded_eval
+--noise_profiles all
+```
+
+If you pass multiple noise profiles, benchmark outputs are written into
+profile-specific subdirectories under the resolved run directory, for example:
+
+- `.../clean/summary.txt`
+- `.../nominal_eval/summary.txt`
+- `.../degraded_eval/summary.txt`
 
 ### Evaluation outputs
 
@@ -389,6 +434,15 @@ Each benchmark run creates a timestamped directory under `./rollout_benchmark_re
 - `terminal_error_boxplots.png`
 - `example_rollouts.png`
 - `diagnostic_plots/`
+
+If you request multiple noise profiles, the benchmark creates one subdirectory
+per profile, for example:
+
+```text
+rollout_benchmark_results/<run_name>/clean/
+rollout_benchmark_results/<run_name>/nominal_eval/
+rollout_benchmark_results/<run_name>/degraded_eval/
+```
 
 ## Experiment Matrix
 

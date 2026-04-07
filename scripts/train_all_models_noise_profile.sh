@@ -16,6 +16,8 @@ NOISE_SCALE="1.0"
 NOISE_WARMUP_EPOCHS="20"
 NOISE_RAMP="80"
 NOISE_MIX_RATIO="0.5"
+BLOCK_EVAL_NOISE_PROFILES="clean nominal_eval"
+HELDOUT_EVAL_NOISE_PROFILES="clean nominal_eval degraded_eval"
 PREFIX=""
 EXTRA_TRAIN_ARGS=()
 
@@ -41,6 +43,11 @@ Options:
   --noise-warmup-epochs N           Fully clean warmup epochs. Default: 20
   --noise-ramp N                    Ramp length after warmup. Default: 80
   --noise-mix-ratio FLOAT           Fraction of training batches using noisy IC. Default: 0.5
+  --block-eval-noise-profiles "A B" Post-training block eval profiles.
+                                    Default: "clean nominal_eval"
+  --heldout-eval-noise-profiles "A B"
+                                    Post-training heldout eval profiles.
+                                    Default: "clean nominal_eval degraded_eval"
   --prefix NAME                     Prefix embedded in the suite folder name
   --suite-name NAME                 Explicit suite folder name under checkpoints/
   --extra-train-arg ARG             Extra arg forwarded to training; repeatable
@@ -125,6 +132,14 @@ while [[ $# -gt 0 ]]; do
       NOISE_MIX_RATIO="$2"
       shift 2
       ;;
+    --block-eval-noise-profiles)
+      BLOCK_EVAL_NOISE_PROFILES="$2"
+      shift 2
+      ;;
+    --heldout-eval-noise-profiles)
+      HELDOUT_EVAL_NOISE_PROFILES="$2"
+      shift 2
+      ;;
     --prefix)
       PREFIX="$2"
       shift 2
@@ -197,6 +212,10 @@ cmd=(
   --extra-train-arg "${NOISE_RAMP}"
   --extra-train-arg "--noise_mix_ratio"
   --extra-train-arg "${NOISE_MIX_RATIO}"
+  --extra-train-arg "--block_eval_noise_profiles"
+  --extra-train-arg "${BLOCK_EVAL_NOISE_PROFILES}"
+  --extra-train-arg "--heldout_eval_noise_profiles"
+  --extra-train-arg "${HELDOUT_EVAL_NOISE_PROFILES}"
 )
 if [[ -n "${MODELS}" ]]; then
   cmd+=(--models "${MODELS}")
@@ -221,6 +240,7 @@ if [[ -n "${MODELS}" ]]; then
 fi
 echo "Seeds: ${SEEDS}"
 echo "Noise config: profile=${NOISE_PROFILE}, scale=${NOISE_SCALE}, warmup=${NOISE_WARMUP_EPOCHS}, ramp=${NOISE_RAMP}, mix_ratio=${NOISE_MIX_RATIO}"
+echo "Auto-eval profiles: block=[${BLOCK_EVAL_NOISE_PROFILES}] heldout=[${HELDOUT_EVAL_NOISE_PROFILES}]"
 "${cmd[@]}"
 
 if [[ -n "${SUITE_NAME}" ]]; then
