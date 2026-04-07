@@ -17,7 +17,7 @@ Usage:
     python train_auv_hamnode.py --dataset ./data/auv_dataset.pkl
     python train_auv_hamnode.py --dataset ./data/dataset.pkl --model_type se3_accel_blackbox
     python train_auv_hamnode.py --dataset ./data/dataset.pkl --model_type blackbox_fullstate --batch_size 2048 --total_steps 7000 --epochs 200
-    python train_auv_hamnode.py --dataset ./data/dataset.pkl --noise_level 2
+    python train_auv_hamnode.py --dataset ./data/dataset.pkl --noise_profile nominal_train
 """
 
 import torch
@@ -36,13 +36,13 @@ import argparse
 from torchdiffeq import odeint
 
 from train_utils import (
-    TrainConfig, StateNormalizer, TrainingLogger,
+    NoiseConfig, TrainConfig, StateNormalizer, TrainingLogger,
     se3_trajectory_loss,
     save_checkpoint, evaluate_trajectory_prediction,
     print_evaluation_results, setup_logging,
     load_dataset, get_train_blocks, evaluate_heldout_trajectories,
     print_heldout_evaluation_results, save_heldout_evaluation_results,
-    save_block_evaluation_results, build_noisy_training_pair,
+    save_block_evaluation_results, build_noisy_initial_condition,
     adapt_state_array_for_model,
     validate_depth_conditioning_support,
     create_dataloaders_from_dataset,
@@ -238,13 +238,18 @@ class AUVHamNODETrainer:
 
             # Build (possibly noisy) initial condition; supervision is always clean.
             noise_cfg = self.config.get_noise_config()
-            if train and noise_cfg.is_active:
-                noisy_block = build_noisy_training_pair(
-                    batch, noise_cfg, epoch, t_eval_dev,
-                    u_dim=self.config.u_dim,
-                    ocean_current=self.config.ocean_current,
+            use_noisy_ic = False
+            if train and noise_cfg.is_active and noise_cfg.epoch_scale(epoch) > 0.0:
+                use_noisy_ic = float(torch.rand((), device=batch.device).item()) < noise_cfg.mix_ratio
+
+            if use_noisy_ic:
+                y0 = build_noisy_initial_condition(
+                    batch[:, 0],
+                    noise_cfg,
+                    self.model,
+                    self.normalizer,
+                    epoch,
                 )
-                y0 = self.model.to_ode_state(noisy_block[:, 0])
             else:
                 y0 = self.model.to_ode_state(batch[:, 0])
 
@@ -269,7 +274,7 @@ class AUVHamNODETrainer:
             target_ode = self.model.to_ode_state(batch)
             loss_target = target_ode
             loss_pred = pred_ode
-            if train and noise_cfg.is_active and target_ode.shape[1] > 1:
+            if use_noisy_ic and target_ode.shape[1] > 1:
                 # Skip t=0: y0 is noisy but target[:, 0] is clean, so the
                 # t=0 residual reflects the injected IC noise, not dynamics error.
                 loss_target = target_ode[:, 1:]
@@ -540,27 +545,53 @@ def train_auv_hamnode(
 
     logger.info("Running detailed evaluation...")
     model = trainer.get_model()
-    results = evaluate_trajectory_prediction(
-        model, test_loader, t_eval,
-        torch.device(config.device),
-        ode_solver=config.ode_solver,
-        n_samples=min(500, len(test_loader.dataset)),
-    )
-    print_evaluation_results(results, logger)
+    eval_device = torch.device(config.device)
+    block_eval_profiles = {
+        "clean": None,
+        "nominal_eval": NoiseConfig(profile="nominal_eval", warmup_epochs=0, ramp_epochs=1),
+    }
+    results = {}
+    for profile_name, noise_cfg in block_eval_profiles.items():
+        logger.info(f"Block evaluation profile: {profile_name}")
+        profile_results = evaluate_trajectory_prediction(
+            model,
+            test_loader,
+            t_eval,
+            eval_device,
+            ode_solver=config.ode_solver,
+            n_samples=min(500, len(test_loader.dataset)),
+            noise_cfg=noise_cfg,
+            normalizer=normalizer,
+            noise_seed=config.seed + 1000,
+        )
+        print_evaluation_results(profile_results, logger)
+        results[profile_name] = profile_results
     save_block_evaluation_results(results, trainer.run_dir)
 
     with open(trainer.run_dir / "evaluation_results.pkl", "wb") as f:
         pickle.dump(results, f)
 
     logger.info("Running held-out trajectory evaluation...")
-    heldout_results = evaluate_heldout_trajectories(
-        model,
-        dataset,
-        t_eval,
-        torch.device(config.device),
-        ode_solver=config.ode_solver,
-    )
-    print_heldout_evaluation_results(heldout_results, logger)
+    heldout_eval_profiles = {
+        "clean": None,
+        "nominal_eval": NoiseConfig(profile="nominal_eval", warmup_epochs=0, ramp_epochs=1),
+        "degraded_eval": NoiseConfig(profile="degraded_eval", warmup_epochs=0, ramp_epochs=1),
+    }
+    heldout_results = {}
+    for profile_name, noise_cfg in heldout_eval_profiles.items():
+        logger.info(f"Held-out evaluation profile: {profile_name}")
+        profile_results = evaluate_heldout_trajectories(
+            model,
+            dataset,
+            t_eval,
+            eval_device,
+            ode_solver=config.ode_solver,
+            noise_cfg=noise_cfg,
+            normalizer=normalizer,
+            noise_seed=config.seed + 2000,
+        )
+        print_heldout_evaluation_results(profile_results, logger)
+        heldout_results[profile_name] = profile_results
     save_heldout_evaluation_results(heldout_results, trainer.run_dir)
 
     with open(trainer.run_dir / "heldout_evaluation.pkl", "wb") as f:
@@ -607,13 +638,22 @@ def main():
                         default="cuda" if torch.cuda.is_available() else "cpu")
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument(
+        "--noise_profile",
+        type=str,
+        default=None,
+        choices=["clean", "nominal_train", "nominal_eval", "degraded_eval"],
+        help=(
+            "Preferred noise interface. "
+            "clean=disable noisy IC, "
+            "nominal_train=default mild IC regularization, "
+            "nominal_eval/degraded_eval mainly for ablation."
+        ),
+    )
+    parser.add_argument(
         "--noise_level", type=int, default=0, choices=[0, 1, 2, 3],
         help=(
-            "Training-time sensor noise level: "
-            "0=clean (no noise), "
-            "1=ic (white Gaussian on initial condition only), "
-            "2=nav (full-trajectory AR(1) DVL/IMU noise + bias), "
-            "3=nav_deg (nav + DVL dropout + random-walk bias + multiplicative noise)"
+            "Legacy noise interface kept for backward compatibility. "
+            "Mapped to profiles: 0=clean, 1=nominal_train, 2=nominal_eval, 3=degraded_eval."
         ),
     )
     parser.add_argument(
@@ -622,7 +662,15 @@ def main():
     )
     parser.add_argument(
         "--noise_ramp", type=int, default=100,
-        help="Curriculum ramp: noise increases linearly from 0 to full over N epochs",
+        help="Ramp length after clean warmup for noisy-IC magnitude",
+    )
+    parser.add_argument(
+        "--noise_warmup_epochs", type=int, default=20,
+        help="Number of fully clean epochs before noisy-IC regularization starts",
+    )
+    parser.add_argument(
+        "--noise_mix_ratio", type=float, default=0.5,
+        help="Fraction of training batches using noisy IC after warmup",
     )
     parser.add_argument("--ocean_current", action="store_true",
                         help="Enable ocean current awareness (requires 27D dataset)")
@@ -680,9 +728,12 @@ def main():
         run_name=args.run_name,
         device=args.device,
         seed=args.seed,
+        noise_profile=args.noise_profile,
         noise_level=args.noise_level,
         noise_scale=args.noise_scale,
         noise_ramp_epochs=args.noise_ramp,
+        noise_warmup_epochs=args.noise_warmup_epochs,
+        noise_mix_ratio=args.noise_mix_ratio,
         ocean_current=args.ocean_current,
         dj_current_feature=dj_current_feature,
         actuation_current_feature=actuation_current_feature,

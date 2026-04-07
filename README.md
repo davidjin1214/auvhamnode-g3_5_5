@@ -153,6 +153,13 @@ python train_auv_hamnode.py \
 
 ### Noisy training
 
+The current implementation uses **IC-only noise regularization**. Noise is
+applied to the rollout initial condition only, using profile-based settings.
+
+Recommended profile for training:
+
+- `--noise_profile nominal_train`
+
 No current, with training noise:
 
 ```bash
@@ -160,8 +167,7 @@ python train_auv_hamnode.py \
   --dataset ./data/noc/auv_noc_traj500_blk150_s42_<dataset_id>.pkl \
   --model_type phnode_full \
   --save_dir ./checkpoints \
-  --init_state_noise \
-  --observation_noise
+  --noise_profile nominal_train
 ```
 
 With current, with training noise:
@@ -171,21 +177,27 @@ python train_auv_hamnode.py \
   --dataset ./data/oc/auv_oc_traj500_blk150_s42_<dataset_id>.pkl \
   --model_type phnode_full \
   --save_dir ./checkpoints \
-  --init_state_noise \
-  --observation_noise
+  --noise_profile nominal_train
 ```
 
-If you want persistent sensor-style bias as well:
+Useful noise-related overrides:
 
 ```bash
---observation_bias
+--noise_warmup_epochs 20
+--noise_ramp 80
+--noise_mix_ratio 0.5
+--noise_scale 1.0
 ```
 
-If you want to change the noise ramp:
+Available profiles:
 
-```bash
---noise_ramp_epochs 100
-```
+- `clean`: disable noisy IC
+- `nominal_train`: recommended mild training regularization
+- `nominal_eval`: evaluation profile for normal navigation uncertainty
+- `degraded_eval`: stronger evaluation-only stress profile
+
+Legacy `--noise_level {0,1,2,3}` is still accepted for backward compatibility,
+but `--noise_profile` is the preferred interface.
 
 ### Current-aware feature options
 
@@ -254,6 +266,35 @@ Run both stages end-to-end:
 
 This wrapper now runs training, rollout evaluation, and final sweep summarization in one pass.
 
+### Noise-profile sweep scripts
+
+For the current profile-based noisy-IC workflow, prefer these wrappers:
+
+Train a noisy sweep:
+
+```bash
+bash ./scripts/train_all_models_noise_profile.sh \
+  --profile oc \
+  --group core \
+  --noise-profile nominal_train \
+  --noise-warmup-epochs 20 \
+  --noise-ramp 80 \
+  --noise-mix-ratio 0.5 \
+  --noise-scale 1.0
+```
+
+Run the matching benchmark, sweep summary, and experiment report:
+
+```bash
+bash ./scripts/eval_all_models_noise_profile.sh \
+  --suite-dir ./checkpoints/<suite_name> \
+  --mode heldout
+```
+
+These wrappers sit on top of `batch_train_models.sh` and `batch_eval_models.sh`,
+but expose the current noise controls directly. They are the recommended entry
+point for new noisy-training experiments.
+
 Summarize a completed sweep across seeds and models:
 
 ```bash
@@ -271,6 +312,16 @@ Useful sweep controls:
 --seeds "42 43 44"
 --prefix oc_core_default
 --device cuda:0
+```
+
+Useful noisy-sweep controls:
+
+```bash
+--noise-profile nominal_train
+--noise-scale 1.0
+--noise-warmup-epochs 20
+--noise-ramp 80
+--noise-mix-ratio 0.5
 ```
 
 Each sweep creates a suite directory under `./checkpoints/`, for example:
@@ -375,8 +426,7 @@ Training:
 python train_auv_hamnode.py \
   --dataset ./data/noc/auv_noc_traj500_blk150_s42_<dataset_id>.pkl \
   --model_type phnode_full \
-  --init_state_noise \
-  --observation_noise
+  --noise_profile nominal_train
 ```
 
 ### C. Current, clean
@@ -406,8 +456,7 @@ Training:
 python train_auv_hamnode.py \
   --dataset ./data/oc/auv_oc_traj500_blk150_s42_<dataset_id>.pkl \
   --model_type phnode_full \
-  --init_state_noise \
-  --observation_noise
+  --noise_profile nominal_train
 ```
 
 This is the most realistic and most important setting if your goal is a convincing real-world dynamics story.
@@ -416,13 +465,15 @@ This is the most realistic and most important setting if your goal is a convinci
 
 ### 1. `oc` noise behavior
 
-The current root version uses a simple `oc`-aware noise scheme:
+The current root version uses an `oc`-aware **IC-consistent** noise scheme:
 
-- initial-condition noise perturbs both velocity and ocean-current channels
-- observation noise perturbs both body velocity and inertial current channels
-- the implementation preserves consistency between `nu_r`, `nu_total`, and `v_c^n`
+- noise is defined around the initial navigation-state uncertainty, not a full noisy sequence
+- OC runs perturb the model-space relative velocity budget and then reconstruct a consistent data-space state
+- the implementation preserves consistency between `nu_r`, `nu_total`, `R`, and `v_c^n`
 
-This is intentionally simpler than the heavier `original/bf3n` unified noise constructor.
+This is intentionally simpler than the older trajectory-level noise design. If
+you need the detailed rationale, see
+[docs/noise_robustness_experiment_design_codex.md](/Users/xiangjin/Library/CloudStorage/OneDrive-Personal/我的/Code/auv_se3node/g3_5_5/docs/noise_robustness_experiment_design_codex.md).
 
 ### 2. When to use `heldout` vs `resampled`
 
@@ -496,8 +547,7 @@ python train_auv_hamnode.py \
   --dataset "$DATASET" \
   --model_type phnode_full \
   --save_dir ./checkpoints \
-  --init_state_noise \
-  --observation_noise
+  --noise_profile nominal_train
 ```
 
 Evaluate rollout benchmark:
@@ -509,6 +559,18 @@ python evaluate_rollout_benchmark.py \
   --output_dir ./rollout_benchmark_results \
   --times 10 30 60 \
   --scenarios PRBS CHIRP OU
+```
+
+Or run the same workflow as a sweep:
+
+```bash
+bash ./scripts/train_all_models_noise_profile.sh \
+  --profile oc \
+  --group core
+
+bash ./scripts/eval_all_models_noise_profile.sh \
+  --suite-dir ./checkpoints/<suite_name> \
+  --mode heldout
 ```
 
 ## File Lookup Tips

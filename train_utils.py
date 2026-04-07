@@ -86,48 +86,27 @@ def get_dataset_training_defaults(
 
 @dataclass
 class NoiseConfig:
-    """Internal noise configuration for training-time state perturbations.
+    """Noise configuration aligned with the current IC-only training interface."""
 
-    Instantiate via ``TrainConfig.get_noise_config()``.  CLI users only need three parameters
-    (``--noise_level``, ``--noise_scale``, ``--noise_ramp``); the remaining
-    fields are expert overrides with physically motivated defaults.
-
-    Noise hierarchy
-    ---------------
-    Level 0  No noise (clean training).
-    Level 1  White Gaussian at t=0 only (initial-condition perturbation).
-             Models pose initialization uncertainty at AUV deployment.
-    Level 2  Full-trajectory AR(1) correlated noise + block-constant bias.
-             Models DVL/IMU navigation-quality sensor noise in normal
-             operating conditions.
-    Level 3  Level 2 + random-walk bias + DVL dropout + multiplicative noise.
-             Models degraded navigation: shallow water, turbulence, or DVL
-             bottom-lock loss.
-    """
-
-    level: int = 0              # 0=clean  1=ic  2=nav  3=nav_deg
-    scale: float = 1.0          # global magnitude multiplier (ablation knob)
-    ramp_epochs: int = 100      # curriculum: noise linearly ramps 0→full
-
-    # --- Layer 1: white measurement noise (active for levels 1-3) ----------
-    vel_lin_std: float = 0.02   # m/s    DVL linear-velocity noise RMS
-    vel_ang_std: float = 0.005  # rad/s  IMU angular-rate noise RMS
-    rot_init_std: float = 0.005 # rad    initial attitude uncertainty
-    act_noise_std: float = 0.005  # actuator state noise (absolute units)
-    current_std: float = 0.05   # m/s    current-estimation noise (OC only)
-
-    # --- Layer 2: temporal structure (active for levels 2-3) ---------------
-    ar1_corr: float = 0.85      # AR(1) per-step temporal correlation
-    bias_ratio: float = 0.25    # block bias std = bias_ratio × white std
-
-    # --- Layer 3: structural degradation (active for level 3 only) ---------
-    dropout_prob: float = 0.12  # per-step DVL dropout probability
-    walk_ratio: float = 0.05    # bias random-walk step = walk_ratio × white std
-    mult_coeff: float = 0.003   # multiplicative noise coefficient (~0.3 %/reading)
+    profile: str = "clean"      # clean / nominal_train / nominal_eval / degraded_eval
+    scale: float = 1.0          # global magnitude multiplier
+    warmup_epochs: int = 20     # fully clean warmup before noisy IC regularization
+    ramp_epochs: int = 80       # linear ramp after warmup
+    mix_ratio: float = 0.5      # fraction of training samples using noisy IC
+    linear_floor_std: float = 0.005   # m/s
+    angular_floor_std: float = 0.0015 # rad/s
 
     @property
     def is_active(self) -> bool:
-        return self.level > 0
+        return self.profile != "clean"
+
+    def epoch_scale(self, epoch: int) -> float:
+        if not self.is_active:
+            return 0.0
+        if epoch <= self.warmup_epochs:
+            return 0.0
+        ramp_progress = (epoch - self.warmup_epochs) / max(self.ramp_epochs, 1)
+        return min(max(ramp_progress, 0.0), 1.0) * self.scale
 
 
 def setup_logging(log_dir: Path, name: str = "training") -> logging.Logger:
@@ -182,23 +161,29 @@ class TrainConfig:
     device: str = "cuda" if torch.cuda.is_available() else "cpu"
     seed: int = 42
 
-    # Training-time noise injection (see NoiseConfig for full descriptions).
-    # Three CLI parameters cover the common cases; the noise_* expert fields
-    # below can be overridden for ablation studies without touching the CLI.
-    noise_level: int = 0              # 0=clean  1=ic  2=nav  3=nav_deg
+    # Training-time noise injection. ``noise_profile`` is the preferred
+    # interface. The remaining noise_* fields are retained for backward
+    # compatibility with older configs and scripts.
+    noise_profile: Optional[str] = None
+    noise_level: int = 0              # legacy alias: 0=clean 1=nominal_train 2=nominal_eval 3=degraded_eval
     noise_scale: float = 1.0          # global noise magnitude multiplier
     noise_ramp_epochs: int = 100      # curriculum ramp: 0 → full over N epochs
-    # Expert overrides (rarely need changing from defaults)
-    noise_vel_lin_std: float = 0.02   # m/s    DVL linear-velocity noise RMS
-    noise_vel_ang_std: float = 0.005  # rad/s  IMU angular-rate noise RMS
-    noise_rot_init_std: float = 0.005 # rad    initial attitude uncertainty
-    noise_act_noise_std: float = 0.005  # actuator state noise (absolute)
-    noise_current_std: float = 0.05   # m/s    current-estimation noise (OC)
-    noise_ar1_corr: float = 0.85      # AR(1) per-step temporal correlation
-    noise_bias_ratio: float = 0.25    # block bias std = ratio × white std
-    noise_dropout_prob: float = 0.12  # per-step DVL dropout probability
-    noise_walk_ratio: float = 0.05    # bias random-walk step fraction
-    noise_mult_coeff: float = 0.003   # multiplicative noise coefficient
+    noise_warmup_epochs: int = 20     # clean warmup before enabling noisy IC
+    noise_mix_ratio: float = 0.5      # fraction of samples using noisy IC
+    noise_linear_floor_std: float = 0.005   # m/s
+    noise_angular_floor_std: float = 0.0015 # rad/s
+    # Legacy fields kept so old configs still load. The IC-only profile path no
+    # longer consumes these values directly.
+    noise_vel_lin_std: float = 0.02
+    noise_vel_ang_std: float = 0.005
+    noise_rot_init_std: float = 0.005
+    noise_act_noise_std: float = 0.005
+    noise_current_std: float = 0.05
+    noise_ar1_corr: float = 0.85
+    noise_bias_ratio: float = 0.25
+    noise_dropout_prob: float = 0.12
+    noise_walk_ratio: float = 0.05
+    noise_mult_coeff: float = 0.003
 
     # Ocean current
     ocean_current: bool = False
@@ -242,8 +227,9 @@ class TrainConfig:
         ).hexdigest()[:8]
 
         tags = []
-        if self.noise_level > 0:
-            tags.append(f"noise-l{self.noise_level}")
+        profile = self.resolved_noise_profile()
+        if profile != "clean":
+            tags.append(f"noise-{profile}")
         if self.ocean_current:
             tags.append("oc")
         tag_suffix = f"_{'-'.join(tags)}" if tags else ""
@@ -284,21 +270,27 @@ class TrainConfig:
 
     def get_noise_config(self) -> "NoiseConfig":
         """Extract a NoiseConfig from this TrainConfig's noise_* fields."""
+        profile = self.resolved_noise_profile()
         return NoiseConfig(
-            level=self.noise_level,
+            profile=profile,
             scale=self.noise_scale,
+            warmup_epochs=self.noise_warmup_epochs,
             ramp_epochs=self.noise_ramp_epochs,
-            vel_lin_std=self.noise_vel_lin_std,
-            vel_ang_std=self.noise_vel_ang_std,
-            rot_init_std=self.noise_rot_init_std,
-            act_noise_std=self.noise_act_noise_std,
-            current_std=self.noise_current_std,
-            ar1_corr=self.noise_ar1_corr,
-            bias_ratio=self.noise_bias_ratio,
-            dropout_prob=self.noise_dropout_prob,
-            walk_ratio=self.noise_walk_ratio,
-            mult_coeff=self.noise_mult_coeff,
+            mix_ratio=self.noise_mix_ratio,
+            linear_floor_std=self.noise_linear_floor_std,
+            angular_floor_std=self.noise_angular_floor_std,
         )
+
+    def resolved_noise_profile(self) -> str:
+        if self.noise_profile is not None:
+            return self.noise_profile
+        legacy_map = {
+            0: "clean",
+            1: "nominal_train",
+            2: "nominal_eval",
+            3: "degraded_eval",
+        }
+        return legacy_map.get(int(self.noise_level), "clean")
 
 
 @dataclass
@@ -569,181 +561,179 @@ def _dvl_dropout_freeze(
     return delta_nu
 
 
-def build_noisy_training_pair(
-    clean_block: torch.Tensor,
-    cfg: NoiseConfig,
-    epoch: int,
-    t_eval: Optional[torch.Tensor],
-    *,
+def _profile_alpha(profile: str) -> float:
+    return {
+        "nominal_train": 0.03,
+        "nominal_eval": 0.05,
+        "degraded_eval": 0.10,
+    }.get(profile, 0.0)
+
+
+def _profile_rotation_std(profile: str) -> float:
+    return {
+        "nominal_train": 0.0035,
+        "nominal_eval": 0.0050,
+        "degraded_eval": 0.0120,
+    }.get(profile, 0.0)
+
+
+def _profile_current_std(profile: str, dtype: torch.dtype, device: torch.device) -> torch.Tensor:
+    table = {
+        "nominal_train": [0.008, 0.008, 0.004],
+        "nominal_eval": [0.012, 0.012, 0.006],
+        "degraded_eval": [0.030, 0.030, 0.015],
+    }
+    values = table.get(profile, [0.0, 0.0, 0.0])
+    return torch.tensor(values, dtype=dtype, device=device)
+
+
+def _profile_actuator_std(
+    profile: str,
     u_dim: int,
-    ocean_current: bool,
+    std_act: Optional[torch.Tensor],
+    dtype: torch.dtype,
+    device: torch.device,
 ) -> torch.Tensor:
-    """Build a noisy observation block for robust training.
+    if u_dim == 3:
+        table = {
+            "nominal_train": [0.002, 0.002, 3.0],
+            "nominal_eval": [0.003, 0.003, 5.0],
+            "degraded_eval": [0.008, 0.008, 15.0],
+        }
+        values = table.get(profile, [0.0, 0.0, 0.0])
+        return torch.tensor(values, dtype=dtype, device=device)
 
-    Applies a coherent sensor-noise model so that the returned noisy_block
-    is internally consistent: the initial condition (noisy_block[:, 0]) is
-    the t=0 slice of the same noise realization that corrupts the trajectory.
-    Callers should use noisy_block[:, 0] as the ODE initial condition and
-    supervise against the *original* clean_block:
+    if std_act is None:
+        return torch.zeros(u_dim, dtype=dtype, device=device)
 
-        noisy  = build_noisy_training_pair(batch, cfg, epoch, t_eval,
-                                           u_dim=u_dim,
-                                           ocean_current=ocean_current)
-        y0     = model.to_ode_state(noisy[:, 0])
-        target = model.to_ode_state(batch)        # always clean ground truth
-        loss   = criterion(pred[:, 1:], target[:, 1:])   # skip t=0
+    ratio = {
+        "nominal_train": 0.015,
+        "nominal_eval": 0.025,
+        "degraded_eval": 0.05,
+    }.get(profile, 0.0)
+    return ratio * std_act.to(device=device, dtype=dtype)
 
-    Noise hierarchy
-    ---------------
-    Level 1  White Gaussian at t=0 only (initial-condition perturbation).
-    Level 2  Full-trajectory AR(1) noise + block-constant bias.
-    Level 3  Level 2 + random-walk bias + DVL dropout + multiplicative noise.
 
-    The output is in the same data convention as clean_block (total body
-    velocity nu_total at indices 12:18).  model.to_ode_state() handles the
-    OC relative-velocity conversion when extracting y0.
+def _sample_scaled_noise(
+    std: torch.Tensor,
+    batch_size: int,
+    *,
+    device: torch.device,
+    dtype: torch.dtype,
+    sample_ids: Optional[torch.Tensor] = None,
+    base_seed: Optional[int] = None,
+    stream: int = 0,
+) -> torch.Tensor:
+    std = std.to(device=device, dtype=dtype)
+    dim = int(std.numel())
+    if base_seed is None or sample_ids is None:
+        return std.view(1, dim) * torch.randn(batch_size, dim, dtype=dtype, device=device)
 
-    Args:
-        clean_block:  [B, T, D] tensor in data convention.
-        cfg:          NoiseConfig (from TrainConfig.get_noise_config()).
-        epoch:        Current epoch number (1-based) for curriculum scaling.
-        t_eval:       [T] sample times within the block; unit steps if None.
-        u_dim:        Number of actuator channels.
-        ocean_current: Whether the state includes ocean-current channels.
+    sample_ids = torch.as_tensor(sample_ids, dtype=torch.long).view(-1).cpu().tolist()
+    std_cpu = std.detach().cpu().to(dtype=torch.float32)
+    out = torch.empty(batch_size, dim, dtype=dtype, device=device)
+    for idx, sample_id in enumerate(sample_ids):
+        gen = torch.Generator(device="cpu")
+        gen.manual_seed(int(base_seed) + 1000003 * int(sample_id) + 7919 * int(stream))
+        draw = torch.randn(dim, generator=gen, dtype=torch.float32)
+        out[idx] = (std_cpu * draw).to(device=device, dtype=dtype)
+    return out
 
-    Returns:
-        noisy_block: [B, T, D] in data convention.
-    """
-    if cfg.level == 0:
-        return clean_block.clone()
 
-    scale = min(epoch / max(cfg.ramp_epochs, 1), 1.0) * cfg.scale
+def build_noisy_initial_condition(
+    clean_state: torch.Tensor,
+    cfg: NoiseConfig,
+    model: nn.Module,
+    normalizer: StateNormalizer,
+    epoch: int,
+    *,
+    sample_ids: Optional[torch.Tensor] = None,
+    base_seed: Optional[int] = None,
+) -> torch.Tensor:
+    """Perturb the clean initial state in ODE space using IC-consistent noise."""
+    y0 = model.to_ode_state(clean_state).clone()
+    scale = cfg.epoch_scale(epoch)
     if scale < 1e-8:
-        return clean_block.clone()
+        return y0
 
-    B, T, D = clean_block.shape
-    device = clean_block.device
-    dtype = clean_block.dtype
+    batch_size = int(y0.shape[0])
+    device = y0.device
+    dtype = y0.dtype
+    layout = model.layout
 
-    dt = (
-        torch.ones(max(T - 1, 1), dtype=dtype, device=device)
-        if (t_eval is None or T <= 1)
-        else torch.diff(t_eval.to(device=device, dtype=dtype))
+    vel_std = normalizer.std_vel.to(device=device, dtype=dtype)
+    alpha = _profile_alpha(cfg.profile)
+    vel_floor = torch.tensor(
+        [
+            cfg.linear_floor_std,
+            cfg.linear_floor_std,
+            cfg.linear_floor_std,
+            cfg.angular_floor_std,
+            cfg.angular_floor_std,
+            cfg.angular_floor_std,
+        ],
+        dtype=dtype,
+        device=device,
+    )
+    nu_r_std = scale * torch.maximum(alpha * vel_std, vel_floor)
+    y0[:, layout.nu_r] = y0[:, layout.nu_r] + _sample_scaled_noise(
+        nu_r_std,
+        batch_size,
+        device=device,
+        dtype=dtype,
+        sample_ids=sample_ids,
+        base_seed=base_seed,
+        stream=11,
     )
 
-    u_act_sl, _, v_c_sl = actuator_slices(u_dim, ocean_current)
+    rot_std = scale * _profile_rotation_std(cfg.profile)
+    if rot_std > 0.0:
+        delta_theta = _sample_scaled_noise(
+            torch.full((3,), rot_std, dtype=dtype, device=device),
+            batch_size,
+            device=device,
+            dtype=dtype,
+            sample_ids=sample_ids,
+            base_seed=base_seed,
+            stream=23,
+        )
+        R_clean = y0[:, 3:12].reshape(batch_size, 3, 3)
+        R_delta = _so3_exp_map(delta_theta)
+        y0[:, 3:12] = _project_to_so3(torch.matmul(R_delta, R_clean)).reshape(batch_size, 9)
 
-    # Clean quantities — data convention: nu_total (total body velocity) at 12:18.
-    R_c = clean_block[..., 3:12].reshape(B, T, 3, 3)
-    nu_total_c = clean_block[..., 12:18]
-    u_act_c = clean_block[..., u_act_sl]
-    v_c_c = (
-        clean_block[..., v_c_sl]
-        if ocean_current and v_c_sl is not None and D >= v_c_sl.stop
-        else None
+    u_act_dim = int(layout.u_act.stop - layout.u_act.start)
+    act_std = scale * _profile_actuator_std(
+        cfg.profile,
+        u_act_dim,
+        normalizer.std_act,
+        dtype=dtype,
+        device=device,
     )
+    if torch.any(act_std > 0):
+        y0[:, layout.u_act] = y0[:, layout.u_act] + _sample_scaled_noise(
+            act_std,
+            batch_size,
+            device=device,
+            dtype=dtype,
+            sample_ids=sample_ids,
+            base_seed=base_seed,
+            stream=37,
+        )
 
-    # ------------------------------------------------------------------ #
-    # Velocity noise  δν : [B, T, 6]
-    # ------------------------------------------------------------------ #
-    lin_std = scale * cfg.vel_lin_std
-    ang_std = scale * cfg.vel_ang_std
-    vel_std = torch.tensor(
-        [lin_std, lin_std, lin_std, ang_std, ang_std, ang_std],
-        dtype=dtype, device=device,
-    )
+    if getattr(model, "ocean_current", False):
+        current_std = scale * _profile_current_std(cfg.profile, dtype=dtype, device=device)
+        if torch.any(current_std > 0):
+            y0[:, layout.v_c] = y0[:, layout.v_c] + _sample_scaled_noise(
+                current_std,
+                batch_size,
+                device=device,
+                dtype=dtype,
+                sample_ids=sample_ids,
+                base_seed=base_seed,
+                stream=53,
+            )
 
-    if cfg.level == 1:
-        # IC-only: white noise at t=0; t>0 zeroed (caller only uses [:, 0]).
-        delta_nu = torch.zeros(B, T, 6, dtype=dtype, device=device)
-        delta_nu[:, 0] = vel_std * torch.randn(B, 6, dtype=dtype, device=device)
-    else:
-        # Level 2+: AR(1) correlated noise over the full trajectory.
-        delta_nu = _correlated_gaussian_noise(
-            B, T, 6, vel_std, device, correlation=cfg.ar1_corr)
-        # Block-constant bias (INS initialization offset).
-        bias = cfg.bias_ratio * vel_std.view(1, 1, 6) * torch.randn(
-            B, 1, 6, dtype=dtype, device=device)
-        delta_nu = delta_nu + bias
-
-    if cfg.level >= 3:
-        # Random-walk bias (IMU bias instability).
-        walk = cfg.walk_ratio * vel_std.view(1, 1, 6) * torch.randn(
-            B, T, 6, dtype=dtype, device=device)
-        delta_nu = delta_nu + torch.cumsum(walk, dim=1)
-        # Multiplicative noise (~0.3 % of DVL reading).
-        delta_nu = delta_nu + cfg.mult_coeff * nu_total_c.abs() * torch.randn(
-            B, T, 6, dtype=dtype, device=device)
-        # DVL dropout: freeze noise at last valid step.
-        delta_nu = _dvl_dropout_freeze(delta_nu, cfg.dropout_prob)
-
-    # ------------------------------------------------------------------ #
-    # Attitude: initial perturbation + integrated angular-rate noise  [B, T, 3]
-    # ------------------------------------------------------------------ #
-    delta_theta_0 = (
-        scale * cfg.rot_init_std * torch.randn(B, 3, dtype=dtype, device=device)
-    )
-    theta_err = torch.zeros(B, T, 3, dtype=dtype, device=device)
-    theta_err[:, 0] = delta_theta_0
-    if T > 1:
-        theta_err[:, 1:] = delta_theta_0.unsqueeze(1) + torch.cumsum(
-            dt.view(1, T - 1, 1) * delta_nu[:, :-1, 3:6], dim=1)
-
-    # Proper SO(3) exponential map (exact, no first-order approximation).
-    R_delta = _so3_exp_map(theta_err)                          # [B, T, 3, 3]
-    R_noisy = _project_to_so3(torch.matmul(R_delta, R_c))
-
-    # ------------------------------------------------------------------ #
-    # Position drift from translational velocity error  [B, T, 3]
-    # ------------------------------------------------------------------ #
-    pos_drift = torch.zeros(B, T, 3, dtype=dtype, device=device)
-    if T > 1:
-        vel_err_world = torch.matmul(
-            R_c[:, :-1], delta_nu[:, :-1, :3].unsqueeze(-1)).squeeze(-1)
-        pos_drift[:, 1:] = torch.cumsum(
-            dt.view(1, T - 1, 1) * vel_err_world, dim=1)
-
-    pos_noisy = clean_block[..., :3] + pos_drift
-    # pos_noisy[:, 0] = 0 + 0 = 0  (block-origin convention preserved)
-
-    # ------------------------------------------------------------------ #
-    # Ocean current noise  [B, T, 3]  — OC datasets only
-    # ------------------------------------------------------------------ #
-    v_c_noisy = None
-    if v_c_c is not None:
-        c_std_t = torch.full((3,), scale * cfg.current_std, dtype=dtype, device=device)
-        if cfg.level == 1:
-            delta_vc = torch.zeros(B, T, 3, dtype=dtype, device=device)
-            delta_vc[:, 0] = c_std_t * torch.randn(B, 3, dtype=dtype, device=device)
-        else:
-            delta_vc = _correlated_gaussian_noise(
-                B, T, 3, c_std_t, device, correlation=cfg.ar1_corr)
-        v_c_noisy = v_c_c + delta_vc
-        # Current-estimation error also contributes to position drift (OC fix).
-        if T > 1:
-            pos_noisy[:, 1:] = pos_noisy[:, 1:] + torch.cumsum(
-                dt.view(1, T - 1, 1) * delta_vc[:, :-1], dim=1)
-
-    # ------------------------------------------------------------------ #
-    # Actuator state noise
-    # ------------------------------------------------------------------ #
-    act_std = scale * cfg.act_noise_std
-    u_act_noisy = u_act_c + act_std * torch.randn(
-        B, T, u_dim, dtype=dtype, device=device)
-
-    # ------------------------------------------------------------------ #
-    # Assemble noisy block — data convention throughout
-    # ------------------------------------------------------------------ #
-    noisy = clean_block.clone()
-    noisy[..., :3] = pos_noisy
-    noisy[..., 3:12] = R_noisy.reshape(B, T, 9)
-    noisy[..., 12:18] = nu_total_c + delta_nu    # data convention: total velocity
-    noisy[..., u_act_sl] = u_act_noisy
-    # u_cmd unchanged: controller commands are not observed sensor states.
-    if v_c_noisy is not None and v_c_sl is not None:
-        noisy[..., v_c_sl] = v_c_noisy
-
-    return noisy
+    return y0
 
 
 class AUVDataset(Dataset):
@@ -1028,6 +1018,11 @@ def _evaluate_block_batch_with_fallback(
     t_eval: torch.Tensor,
     device: torch.device,
     ode_solver: str,
+    *,
+    noise_cfg: Optional[NoiseConfig] = None,
+    normalizer: Optional[StateNormalizer] = None,
+    noise_seed: Optional[int] = None,
+    sample_ids: Optional[np.ndarray] = None,
 ) -> Tuple[Dict[int, torch.Tensor], Dict[int, str]]:
     """Evaluate a batch of independent blocks while isolating failing samples."""
     from torchdiffeq import odeint
@@ -1036,8 +1031,23 @@ def _evaluate_block_batch_with_fallback(
     batch_size = int(batch.shape[0])
     if batch_size == 0:
         return {}, {}
+    if sample_ids is None:
+        sample_ids = np.arange(batch_size, dtype=np.int64)
 
-    y0 = model.to_ode_state(batch[:, 0])
+    if noise_cfg is not None and noise_cfg.is_active:
+        if normalizer is None:
+            raise ValueError("normalizer is required for noisy evaluation.")
+        y0 = build_noisy_initial_condition(
+            batch[:, 0],
+            noise_cfg,
+            model,
+            normalizer,
+            epoch=noise_cfg.warmup_epochs + noise_cfg.ramp_epochs,
+            sample_ids=torch.tensor(sample_ids, dtype=torch.long),
+            base_seed=noise_seed,
+        )
+    else:
+        y0 = model.to_ode_state(batch[:, 0])
     model.reset_nfe()
     try:
         pred = odeint(model, y0, t_eval.to(device), method=ode_solver)
@@ -1046,9 +1056,27 @@ def _evaluate_block_batch_with_fallback(
             return {}, {0: "solver_failure"}
         split = batch_size // 2
         left_pred, left_fail = _evaluate_block_batch_with_fallback(
-            model, batch_np[:split], t_eval, device, ode_solver)
+            model,
+            batch_np[:split],
+            t_eval,
+            device,
+            ode_solver,
+            noise_cfg=noise_cfg,
+            normalizer=normalizer,
+            noise_seed=noise_seed,
+            sample_ids=sample_ids[:split],
+        )
         right_pred, right_fail = _evaluate_block_batch_with_fallback(
-            model, batch_np[split:], t_eval, device, ode_solver)
+            model,
+            batch_np[split:],
+            t_eval,
+            device,
+            ode_solver,
+            noise_cfg=noise_cfg,
+            normalizer=normalizer,
+            noise_seed=noise_seed,
+            sample_ids=sample_ids[split:],
+        )
         merged_pred = {idx: value for idx, value in left_pred.items()}
         merged_pred.update({split + idx: value for idx, value in right_pred.items()})
         merged_fail = {idx: value for idx, value in left_fail.items()}
@@ -1061,9 +1089,27 @@ def _evaluate_block_batch_with_fallback(
             return {}, {0: "invalid_prediction"}
         split = batch_size // 2
         left_pred, left_fail = _evaluate_block_batch_with_fallback(
-            model, batch_np[:split], t_eval, device, ode_solver)
+            model,
+            batch_np[:split],
+            t_eval,
+            device,
+            ode_solver,
+            noise_cfg=noise_cfg,
+            normalizer=normalizer,
+            noise_seed=noise_seed,
+            sample_ids=sample_ids[:split],
+        )
         right_pred, right_fail = _evaluate_block_batch_with_fallback(
-            model, batch_np[split:], t_eval, device, ode_solver)
+            model,
+            batch_np[split:],
+            t_eval,
+            device,
+            ode_solver,
+            noise_cfg=noise_cfg,
+            normalizer=normalizer,
+            noise_seed=noise_seed,
+            sample_ids=sample_ids[split:],
+        )
         merged_pred = {idx: value for idx, value in left_pred.items()}
         merged_pred.update({split + idx: value for idx, value in right_pred.items()})
         merged_fail = {idx: value for idx, value in left_fail.items()}
@@ -1082,6 +1128,9 @@ def evaluate_heldout_trajectories(
     device: torch.device,
     ode_solver: str = "rk4",
     max_trajectories: Optional[int] = None,
+    noise_cfg: Optional[NoiseConfig] = None,
+    normalizer: Optional[StateNormalizer] = None,
+    noise_seed: Optional[int] = None,
 ) -> Dict:
     """Evaluate short-horizon prediction over held-out trajectories.
 
@@ -1110,6 +1159,13 @@ def evaluate_heldout_trajectories(
             t_eval,
             device,
             ode_solver,
+            noise_cfg=noise_cfg,
+            normalizer=normalizer,
+            noise_seed=noise_seed,
+            sample_ids=np.asarray(
+                [traj_idx * 100000 + block_idx for block_idx in range(len(traj_blocks))],
+                dtype=np.int64,
+            ),
         )
         successful_indices = sorted(pred_map)
         failed_indices = sorted(failure_map)
@@ -1265,7 +1321,10 @@ def evaluate_trajectory_prediction(
     t_eval: torch.Tensor,
     device: torch.device,
     ode_solver: str = "rk4",
-    n_samples: int = 100
+    n_samples: int = 100,
+    noise_cfg: Optional[NoiseConfig] = None,
+    normalizer: Optional[StateNormalizer] = None,
+    noise_seed: Optional[int] = None,
 ) -> Dict:
     """Compute per-trajectory RMSE, geodesic error, and SO(3) violation."""
     model.eval()
@@ -1278,19 +1337,26 @@ def evaluate_trajectory_prediction(
     solver_failed_batches = 0
     invalid_prediction_batches = 0
     count = 0
+    sample_offset = 0
 
     for batch in test_loader:
         if count >= n_samples:
             break
 
         batch_np = batch.cpu().numpy()
+        sample_ids = np.arange(sample_offset, sample_offset + len(batch_np), dtype=np.int64)
         pred_map, failure_map = _evaluate_block_batch_with_fallback(
             model,
             batch_np,
             t_eval,
             device,
             ode_solver,
+            noise_cfg=noise_cfg,
+            normalizer=normalizer,
+            noise_seed=noise_seed,
+            sample_ids=sample_ids,
         )
+        sample_offset += len(batch_np)
         solver_failed_batches += sum(reason == "solver_failure" for reason in failure_map.values())
         invalid_prediction_batches += sum(
             reason == "invalid_prediction" for reason in failure_map.values()
@@ -1440,6 +1506,52 @@ def save_heldout_evaluation_results(results: Dict, output_dir: Path):
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
+    if "overall" not in results:
+        payload = {}
+        for profile, profile_results in results.items():
+            payload[profile] = {
+                "overall": profile_results["overall"],
+                "by_scenario": profile_results["by_scenario"],
+                "failure_counts": profile_results["failure_counts"],
+                "block_failure_counts": profile_results.get("block_failure_counts", {}),
+            }
+        with open(output_dir / "heldout_evaluation.json", "w") as f:
+            json.dump(payload, f, indent=2)
+
+        summary_lines = ["Held-Out Trajectory Evaluation", "=" * 80]
+        for profile, profile_results in results.items():
+            overall = profile_results["overall"]
+            summary_lines.append(f"[{profile}]")
+            summary_lines.append(
+                f"Trajectories: {overall['n_trajectories']}  Success rate: {overall['success_rate']:.4f}"
+            )
+            summary_lines.append(
+                f"Position RMSE [m]: mean={overall['position_rmse']['mean']:.4f}, "
+                f"median={overall['position_rmse']['median']:.4f}, "
+                f"p95={overall['position_rmse']['p95']:.4f}"
+            )
+            summary_lines.append(
+                f"Rotation geo [rad]: mean={overall['rotation_geodesic']['mean']:.4f}, "
+                f"median={overall['rotation_geodesic']['median']:.4f}, "
+                f"p95={overall['rotation_geodesic']['p95']:.4f}"
+            )
+            summary_lines.append(
+                f"Lin vel RMSE [m/s]: {overall['velocity_rmse']['mean']:.4f}  "
+                f"Ang vel RMSE [r/s]: {overall['angular_rmse']['mean']:.4f}"
+            )
+            summary_lines.append("")
+
+            rows = profile_results.get("trajectory_rows", [])
+            if rows:
+                with open(output_dir / f"heldout_trajectory_metrics_{profile}.csv", "w", newline="") as f:
+                    writer = csv.DictWriter(f, fieldnames=list(rows[0].keys()))
+                    writer.writeheader()
+                    writer.writerows(rows)
+
+        with open(output_dir / "heldout_evaluation.txt", "w") as f:
+            f.write("\n".join(summary_lines).rstrip() + "\n")
+        return
+
     with open(output_dir / "heldout_evaluation.json", "w") as f:
         json.dump(
             {
@@ -1512,6 +1624,37 @@ def save_heldout_evaluation_results(results: Dict, output_dir: Path):
 def save_block_evaluation_results(results: Dict, output_dir: Path):
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
+
+    if "position_rmse" not in results:
+        with open(output_dir / "block_evaluation.json", "w") as f:
+            json.dump(results, f, indent=2)
+
+        lines = ["Block-Level Evaluation", "=" * 80]
+        for profile, profile_results in results.items():
+            lines.append(f"[{profile}]")
+            lines.append(
+                f"Position RMSE [m]: mean={profile_results['position_rmse']['mean']:.4f}, "
+                f"std={profile_results['position_rmse']['std']:.4f}, "
+                f"max={profile_results['position_rmse']['max']:.4f}"
+            )
+            lines.append(
+                f"Rotation geo [rad]: mean={profile_results['rotation_geodesic']['mean']:.4f}, "
+                f"std={profile_results['rotation_geodesic']['std']:.4f}, "
+                f"max={profile_results['rotation_geodesic']['max']:.4f}"
+            )
+            lines.append(
+                f"Lin vel RMSE [m/s]: mean={profile_results['velocity_rmse']['mean']:.4f}, "
+                f"std={profile_results['velocity_rmse']['std']:.4f}"
+            )
+            lines.append(
+                f"Ang vel RMSE [r/s]: mean={profile_results['angular_rmse']['mean']:.4f}, "
+                f"std={profile_results['angular_rmse']['std']:.4f}"
+            )
+            lines.append("")
+
+        with open(output_dir / "block_evaluation.txt", "w") as f:
+            f.write("\n".join(lines).rstrip() + "\n")
+        return
 
     with open(output_dir / "block_evaluation.json", "w") as f:
         json.dump(results, f, indent=2)

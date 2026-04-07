@@ -10,11 +10,14 @@ Run all local commands in the Conda environment `mytorch1`.
 conda activate mytorch1
 python data_collection.py --num_traj 500 --blocks 150 --save_dir ./data/noc --workers 4
 python train_auv_hamnode.py --dataset ./data/noc/<dataset>.pkl --model_type phnode_full --save_dir ./checkpoints
+python train_auv_hamnode.py --dataset ./data/oc/<dataset>.pkl --model_type phnode_full --save_dir ./checkpoints --noise_profile nominal_train --noise_warmup_epochs 20 --noise_ramp 80 --noise_mix_ratio 0.5
 python evaluate_rollout_benchmark.py --checkpoint ./checkpoints/<run>/best_model.pt --output_dir ./checkpoints/<run>/rollout_benchmark
 scripts/run_all.sh --profile oc --group all
+bash scripts/train_all_models_noise_profile.sh --profile oc --group core --noise-profile nominal_train
+bash scripts/eval_all_models_noise_profile.sh --suite-dir ./checkpoints/<suite>
 ```
 
-Use `scripts/batch_train_models.sh` for sweep training, `scripts/batch_eval_models.sh` for sweep evaluation, and `scripts/summarize_sweep.py` or `scripts/build_experiment_report.py` for result summaries.
+Use `scripts/batch_train_models.sh` for generic sweep training, `scripts/batch_eval_models.sh` for generic sweep evaluation, and `scripts/summarize_sweep.py` or `scripts/build_experiment_report.py` for result summaries. For the current noisy-IC workflow, prefer `scripts/train_all_models_noise_profile.sh` and `scripts/eval_all_models_noise_profile.sh`; they expose the recommended `noise_profile` interface directly.
 
 ## Coding Style & Naming Conventions
 Follow existing Python style: 4-space indentation, `snake_case` for functions and variables, `PascalCase` for classes, and short module-level docstrings where useful. Keep code modular and prefer small helper functions over long inline blocks. Comments must be in English and only added when the intent is not obvious from the code. Match current dependency style; no formatter or linter is configured in this repo, so keep changes PEP 8-aligned and consistent with surrounding files.

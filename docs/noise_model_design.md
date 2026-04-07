@@ -1,371 +1,312 @@
-# 训练时噪声模拟方案
+# 当前训练噪声设计说明
 
-## 1. 背景与动机
+## 1. 文档状态
 
-本项目的核心目标是训练一个在 SE(3) 上的 port-Hamiltonian Neural ODE（AUVHamNODE），使其能从真实部署场景中的传感器观测出发，准确预测 AUV 的动力学演化。
+这份文档描述的是**当前代码实现**已经采用的噪声接口。
 
-训练数据由数值仿真器（`remus100_core.py`）生成，提供的是**无噪声的真值轨迹**。但实际部署时，模型接收的初始状态来自导航滤波器的输出，所有观测量都携带传感器误差。这一训练-部署差异（train-deploy gap）若不加处理，会导致两类问题：
+旧版文档里基于 `Level 1 / Level 2 / Level 3` 的整段 AR(1) 轨迹噪声设计，
+已经不再代表当前主训练路径。当前仓库的训练器只对 rollout 初值敏感，因此主方案已经收敛为：
 
-1. **初始条件敏感性**：模型在训练时总是从精确真值出发，测试时若初始状态有偏差，误差会被无控制地放大；
-2. **对导航质量误差不鲁棒**：实际的速度、姿态观测含有时间相关噪声和系统偏置，模型在干净数据上训练后面对这类输入会退化。
+```text
+IC-only, profile-based, ODE-space-consistent noise
+```
 
-训练时噪声注入的目的不是模拟数据增广意义上的多样性，而是**模拟真实传感器观测的统计结构**，使模型显式地学习在不完美观测下做出鲁棒预测。
+更完整的设计背景和取舍，请参见：
+
+- [docs/noise_robustness_experiment_design_codex.md](/Users/xiangjin/Library/CloudStorage/OneDrive-Personal/我的/Code/auv_se3node/g3_5_5/docs/noise_robustness_experiment_design_codex.md)
 
 ---
 
-## 2. AUV 传感器特性分析
+## 2. 当前问题定义
 
-REMUS-100 级别的 AUV 导航系统通常由以下传感器组成，各自的误差特性不同：
+训练数据来自仿真器真值，部署时模型拿到的是导航系统估计状态。当前训练要解决的问题是：
 
-| 传感器 | 主要测量量 | 典型误差特征 |
-|--------|-----------|-------------|
-| DVL（多普勒速度计）| 水下相对速度（线速度）| 白噪声 + 时间相关 + 约 0.3% 量程的比例因子误差；底部锁定丢失时冻结读数 |
-| IMU（惯性测量单元）| 角速度、比力 | 随机游走偏置（Allan 方差平台段）+ 高频白噪声 |
-| INS（惯导系统）| 姿态、速度融合 | 初始对准误差（固定偏置）+ 积分漂移 |
-| ADCP / 流速传感器 | 海流速度（OC 场景）| 长相关时间的测量噪声，估计精度 0.05–0.1 m/s |
+```text
+给定带噪初始导航状态估计 y0_hat，
+模型能否仍然预测真实未来轨迹？
+```
 
-这些传感器的误差不独立：IMU 和 DVL 是融合的，DVL 的线速度误差经姿态矩阵旋转后影响惯性系中的位置积分，角速率误差会积累为姿态误差进而影响速度分解。因此，噪声模型必须**保持运动学一致性**，不能对各状态分量独立扰动。
+因此，当前主训练接口是：
+
+```text
+y0_noisy -> ODE rollout -> pred_{1:T}
+target = clean future trajectory
+```
+
+这不是“从带噪观测序列学习动力学”，而是“对带噪初始状态更鲁棒”。
 
 ---
 
-## 3. 状态空间约定与噪声注入约束
+## 3. 状态语义
 
-### 3.1 状态向量布局
+数据集存储的状态是：
 
-训练数据（data convention）中，每个时间步的状态向量维度为 D = 18（无海流）或 27（含海流 OC）：
-
-```
-索引  [0:3]       位置  p          (相对 block 起点的惯性系坐标，m)
-索引  [3:12]      旋转矩阵  R       (SO(3)，行主序展平，无量纲)
-索引  [12:18]     全速度  ν_total   (机体系，m/s 和 rad/s，共 6 分量)
-索引  [18:18+u]   执行器状态  u_act  (控制通道，u = u_dim)
-索引  [18+u:18+2u] 执行器指令  u_cmd (仅传递给控制器，不属于观测状态)
-索引  [18+2u:21+2u] 海流速度  v_c^n  (惯性系，OC 场景，m/s)
+```text
+[Δp(3), R(9), nu_total(6), u_act(3), u_cmd(3), v_c^n(3)]
 ```
 
-**data convention vs ODE convention**：数据中存储的是 `ν_total = ν_r + R^T v_c^n`（总机体速度），而模型 ODE 内部使用 `ν_r`（相对速度）。两者的转换由 `model.to_ode_state()` 完成。**噪声注入全程在 data convention 下进行**，保证输出可直接对接 `to_ode_state()`。
+其中：
 
-### 3.2 运动学一致性约束
+- `Δp` 是 block-relative 位置
+- `R` 是 body-to-inertial 旋转
+- `nu_total` 是总机体系速度
+- `v_c^n` 是惯性系海流速度
 
-噪声注入必须满足以下物理约束，否则会将无法实现的状态送入 ODE 求解器：
+模型内部真正使用的是：
 
-1. **SO(3) 约束**：旋转矩阵必须满足 `R^T R = I`，`det(R) = +1`；
-2. **位置–速度一致性**：位置偏差应由速度误差积分得到，不能独立扰动；
-3. **姿态–角速率一致性**：姿态偏差应由角速率误差积分得到；
-4. **海流位置漂移**：若海流速度估计有误差 δv_c，相应的位置漂移也应包含 ∫δv_c dt 的贡献（OC 场景）；
-5. **初始条件与轨迹的联合一致性**：送入 ODE 的 y₀ 与用于构造噪声轨迹的噪声实现必须来自**同一次采样**，不能独立扰动。
+```text
+nu_r = nu_total - R^T v_c^n
+```
 
-第 5 点是旧版代码的核心缺陷——旧实现对 y₀（ODE convention）和轨迹目标（data convention）分别独立注噪，导致物理上不自洽的训练样本。新实现的 `build_noisy_training_pair()` 生成统一的噪声块，y₀ = noisy_block[:, 0]，确保一致性。
+因此 OC 场景下，噪声设计不能只在 `nu_total` 和 `v_c^n` 上各自独立拍值，
+而必须控制模型真正消费的 `nu_r` 误差预算。
 
 ---
 
-## 4. 噪声层次设计
+## 4. 当前实现的核心原则
 
-噪声方案分为三个递进的层次，对应从"正常"到"退化"的不同传感器工况。
+## 4.1 只对初值加噪
 
-```
-Level 0  干净训练（无噪声）
-Level 1  初始条件扰动          -- 模拟部署时的初始状态不确定性
-Level 2  全轨迹导航噪声         -- 模拟正常工况下的 DVL/IMU 传感器误差
-Level 3  退化导航噪声           -- Level 2 + DVL 底锁丢失 + IMU 偏置漂移
-```
+当前训练路径中，噪声只作用于 `t=0` 的初始状态。不会再构造整段 noisy block 作为主训练输入。
 
-层次设计的思路：**从简单到复杂，逐层叠加物理上更难处理的误差类型**。实验者可以根据研究目的选择合适的层次，也可以用 `--noise_scale` 在不改变结构的情况下调整强度。
+## 4.2 先在 ODE 语义上采样，再回到数据语义
 
----
+当前实现的逻辑是：
 
-## 5. 各噪声组件详细说明
+1. 从 clean data-state `x0_clean` 出发；
+2. 转成 clean ODE-state `y0_clean`；
+3. 在 ODE 空间对 `R / nu_r / u_act / v_c` 采样噪声；
+4. 得到 noisy ODE initial condition `y0_noisy`；
+5. 用它直接启动 ODE rollout。
 
-### 5.1 速度噪声 δν（6 维，机体系）
+这样做的目标是：
 
-速度噪声作用于机体系速度 ν_total，分 6 通道：前 3 维为线速度（DVL 测量），后 3 维为角速率（IMU 测量）。
+- 控制 `nu_r` 噪声预算；
+- 保证 OC 场景下 `R`、`nu_r`、`v_c^n` 的语义一致；
+- 避免旧方案里“data-space 看起来噪声不大，但 ODE 实际输入已经被过度污染”的问题。
 
-#### Level 1：t=0 白噪声
+## 4.3 block-relative 位置不作为独立噪声通道
 
-```
-δν[:, 0] ~ N(0, diag(σ_lin², σ_lin², σ_lin², σ_ang², σ_ang², σ_ang²))
-δν[:, t>0] = 0
-```
-
-仅扰动 t=0，模拟 AUV 入水时的初始速度估计不确定性。t>0 置零是因为 Level 1 的语义是"初始条件扰动"——只有 noisy_block[:, 0] 会被调用者使用。
-
-#### Level 2+：AR(1) 相关噪声 + 块常偏置
-
-```
-δν[t] = ρ · δν[t-1] + √(1-ρ²) · σ · ε[t],   ε[t] ~ N(0, I)
-b ~ N(0, (r_b · σ)²)   （单次采样，在整个 block 内保持不变）
-δν_total = δν_AR1 + b
-```
-
-**AR(1) 过程**的选择理由：
-- DVL 和 IMU 的噪声具有显著的时间相关性，相邻采样点之间并非独立。主要来源包括：水柱声速不均匀、声学多径效应、波束几何误差；
-- AR(1) 过程是描述有限相关时间噪声的最简单模型：$\rho$ 决定时间相关长度，$\rho = 0.85$ 对应"每步 85% 的历史记忆"；
-- AR(1) 过程的稳态方差等于 σ²（与 ρ 无关），因此参数 `vel_lin_std` 直接对应稳态 RMS，方便物理标定。
-
-**块常偏置**（block-constant bias）的选择理由：
-- INS 每次重置时存在初始对准偏差（磁罗经偏差、DVL 安装偏差等），在单个短轨迹块（通常数十秒）内这一偏差近似恒定；
-- `bias_ratio = 0.25` 意味着偏置标准差为白噪声标准差的 25%，即 0.005 m/s 线速度偏置，与实际 DVL 系统偏差量级一致。
-
-#### Level 3 附加组件
-
-**随机游走偏置**（IMU bias instability）：
-```
-walk_step ~ N(0, (r_w · σ)²)，独立逐步采样
-δν_total += cumsum(walk_step, dim=t)
-```
-IMU 偏置并非完全恒定，而是在 Allan 方差曲线的偏置不稳定性区段缓慢漂移。`walk_ratio = 0.05` 意味着每步偏置漂移 RMS 为白噪声标准差的 5%，约 0.001 m/s/step，在典型 10–30 步的块内积累量在 0.01–0.03 m/s 量级，与战术级 MEMS IMU 的偏置不稳定性相符。
-
-**比例因子噪声**（DVL multiplicative noise）：
-```
-δν_total += c_mult · |ν_true| · ε,   ε ~ N(0, I)
-```
-DVL 厂商规格书通常给出"±0.3% ± 0.3 mm/s"格式的精度指标，其中前者是比例项。`mult_coeff = 0.003` 对应 0.3% 的比例误差系数。在典型 AUV 速度（0–3 m/s）下：
-- v = 1 m/s：附加噪声 ~0.003 m/s，相对于基础 0.02 m/s 贡献较小；
-- v = 3 m/s：附加噪声 ~0.009 m/s，开始变得不可忽视。
-
-此项仅在 Level 3 启用，因为它只在高速、高精度要求场景下重要，对正常工况可忽略。
-
-**DVL 底锁丢失**（DVL dropout）：
-```
-对每个时间步，以概率 p=0.12 判定 DVL 丢失底锁
-丢失时：δν[:, t] = δν[:, t-1]  （冻结为上一有效步的误差）
-```
-DVL 底部锁定丢失是浅水或湍流环境中的常见故障模式。当丢失底锁时，导航滤波器通常维持上一次有效速度读数，直到重新锁定。`dropout_prob = 0.12` 意味着在 20 步的块中平均约有 2–3 步发生丢锁，模拟"偶发退化"而非"完全失效"。
+当前 block 的起点位置按约定总是 0，因此不再对 `Δp(t0)` 单独加噪。
 
 ---
 
-### 5.2 姿态噪声（SO(3) 积分）
+## 5. Profile 接口
 
-姿态误差由两部分叠加：初始对准误差 + 角速率误差积分。
-
-```
-δθ₀ ~ N(0, σ_rot² I₃)                  -- 初始姿态不确定性
-
-θ_err[:, 0] = δθ₀
-θ_err[:, t] = δθ₀ + Σ_{k=0}^{t-1} Δt · δω[k]   （t > 0）
-
-R_delta = exp([θ_err]×)                 -- SO(3) 指数映射
-R_noisy = Π_SO(3)(R_delta · R_clean)   -- SO(3) 投影
-```
-
-**使用 SO(3) 指数映射而非一阶近似的原因**：
-旧版代码使用一阶近似 `(I + [δθ]×) R`，当姿态扰动较大时（Level 3 积分后）会严重偏离 SO(3)，导致旋转矩阵行列式显著偏离 1。新版使用精确的矩阵指数 `torch.linalg.matrix_exp([δθ]×)`，无论扰动大小均保持群结构。
-
-**SVD 投影的必要性**：
-即使使用指数映射，浮点累积误差也可能使结果微偏离 SO(3)。SVD 投影 `Π_SO(3)(M) = U · diag(1,1,sign(det(UV^T))) · V^T` 提供最小 Frobenius 范数意义下的精确 SO(3) 最近点。
-
----
-
-### 5.3 位置漂移（运动学积分）
-
-位置误差由速度误差在惯性系中积分得到：
-
-```
-vel_err_world[:, t] = R_clean[:, t] · δν_lin[:, t]   -- 机体系误差旋转到惯性系
-pos_drift[:, t]     = Σ_{k=0}^{t-1} Δt · vel_err_world[:, k]
-p_noisy[:, t]       = p_clean[:, t] + pos_drift[:, t]
-```
-
-**关键点**：使用干净的旋转矩阵 `R_clean` 而非 `R_noisy` 来做框架变换。这一选择的依据是：真实导航中，位置积分误差主要来自速度估计误差，而姿态误差导致的位置误差是二阶效应（需要 `δR · ν` 的乘积）。在短轨迹块内，这一近似合理，且避免了姿态误差和位置误差的非线性耦合带来的过度扰动。
-
-**块起点约定保持**：因为 `pos_drift[:, 0] = 0`，所以 `p_noisy[:, 0] = p_clean[:, 0] = 0`，块相对位置的原点约定得到保留。
-
----
-
-### 5.4 海流速度噪声（OC 场景）
-
-对含海流的数据集（27 维状态），对惯性系海流速度 v_c^n 施加同结构的噪声：
-
-```
-Level 1：δv_c[:, 0] ~ N(0, σ_c² I₃)，t>0 置零
-Level 2+：δv_c 由 AR(1) 过程生成，相关系数同 ρ
-v_c_noisy = v_c_clean + δv_c
-```
-
-**OC 位置漂移修正**：海流速度估计误差也会影响 AUV 在惯性系中的实际位移（在 AUV 的 EKF 中，位置积分使用的是绝对速度）：
-
-```
-p_noisy[:, t] += Σ_{k=0}^{t-1} Δt · δv_c[:, k]
-```
-
-这一修正在旧版代码中缺失，会导致海流速度噪声和位置状态之间的不一致。
-
----
-
-### 5.5 执行器状态噪声
-
-```
-u_act_noisy = u_act_clean + N(0, σ_act² I)
-```
-
-执行器状态（如螺旋桨转速、舵角反馈）经由传感器读取，存在独立的测量噪声。此项使用简单白噪声，因为执行器状态不经过导航积分，不需要时间相关结构。`σ_act = 0.005` 对应约 0.5% 的满量程扰动，属于轻量的传感器测量不确定性。
-
----
-
-### 5.6 执行器指令不加噪
-
-```
-u_cmd 保持原值（数据中的 u_cmd 来自控制器，不属于观测状态）
-```
-
-控制器输出的指令是确定的，不经过传感器观测，因此不施加噪声。这是噪声模型的一个重要约束：**只对可观测状态注噪，不对控制输入注噪**。
-
----
-
-## 6. 参数值汇总与设定依据
-
-### 6.1 基础白噪声强度
-
-| 参数 | 默认值 | 物理含义 | 设定依据 |
-|------|--------|---------|---------|
-| `vel_lin_std` | 0.02 m/s | DVL 线速度 RMS | Teledyne RDI WorkHorse 系列精度规格 ±1–5 cm/s RMS；REMUS-100 速度范围 0–3 m/s 下取中段 2 cm/s 为保守合理值 |
-| `vel_ang_std` | 0.005 rad/s | IMU 角速率 RMS | ≈ 0.3°/s，典型战术级 MEMS IMU（如 VectorNav VN-200）角速率白噪声密度约 0.02°/s/√Hz，1 Hz 更新时约 0.02°/s，取值偏保守 |
-| `rot_init_std` | 0.005 rad | 初始姿态不确定性 | ≈ 0.3°，水面对准后的航向/俯仰精度；磁罗经精度约 ±1°，GPS/DVL 对准精度约 ±0.2°，取折中 |
-| `act_noise_std` | 0.005 | 执行器状态测量噪声 | 约 0.5% 满量程，轻量的传感器读取不确定性 |
-| `current_std` | 0.05 m/s | 海流速度估计误差 | ADCP 海流测量精度约 1–5 cm/s，结合导航融合不确定性，取 5 cm/s 为中等保守估计 |
-
-### 6.2 时间相关结构（Level 2+）
-
-| 参数 | 默认值 | 物理含义 | 设定依据 |
-|------|--------|---------|---------|
-| `ar1_corr` | 0.85 | AR(1) 步间相关系数 | 对应相关时间常数 τ ≈ −Δt/ln(ρ)；在 0.5 s 采样间隔下 τ ≈ 3 s，与 DVL 水柱相关时间相符；若 Δt 更小，ρ 应相应调高 |
-| `bias_ratio` | 0.25 | 块常偏置/白噪声标准差比 | 线速度偏置 = 0.25 × 0.02 = 0.005 m/s，与典型 DVL 安装偏差（~0.5 cm/s）相符 |
-
-### 6.3 退化噪声（Level 3 专用）
-
-| 参数 | 默认值 | 物理含义 | 设定依据 |
-|------|--------|---------|---------|
-| `dropout_prob` | 0.12 | 每步 DVL 丢锁概率 | 在 20 步块中平均约 2–3 次丢锁；对应浅水或湍流环境下"偶发退化"的典型模式 |
-| `walk_ratio` | 0.05 | 偏置随机游走步幅/白噪声标准差比 | 每步漂移 = 0.05 × 0.02 = 0.001 m/s；20 步累积约 0.02 m/s，与战术级 IMU 偏置不稳定性（~1 mg/√Hz）在 10 s 时间尺度上的积分一致 |
-| `mult_coeff` | 0.003 | DVL 比例因子误差系数 | 直接对应 DVL 规格书中"±0.3% of reading"的比例误差项 |
-
----
-
-## 7. 课程学习调度
-
-训练初期直接施加全强度噪声会使网络无法收敛——在未学到任何动力学结构之前，强噪声使得每次 ODE 积分产生的预测与干净目标之间的差距过大，梯度信号变得无意义。
-
-课程学习通过线性缩放因子解决这一问题：
-
-```
-scale(epoch) = min(epoch / ramp_epochs, 1.0) × noise_scale
-```
-
-在前 `ramp_epochs` 个 epoch 内，噪声强度从 0 线性增长至全量，此后保持稳定。这使得网络在早期阶段先在近干净数据上学习动力学的主结构，再逐步适应噪声扰动。
-
-**参数 `ramp_epochs = 100`**：对于总 epoch 数约 300–500 的训练，100 个 epoch 的缓升期约占总训练时长的 20–33%，属于足够渐进但不过度保守的设定。若训练在 epoch < 100 时已过拟合，可将 `ramp_epochs` 调小。
-
-**参数 `noise_scale = 1.0`**：全局倍率，默认不缩放。在消融实验中可将其设为 0.5 来研究半强度噪声的效果，而不必修改各分量标准差。
-
----
-
-## 8. 训练监督语义
-
-### 8.1 统一噪声块
-
-`build_noisy_training_pair()` 返回一个完整的噪声块 `noisy_block [B, T, D]`，其中 t=0 切片与 t>0 切片来自同一噪声实现，物理上自洽。调用方式：
-
-```python
-noisy_block = build_noisy_training_pair(batch, cfg, epoch, t_eval,
-                                        u_dim=u_dim, ocean_current=oc)
-y0 = model.to_ode_state(noisy_block[:, 0])   # 噪声初始条件 → ODE 求解器
-target = model.to_ode_state(batch)            # 干净真值 → 监督目标
-```
-
-### 8.2 监督始终对准干净真值
-
-目标始终是**干净的仿真真值**，而非噪声轨迹。这一设计的依据：
-
-- 训练的目标是让模型学习**从噪声初始状态出发预测真实动力学**，即 "given noisy y₀, predict the true future trajectory"；
-- 若监督目标也加噪声（旧版 `observation_noise` 的语义），训练信号本身含噪，网络会学习拟合噪声轨迹而非动力学规律；
-- 评估指标（轨迹 RMSE）是相对于干净真值的，训练目标应与评估目标对齐。
-
-### 8.3 损失函数排除 t=0
-
-```python
-loss = criterion(pred[:, 1:], target[:, 1:])   # 排除 t=0
-```
-
-ODE 求解器输出的 pred[:, 0] 精确等于 y₀（初始条件），而 target[:, 0] 是干净真值。两者之差就是注入的初始条件噪声本身，与模型动力学无关，不应纳入损失计算。仅从 t=1 开始计算损失，确保每个残差项都反映模型的动力学预测误差。
-
----
-
-## 9. 与实验设计的对应关系
-
-本项目的实验矩阵按以下维度展开：
-
-| 场景 | 数据集 | 噪声级别 | 对应实验目标 |
-|------|--------|---------|------------|
-| noc + clean | 无海流 | Level 0 | 理想控制基线，验证模型在干净数据上的结构正确性 |
-| noc + noisy | 无海流 | Level 2 | 无海流场景下的鲁棒性评估 |
-| oc + clean | 含海流 | Level 0 | 海流建模能力的单独评估 |
-| oc + noisy | 含海流 | Level 2–3 | **最接近真实部署的场景**，模型同时需要处理海流和传感器噪声 |
-
-**推荐的最小实验集**：`noc + clean`（干净基线）和 `oc + noisy Level 2`（鲁棒目标），两者覆盖了从理想条件到现实条件的核心对比。
-
----
-
-## 10. CLI 参数参考
+当前推荐使用：
 
 ```bash
-# 最常用：三个主参数
---noise_level   {0,1,2,3}    # 0=无噪声  1=IC扰动  2=导航噪声  3=退化导航
---noise_scale   FLOAT         # 全局强度倍率，默认 1.0
---noise_ramp    INT           # 课程缓升 epoch 数，默认 100
-
-# 专家覆盖（调参/消融用，通常不需要修改）
-# 需要在代码中修改 TrainConfig 的对应 noise_* 字段，或子类化实现
-# noise_vel_lin_std    0.02    # DVL 线速度噪声 RMS (m/s)
-# noise_vel_ang_std    0.005   # IMU 角速率噪声 RMS (rad/s)
-# noise_rot_init_std   0.005   # 初始姿态不确定性 (rad)
-# noise_act_noise_std  0.005   # 执行器状态噪声 (绝对单位)
-# noise_current_std    0.05    # 海流估计误差 (m/s)
-# noise_ar1_corr       0.85    # AR(1) 步间相关系数
-# noise_bias_ratio     0.25    # 块常偏置/白噪声标准差比
-# noise_dropout_prob   0.12    # DVL 每步丢锁概率
-# noise_walk_ratio     0.05    # 偏置随机游走步幅比
-# noise_mult_coeff     0.003   # DVL 比例因子误差系数
+--noise_profile {clean,nominal_train,nominal_eval,degraded_eval}
 ```
 
-**典型用法示例：**
+含义如下：
+
+| Profile | 用途 | 说明 |
+|---|---|---|
+| `clean` | 训练 / 评估 | 不加 noisy IC |
+| `nominal_train` | 训练 | 推荐的轻量 IC 正则 |
+| `nominal_eval` | 评估 | 正常导航不确定性 |
+| `degraded_eval` | 评估 | 更强的退化压力测试 |
+
+旧的：
 
 ```bash
-# 干净训练（基线）
-python train_auv_hamnode.py --dataset ./data/oc/... --model_type phnode_full
-
-# 标准导航噪声（推荐的鲁棒训练配置）
-python train_auv_hamnode.py --dataset ./data/oc/... --model_type phnode_full \
-    --noise_level 2
-
-# 退化导航噪声（最苛刻设定）
-python train_auv_hamnode.py --dataset ./data/oc/... --model_type phnode_full \
-    --noise_level 3
-
-# 半强度噪声消融
-python train_auv_hamnode.py --dataset ./data/oc/... --model_type phnode_full \
-    --noise_level 2 --noise_scale 0.5
-
-# 快速收敛（短缓升）
-python train_auv_hamnode.py --dataset ./data/oc/... --model_type phnode_full \
-    --noise_level 2 --noise_ramp 50
+--noise_level {0,1,2,3}
 ```
+
+仍然保留，但只是兼容映射：
+
+- `0 -> clean`
+- `1 -> nominal_train`
+- `2 -> nominal_eval`
+- `3 -> degraded_eval`
 
 ---
 
-## 附录：噪声组件激活矩阵
+## 6. 各通道噪声的当前设计
 
-| 组件 | Level 0 | Level 1 | Level 2 | Level 3 |
-|------|:-------:|:-------:|:-------:|:-------:|
-| IC 白噪声（速度、姿态） | — | ✓ | ✓ | ✓ |
-| AR(1) 时间相关速度噪声 | — | — | ✓ | ✓ |
-| 块常偏置（INS 对准误差）| — | — | ✓ | ✓ |
-| 位置漂移（速度误差积分）| — | — | ✓ | ✓ |
-| 姿态漂移（角速率误差积分）| — | — | ✓ | ✓ |
-| 海流速度噪声（OC 专用）| — | ✓ | ✓ | ✓ |
-| 海流导致的位置漂移修正 | — | — | ✓ | ✓ |
-| 执行器状态噪声 | — | ✓ | ✓ | ✓ |
-| 随机游走偏置（IMU 不稳定性）| — | — | — | ✓ |
-| 比例因子噪声（DVL 量程相关）| — | — | — | ✓ |
-| DVL 底锁丢失（读数冻结）| — | — | — | ✓ |
-| 课程缓升调度 | — | ✓ | ✓ | ✓ |
-| 监督目标为干净真值 | ✓ | ✓ | ✓ | ✓ |
+## 6.1 相对速度 `delta_nu_r`
+
+速度噪声不再使用“所有轴统一标量”的设计，而是按通道自然尺度确定：
+
+```text
+sigma_i = max(floor_i, alpha * std_i)
+```
+
+其中：
+
+- `std_i` 来自训练集统计
+- `alpha` 由 profile 决定
+- `floor_i` 保证噪声不会不现实地趋近于 0
+
+当前实现使用：
+
+- 线速度 floor: `0.005 m/s`
+- 角速度 floor: `0.0015 rad/s`
+
+profile 对应的 `alpha`：
+
+- `nominal_train`: `0.03`
+- `nominal_eval`: `0.05`
+- `degraded_eval`: `0.10`
+
+## 6.2 姿态初值误差 `delta_theta`
+
+当前姿态初值误差为各向同性小角度扰动，随后通过 SO(3) 指数映射作用到旋转矩阵：
+
+- `nominal_train`: `0.0035 rad`
+- `nominal_eval`: `0.0050 rad`
+- `degraded_eval`: `0.0120 rad`
+
+## 6.3 海流估计误差 `delta_v_c`
+
+OC 场景下海流误差使用各轴独立预算：
+
+| Profile | `v_cx, v_cy` | `v_cz` |
+|---|---:|---:|
+| `nominal_train` | `0.008 m/s` | `0.004 m/s` |
+| `nominal_eval` | `0.012 m/s` | `0.006 m/s` |
+| `degraded_eval` | `0.030 m/s` | `0.015 m/s` |
+
+这部分误差会和姿态一起影响 OC 下的等效初始条件。
+
+## 6.4 执行器反馈误差 `delta_u_act`
+
+执行器噪声改成了按通道设置，不再使用单一标量：
+
+| 通道 | nominal_train | nominal_eval | degraded_eval |
+|---|---:|---:|---:|
+| `delta_r` | `0.002 rad` | `0.003 rad` | `0.008 rad` |
+| `delta_s` | `0.002 rad` | `0.003 rad` | `0.008 rad` |
+| `rpm` | `3 rpm` | `5 rpm` | `15 rpm` |
+
+如果未来 `u_dim != 3`，当前实现会退化为按 actuator 标准差比例缩放。
+
+---
+
+## 7. 训练调度
+
+当前 noisy training 不是从第一个 epoch 就全量打开，而是使用：
+
+- `--noise_warmup_epochs`
+- `--noise_ramp`
+- `--noise_mix_ratio`
+
+默认建议：
+
+```bash
+--noise_profile nominal_train \
+--noise_warmup_epochs 20 \
+--noise_ramp 80 \
+--noise_mix_ratio 0.5
+```
+
+含义：
+
+1. 前 20 个 epoch 完全 clean；
+2. 后续 80 个 epoch 逐步把 noisy IC 强度从 0 拉到目标值；
+3. 达到稳态后，大约一半训练样本使用 noisy IC，另一半保持 clean。
+
+这样可以减少 noisy IC 直接把优化过程打崩的风险。
+
+## 7.1 不同实验目标下的参数取向
+
+这组参数没有唯一“全局最优”组合，因为你可能在优化不同目标。
+
+当前最常见的三种目标是：
+
+1. 追求最稳训练：少炸、少 early stop、少 seed 敏感。
+2. 追求最强 noisy robustness：带噪评估时退化更小。
+3. 追求尽量不损失 clean 指标：clean held-out 尽量接近纯 clean training。
+
+它们的差别在于主优化方向不同：
+
+- 更高的 noisy 暴露通常更有利于鲁棒性；
+- 但 noisy 暴露越强，clean 上界越容易下降；
+- 更保守的噪声调度通常最稳，但 noisy 增益也更有限。
+
+推荐起点如下：
+
+| 目标 | `noise_profile` | `noise_warmup_epochs` | `noise_ramp` | `noise_mix_ratio` | `noise_scale` | 预期效果 |
+|---|---|---:|---:|---:|---:|---|
+| 最稳训练 | `nominal_train` | `30` | `100` | `0.3` | `0.7` | 最不容易崩，seed 波动较小，但 noisy 增益偏保守 |
+| 最强 noisy robustness | `nominal_train` | `15` | `60` | `0.7` | `1.0` | noisy 退化通常更小，但 clean 指标更容易下降 |
+| 尽量保 clean 指标 | `nominal_train` | `25` | `100` | `0.2` | `0.5` | clean 最容易保住，但 noisy 提升通常有限 |
+
+使用建议：
+
+- 如果你刚开始做新数据集或新模型，先从“最稳训练”配置开始。
+- 如果 clean 结果已经很好，接下来主要想验证鲁棒性，再切到“最强 noisy robustness”。
+- 如果论文主表仍然以 clean 成绩为核心，而你只想要一点点鲁棒性正则，就用“尽量保 clean 指标”。
+
+一个务实的顺序是：
+
+```text
+先跑最稳训练
+再根据 held-out noisy 退化幅度，决定是否把 mix_ratio / scale 往上调
+```
+
+这样比一开始就上高强度 noisy 配置更稳妥。
+
+---
+
+## 8. 评估协议
+
+训练完成后，当前脚本会输出多组评估结果：
+
+- block-level: `clean` + `nominal_eval`
+- held-out trajectory: `clean` + `nominal_eval` + `degraded_eval`
+
+这些评估使用固定 noise seed，以保证不同模型之间可直接比较。
+
+---
+
+## 9. 明确不包含的内容
+
+当前主实现**不再**把下面这些内容作为训练主路径：
+
+- AR(1) 全轨迹相关噪声
+- block 内位置漂移积分
+- block 内姿态漂移积分
+- random-walk bias
+- DVL dropout 训练
+
+这些内容只有在训练器升级为真正消费 noisy sequence 时才值得恢复。
+
+---
+
+## 10. 推荐命令
+
+Clean training:
+
+```bash
+python train_auv_hamnode.py \
+  --dataset ./data/oc/<dataset>.pkl \
+  --model_type phnode_full \
+  --save_dir ./checkpoints
+```
+
+Recommended noisy-IC training:
+
+```bash
+python train_auv_hamnode.py \
+  --dataset ./data/oc/<dataset>.pkl \
+  --model_type phnode_full \
+  --save_dir ./checkpoints \
+  --noise_profile nominal_train \
+  --noise_warmup_epochs 20 \
+  --noise_ramp 80 \
+  --noise_mix_ratio 0.5
+```
+
+Evaluation-only ablation with a stronger profile:
+
+```bash
+python train_auv_hamnode.py \
+  --dataset ./data/oc/<dataset>.pkl \
+  --model_type phnode_full \
+  --save_dir ./checkpoints \
+  --noise_profile nominal_eval
+```
+
+通常不建议把 `degraded_eval` 作为默认训练 profile。
