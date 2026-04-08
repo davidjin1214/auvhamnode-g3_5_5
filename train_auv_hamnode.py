@@ -53,6 +53,9 @@ from train_utils import (
     resolve_noise_profiles,
     summarize_noise_budget,
     format_noise_budget_summary,
+    attach_relative_to_clean_block,
+    attach_relative_to_clean_heldout,
+    print_relative_to_clean_summary,
 )
 from auv_model_registry import (
     canonicalize_model_type,
@@ -568,10 +571,27 @@ def train_auv_hamnode(
     logger.info("Running detailed evaluation...")
     model = trainer.get_model()
     eval_device = torch.device(config.device)
+    available_eval_profiles = (
+        ["clean", "nominal_eval", "degraded_eval", "heading_biased_eval", "current_bias_eval"]
+        if config.ocean_current else
+        ["clean", "nominal_eval", "degraded_eval", "heading_biased_eval"]
+    )
+    default_block_profiles = (
+        ["clean", "nominal_eval", "heading_biased_eval", "current_bias_eval"]
+        if config.ocean_current else
+        ["clean", "nominal_eval"]
+    )
+    default_heldout_profiles = (
+        ["clean", "nominal_eval", "degraded_eval", "heading_biased_eval", "current_bias_eval"]
+        if config.ocean_current else
+        ["clean", "nominal_eval", "degraded_eval", "heading_biased_eval"]
+    )
+
     block_profile_names = resolve_noise_profiles(
         block_eval_noise_profiles,
-        default_profiles=["clean", "nominal_eval"],
+        default_profiles=default_block_profiles,
         allow_none=True,
+        available_profiles=available_eval_profiles,
     )
     block_eval_profiles = {
         profile_name: noise_cfg_from_profile(profile_name)
@@ -608,6 +628,12 @@ def train_auv_hamnode(
         profile_results["noise_budget"] = block_noise_budgets[profile_name]
         print_evaluation_results(profile_results, logger)
         results[profile_name] = profile_results
+    block_relative_summary = attach_relative_to_clean_block(results)
+    print_relative_to_clean_summary(
+        block_relative_summary,
+        title="Block Evaluation Relative To Clean",
+        logger=logger,
+    )
     save_block_evaluation_results(results, trainer.run_dir)
 
     with open(trainer.run_dir / "evaluation_results.pkl", "wb") as f:
@@ -616,8 +642,9 @@ def train_auv_hamnode(
     logger.info("Running held-out trajectory evaluation...")
     heldout_profile_names = resolve_noise_profiles(
         heldout_eval_noise_profiles,
-        default_profiles=["clean", "nominal_eval", "degraded_eval"],
+        default_profiles=default_heldout_profiles,
         allow_none=True,
+        available_profiles=available_eval_profiles,
     )
     heldout_eval_profiles = {
         profile_name: noise_cfg_from_profile(profile_name)
@@ -653,6 +680,12 @@ def train_auv_hamnode(
         profile_results["noise_budget"] = heldout_noise_budgets[profile_name]
         print_heldout_evaluation_results(profile_results, logger)
         heldout_results[profile_name] = profile_results
+    heldout_relative_summary = attach_relative_to_clean_heldout(heldout_results)
+    print_relative_to_clean_summary(
+        heldout_relative_summary,
+        title="Held-Out Evaluation Relative To Clean",
+        logger=logger,
+    )
     save_heldout_evaluation_results(heldout_results, trainer.run_dir)
 
     noise_budget_payload = {
@@ -739,28 +772,30 @@ def main():
     )
     parser.add_argument(
         "--noise_mix_ratio", type=float, default=0.5,
-        help="Fraction of training batches using noisy IC after warmup",
+        help="Fraction of training samples using noisy IC after warmup",
     )
     parser.add_argument(
         "--block_eval_noise_profiles",
         type=str,
         nargs="+",
-        default=["clean", "nominal_eval"],
+        default=None,
         help=(
             "Noise profiles for post-training block evaluation. "
-            "Choose any of: clean nominal_eval degraded_eval all none. "
-            "Default: clean nominal_eval"
+            "Choose any of: clean nominal_eval degraded_eval heading_biased_eval current_bias_eval all none. "
+            "current_bias_eval requires ocean-current runs. "
+            "Default is context-dependent."
         ),
     )
     parser.add_argument(
         "--heldout_eval_noise_profiles",
         type=str,
         nargs="+",
-        default=["clean", "nominal_eval", "degraded_eval"],
+        default=None,
         help=(
             "Noise profiles for post-training held-out evaluation. "
-            "Choose any of: clean nominal_eval degraded_eval all none. "
-            "Default: clean nominal_eval degraded_eval"
+            "Choose any of: clean nominal_eval degraded_eval heading_biased_eval current_bias_eval all none. "
+            "current_bias_eval requires ocean-current runs. "
+            "Default is context-dependent."
         ),
     )
     parser.add_argument("--ocean_current", action="store_true",

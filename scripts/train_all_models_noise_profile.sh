@@ -16,10 +16,12 @@ NOISE_SCALE="1.0"
 NOISE_WARMUP_EPOCHS="20"
 NOISE_RAMP="80"
 NOISE_MIX_RATIO="0.5"
-BLOCK_EVAL_NOISE_PROFILES="clean nominal_eval"
-HELDOUT_EVAL_NOISE_PROFILES="clean nominal_eval degraded_eval"
+BLOCK_EVAL_NOISE_PROFILES="auto"
+HELDOUT_EVAL_NOISE_PROFILES="auto"
 PREFIX=""
 EXTRA_TRAIN_ARGS=()
+BLOCK_EVAL_NOISE_PROFILES_ARR=()
+HELDOUT_EVAL_NOISE_PROFILES_ARR=()
 
 usage() {
   cat <<'EOF'
@@ -42,12 +44,16 @@ Options:
   --noise-scale FLOAT               Global noise multiplier. Default: 1.0
   --noise-warmup-epochs N           Fully clean warmup epochs. Default: 20
   --noise-ramp N                    Ramp length after warmup. Default: 80
-  --noise-mix-ratio FLOAT           Fraction of training batches using noisy IC. Default: 0.5
+  --noise-mix-ratio FLOAT           Fraction of training samples using noisy IC. Default: 0.5
   --block-eval-noise-profiles "A B" Post-training block eval profiles.
-                                    Default: "clean nominal_eval"
+                                    Default: auto
+                                    auto -> noc: "clean nominal_eval"
+                                            oc:  "clean nominal_eval heading_biased_eval current_bias_eval"
   --heldout-eval-noise-profiles "A B"
                                     Post-training heldout eval profiles.
-                                    Default: "clean nominal_eval degraded_eval"
+                                    Default: auto
+                                    auto -> noc: "clean nominal_eval degraded_eval heading_biased_eval"
+                                            oc:  "clean nominal_eval degraded_eval heading_biased_eval current_bias_eval"
   --prefix NAME                     Prefix embedded in the suite folder name
   --suite-name NAME                 Explicit suite folder name under checkpoints/
   --extra-train-arg ARG             Extra arg forwarded to training; repeatable
@@ -195,6 +201,25 @@ if [[ -z "${PREFIX}" ]]; then
   PREFIX="noise_${NOISE_PROFILE}"
 fi
 
+if [[ "${BLOCK_EVAL_NOISE_PROFILES}" == "auto" ]]; then
+  if [[ "${PROFILE}" == "oc" ]]; then
+    BLOCK_EVAL_NOISE_PROFILES="clean nominal_eval heading_biased_eval current_bias_eval"
+  else
+    BLOCK_EVAL_NOISE_PROFILES="clean nominal_eval"
+  fi
+fi
+
+if [[ "${HELDOUT_EVAL_NOISE_PROFILES}" == "auto" ]]; then
+  if [[ "${PROFILE}" == "oc" ]]; then
+    HELDOUT_EVAL_NOISE_PROFILES="clean nominal_eval degraded_eval heading_biased_eval current_bias_eval"
+  else
+    HELDOUT_EVAL_NOISE_PROFILES="clean nominal_eval degraded_eval heading_biased_eval"
+  fi
+fi
+
+read -r -a BLOCK_EVAL_NOISE_PROFILES_ARR <<< "${BLOCK_EVAL_NOISE_PROFILES}"
+read -r -a HELDOUT_EVAL_NOISE_PROFILES_ARR <<< "${HELDOUT_EVAL_NOISE_PROFILES}"
+
 cmd=(
   bash "${ROOT_DIR}/scripts/batch_train_models.sh"
   --profile "${PROFILE}"
@@ -213,10 +238,14 @@ cmd=(
   --extra-train-arg "--noise_mix_ratio"
   --extra-train-arg "${NOISE_MIX_RATIO}"
   --extra-train-arg "--block_eval_noise_profiles"
-  --extra-train-arg "${BLOCK_EVAL_NOISE_PROFILES}"
-  --extra-train-arg "--heldout_eval_noise_profiles"
-  --extra-train-arg "${HELDOUT_EVAL_NOISE_PROFILES}"
 )
+for profile_name in "${BLOCK_EVAL_NOISE_PROFILES_ARR[@]}"; do
+  cmd+=(--extra-train-arg "${profile_name}")
+done
+cmd+=(--extra-train-arg "--heldout_eval_noise_profiles")
+for profile_name in "${HELDOUT_EVAL_NOISE_PROFILES_ARR[@]}"; do
+  cmd+=(--extra-train-arg "${profile_name}")
+done
 if [[ -n "${MODELS}" ]]; then
   cmd+=(--models "${MODELS}")
 fi

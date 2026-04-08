@@ -499,12 +499,25 @@ sigma_i = max(floor_i, alpha * std_i)
 - 检验姿态误差对 body/inertial 映射和 current projection 的影响；
 - 更贴近真实导航解中的方向误差。
 
+当前实现：
+
+- 随机部分沿用 `nominal_eval` 的零均值小扰动；
+- 另外叠加固定幅值的 yaw bias：`0.015 rad`；
+- bias 的符号按样本固定，在单条 rollout 内保持不变。
+
 ### `current_bias_eval`
 
 目的：
 
 - 模拟 current estimate 的系统性偏差或更新滞后；
 - 检验 `R / v_c / nu_r` 耦合误差对 rollout 的影响。
+
+当前实现：
+
+- 随机部分沿用 `nominal_eval` 的 `delta_v_c` 扰动；
+- 另外叠加固定幅值的 current bias：`0.015 / 0.015 / 0.005 m/s`；
+- bias 的符号按样本固定，在单条 rollout 内保持不变；
+- 仅对 `current-observable` 的 ocean-current 模型开放。
 
 适用条件：
 
@@ -639,9 +652,9 @@ predict for a short window -> receive a new filtered state -> reinitialize -> pr
 
 这一阶段优先扩评估，而不是重新把复杂噪声塞回训练端：
 
-1. 新增 `heading_biased_eval`。
-2. 仅对 `current-observable` 任务新增 `current_bias_eval`。
-3. 输出 noisy / clean 比值、退化百分比、failure rate 增量等稳健性统计。
+1. `heading_biased_eval` 已完成。
+2. `current-observable` 任务的 `current_bias_eval` 已完成。
+3. noisy / clean 比值与退化百分比已进入当前评估结果；后续重点转向 failure rate 增量等更完整统计。
 4. 增加 receding-horizon benchmark。
 
 只有当研究问题明确转向“更一般、较弱接口下的真实部署可用性”时，再单独引入 `current-unobservable`。
@@ -721,7 +734,7 @@ current-unobservable 作为面向真实部署可用性的可选扩展保留。
 ## 11.3 当前最务实的推进顺序
 
 如果近期只推进最关键的修订，我建议顺序如下。
-其中前五步已完成，后续重点从第六步开始：
+其中前八步已完成，后续重点从第九步开始：
 
 1. 保留当前 `IC-only` 主线。
 2. 将 `mix_ratio` 改为逐样本生效。
@@ -730,7 +743,7 @@ current-unobservable 作为面向真实部署可用性的可选扩展保留。
 5. 当前研究阶段默认采用 `current-observable`，并在文档中明确这是增强接口假设。
 6. 新增 `heading_biased_eval`。
 7. 仅对 `current-observable` 任务新增 `current_bias_eval`。
-8. 增加基于退化百分比和 failure rate 增量的报告指标。
+8. 增加基于 noisy / clean 比值与退化百分比的报告指标。
 9. 将 `current-unobservable` 保留为可选扩展，并在研究目标转向真实部署可用性时补充进来。
 10. 增加 receding-horizon benchmark。
 

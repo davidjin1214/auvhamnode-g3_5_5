@@ -89,7 +89,7 @@ def get_dataset_training_defaults(
 class NoiseConfig:
     """Noise configuration aligned with the current IC-only training interface."""
 
-    profile: str = "clean"      # clean / nominal_train / nominal_eval / degraded_eval
+    profile: str = "clean"      # clean / nominal_train / nominal_eval / degraded_eval / heading_biased_eval / current_bias_eval
     scale: float = 1.0          # global magnitude multiplier
     warmup_epochs: int = 20     # fully clean warmup before noisy IC regularization
     ramp_epochs: int = 80       # linear ramp after warmup
@@ -110,31 +110,49 @@ class NoiseConfig:
         return min(max(ramp_progress, 0.0), 1.0) * self.scale
 
 
-AVAILABLE_NOISE_PROFILES = ("clean", "nominal_eval", "degraded_eval")
+AVAILABLE_NOISE_PROFILES = (
+    "clean",
+    "nominal_eval",
+    "degraded_eval",
+    "heading_biased_eval",
+    "current_bias_eval",
+)
+
+
+def _base_noise_profile(profile: str) -> str:
+    return {
+        "heading_biased_eval": "nominal_eval",
+        "current_bias_eval": "nominal_eval",
+    }.get(profile, profile)
 
 
 def noise_cfg_from_profile(profile_name: str) -> Optional["NoiseConfig"]:
     if profile_name == "clean":
         return None
+    valid_profiles = {"nominal_train", *AVAILABLE_NOISE_PROFILES[1:]}
+    if profile_name not in valid_profiles:
+        valid = ", ".join(["clean", *sorted(valid_profiles)])
+        raise ValueError(f"Unsupported noise profile {profile_name!r}. Expected one of: {valid}")
     return NoiseConfig(profile=profile_name, warmup_epochs=0, ramp_epochs=1)
 
 
-def resolve_noise_profiles(values, default_profiles=None, allow_none=False):
+def resolve_noise_profiles(values, default_profiles=None, allow_none=False, available_profiles=None):
+    available_profiles = tuple(available_profiles or AVAILABLE_NOISE_PROFILES)
     if not values:
         return list(default_profiles) if default_profiles else ["clean"]
     resolved = []
     for value in values:
         key = str(value).strip().lower()
         if key == "all":
-            for profile in AVAILABLE_NOISE_PROFILES:
+            for profile in available_profiles:
                 if profile not in resolved:
                     resolved.append(profile)
             continue
         if key == "none" and allow_none:
             return []
-        if key not in AVAILABLE_NOISE_PROFILES:
+        if key not in available_profiles:
             extras = ["all", "none"] if allow_none else ["all"]
-            valid = ", ".join([*AVAILABLE_NOISE_PROFILES, *extras])
+            valid = ", ".join([*available_profiles, *extras])
             raise ValueError(f"Unsupported noise profile {value!r}. Expected one of: {valid}")
         if key not in resolved:
             resolved.append(key)
@@ -594,6 +612,7 @@ def _dvl_dropout_freeze(
 
 
 def _profile_alpha(profile: str) -> float:
+    profile = _base_noise_profile(profile)
     return {
         "nominal_train": 0.03,
         "nominal_eval": 0.05,
@@ -606,6 +625,7 @@ def _profile_rotation_std_vector(
     dtype: torch.dtype,
     device: torch.device,
 ) -> torch.Tensor:
+    profile = _base_noise_profile(profile)
     base_std = {
         "nominal_train": 0.0035,
         "nominal_eval": 0.0050,
@@ -624,7 +644,30 @@ def _profile_rotation_std_vector(
     )
 
 
+def _profile_rotation_bias_vector(
+    profile: str,
+    dtype: torch.dtype,
+    device: torch.device,
+) -> torch.Tensor:
+    values = {
+        "heading_biased_eval": [0.0, 0.0, 0.0150],
+    }.get(profile, [0.0, 0.0, 0.0])
+    return torch.tensor(values, dtype=dtype, device=device)
+
+
+def _profile_current_bias_vector(
+    profile: str,
+    dtype: torch.dtype,
+    device: torch.device,
+) -> torch.Tensor:
+    values = {
+        "current_bias_eval": [0.0150, 0.0150, 0.0050],
+    }.get(profile, [0.0, 0.0, 0.0])
+    return torch.tensor(values, dtype=dtype, device=device)
+
+
 def _profile_current_std(profile: str, dtype: torch.dtype, device: torch.device) -> torch.Tensor:
+    profile = _base_noise_profile(profile)
     table = {
         "nominal_train": [0.008, 0.008, 0.004],
         "nominal_eval": [0.012, 0.012, 0.006],
@@ -641,6 +684,7 @@ def _profile_actuator_std(
     dtype: torch.dtype,
     device: torch.device,
 ) -> torch.Tensor:
+    profile = _base_noise_profile(profile)
     if u_dim == 3:
         table = {
             "nominal_train": [0.002, 0.002, 3.0],
@@ -659,6 +703,30 @@ def _profile_actuator_std(
         "degraded_eval": 0.05,
     }.get(profile, 0.0)
     return ratio * std_act.to(device=device, dtype=dtype)
+
+
+def _sample_sign_pattern(
+    batch_size: int,
+    dim: int = 1,
+    *,
+    device: torch.device,
+    dtype: torch.dtype,
+    sample_ids: Optional[torch.Tensor] = None,
+    base_seed: Optional[int] = None,
+    stream: int = 0,
+) -> torch.Tensor:
+    if base_seed is None or sample_ids is None:
+        draws = torch.randint(0, 2, (batch_size, dim), device=device)
+        return (draws * 2 - 1).to(dtype=dtype)
+
+    sample_ids = torch.as_tensor(sample_ids, dtype=torch.long).view(-1).cpu().tolist()
+    out = torch.empty(batch_size, dim, dtype=dtype, device=device)
+    for idx, sample_id in enumerate(sample_ids):
+        gen = torch.Generator(device="cpu")
+        gen.manual_seed(int(base_seed) + 1000003 * int(sample_id) + 7919 * int(stream))
+        draws = torch.randint(0, 2, (dim,), generator=gen, dtype=torch.int64)
+        out[idx] = (draws * 2 - 1).to(dtype=torch.float32)
+    return out
 
 
 def _sample_scaled_noise(
@@ -698,6 +766,7 @@ def summarize_noise_budget(
     device: str = "cpu",
 ) -> Dict:
     profile = "clean" if cfg is None else cfg.profile
+    base_profile = _base_noise_profile(profile)
     if cfg is None:
         cfg = NoiseConfig(
             profile="clean",
@@ -732,6 +801,12 @@ def summarize_noise_budget(
     nu_r_std = epoch_scale * torch.maximum(alpha * vel_std, vel_floor)
 
     rot_std = epoch_scale * _profile_rotation_std_vector(profile, dtype=dtype, device=dev)
+    rot_bias = epoch_scale * _profile_rotation_bias_vector(profile, dtype=dtype, device=dev)
+    current_bias = (
+        epoch_scale * _profile_current_bias_vector(profile, dtype=dtype, device=dev)
+        if ocean_current
+        else None
+    )
     act_std = epoch_scale * _profile_actuator_std(
         profile,
         u_dim,
@@ -753,6 +828,7 @@ def summarize_noise_budget(
 
     return {
         "profile": profile,
+        "base_profile": base_profile,
         "is_active": bool(cfg.is_active),
         "epoch": report_epoch,
         "epoch_scale": epoch_scale,
@@ -771,6 +847,28 @@ def summarize_noise_budget(
             name: float(value)
             for name, value in zip(["roll", "pitch", "yaw"], rot_std.cpu().tolist())
         },
+        "rotation_bias_abs": (
+            {
+                name: float(value)
+                for name, value in zip(["roll", "pitch", "yaw"], rot_bias.cpu().tolist())
+            }
+            if torch.any(rot_bias > 0) else None
+        ),
+        "rotation_bias_mode": (
+            "per-sample fixed-sign bias"
+            if torch.any(rot_bias > 0) else None
+        ),
+        "v_c_bias_abs": (
+            {
+                name: float(value)
+                for name, value in zip(["x", "y", "z"], current_bias.cpu().tolist())
+            }
+            if current_bias is not None and torch.any(current_bias > 0) else None
+        ),
+        "v_c_bias_mode": (
+            "per-sample fixed-sign bias"
+            if current_bias is not None and torch.any(current_bias > 0) else None
+        ),
         "u_act_std": {
             name: float(value)
             for name, value in zip(actuator_labels, act_std.cpu().tolist())
@@ -797,10 +895,27 @@ def format_noise_budget_summary(budget: Optional[Dict]) -> str:
         f"{name}={value:.4f}"
         for name, value in budget.get("rotation_std", {}).items()
     )
+    rot_bias = budget.get("rotation_bias_abs") or {}
+    rot_bias_text = ", ".join(
+        f"{name}={value:.4f}"
+        for name, value in rot_bias.items()
+        if abs(value) > 0.0
+    )
+    current_bias = budget.get("v_c_bias_abs") or {}
+    current_bias_text = ", ".join(
+        f"{name}={value:.4f}"
+        for name, value in current_bias.items()
+        if abs(value) > 0.0
+    )
+    base_profile = budget.get("base_profile")
     return (
-        f"profile={budget.get('profile', 'clean')} | epoch_scale={budget.get('epoch_scale', 0.0):.3f}"
+        f"profile={budget.get('profile', 'clean')}"
+        f"{f' (base={base_profile})' if base_profile and base_profile != budget.get('profile', 'clean') else ''}"
+        f" | epoch_scale={budget.get('epoch_scale', 0.0):.3f}"
         f" | mix_ratio={budget.get('mix_ratio', 0.0):.3f}"
         f" | nu_r[{nu_r_text}] | rot[{rot_text}]"
+        f"{f' | rot_bias[{rot_bias_text}]' if rot_bias_text else ''}"
+        f"{f' | v_c_bias[{current_bias_text}]' if current_bias_text else ''}"
     )
 
 
@@ -852,16 +967,30 @@ def build_noisy_initial_condition(
     )
 
     rot_std = scale * _profile_rotation_std_vector(cfg.profile, dtype=dtype, device=device)
-    if torch.any(rot_std > 0):
-        delta_theta = _sample_scaled_noise(
-            rot_std,
-            batch_size,
-            device=device,
-            dtype=dtype,
-            sample_ids=sample_ids,
-            base_seed=base_seed,
-            stream=23,
-        )
+    rot_bias = scale * _profile_rotation_bias_vector(cfg.profile, dtype=dtype, device=device)
+    if torch.any(rot_std > 0) or torch.any(rot_bias > 0):
+        delta_theta = torch.zeros(batch_size, 3, dtype=dtype, device=device)
+        if torch.any(rot_std > 0):
+            delta_theta = delta_theta + _sample_scaled_noise(
+                rot_std,
+                batch_size,
+                device=device,
+                dtype=dtype,
+                sample_ids=sample_ids,
+                base_seed=base_seed,
+                stream=23,
+            )
+        if torch.any(rot_bias > 0):
+            bias_sign = _sample_sign_pattern(
+                batch_size,
+                dim=1,
+                device=device,
+                dtype=dtype,
+                sample_ids=sample_ids,
+                base_seed=base_seed,
+                stream=29,
+            )
+            delta_theta = delta_theta + bias_sign * rot_bias.view(1, 3)
         R_clean = y0[:, 3:12].reshape(batch_size, 3, 3)
         R_delta = _so3_exp_map(delta_theta)
         y0[:, 3:12] = _project_to_so3(torch.matmul(R_delta, R_clean)).reshape(batch_size, 9)
@@ -887,6 +1016,7 @@ def build_noisy_initial_condition(
 
     if getattr(model, "ocean_current", False):
         current_std = scale * _profile_current_std(cfg.profile, dtype=dtype, device=device)
+        current_bias = scale * _profile_current_bias_vector(cfg.profile, dtype=dtype, device=device)
         if torch.any(current_std > 0):
             y0[:, layout.v_c] = y0[:, layout.v_c] + _sample_scaled_noise(
                 current_std,
@@ -897,6 +1027,17 @@ def build_noisy_initial_condition(
                 base_seed=base_seed,
                 stream=53,
             )
+        if torch.any(current_bias > 0):
+            current_bias_sign = _sample_sign_pattern(
+                batch_size,
+                dim=3,
+                device=device,
+                dtype=dtype,
+                sample_ids=sample_ids,
+                base_seed=base_seed,
+                stream=59,
+            )
+            y0[:, layout.v_c] = y0[:, layout.v_c] + current_bias_sign * current_bias.view(1, 3)
 
     return y0
 
@@ -1614,6 +1755,174 @@ def evaluate_trajectory_prediction(
     }
 
 
+def _comparison_entry(value: float, clean_value: float, *, higher_is_better: bool = False) -> Dict:
+    value = float(value)
+    clean_value = float(clean_value)
+    if not np.isfinite(value) or not np.isfinite(clean_value):
+        return {
+            "value": value,
+            "clean_value": clean_value,
+            "absolute_delta": float("nan"),
+            "ratio_to_clean": float("nan"),
+            "degradation_pct": float("nan"),
+        }
+
+    absolute_delta = value - clean_value
+    if abs(clean_value) < 1e-12:
+        ratio_to_clean = 1.0 if abs(value) < 1e-12 else float("inf")
+        degradation_pct = 0.0 if abs(value) < 1e-12 else float("inf")
+    else:
+        ratio_to_clean = value / clean_value
+        if higher_is_better:
+            degradation_pct = (clean_value - value) / abs(clean_value) * 100.0
+        else:
+            degradation_pct = (value - clean_value) / abs(clean_value) * 100.0
+
+    return {
+        "value": value,
+        "clean_value": clean_value,
+        "absolute_delta": float(absolute_delta),
+        "ratio_to_clean": float(ratio_to_clean),
+        "degradation_pct": float(degradation_pct),
+    }
+
+
+def _format_ratio_value(value: float) -> str:
+    if np.isposinf(value):
+        return "inf"
+    if np.isneginf(value):
+        return "-inf"
+    if np.isfinite(value):
+        return f"{value:.3f}"
+    return "nan"
+
+
+def _format_pct_value(value: float) -> str:
+    if np.isposinf(value):
+        return "+inf%"
+    if np.isneginf(value):
+        return "-inf%"
+    if np.isfinite(value):
+        return f"{value:+.1f}%"
+    return "nan"
+
+
+def _block_failure_rate(results: Dict) -> float:
+    failures = int(results.get("solver_failed_batches", 0)) + int(
+        results.get("invalid_prediction_batches", 0)
+    )
+    total = int(results.get("n_samples", 0)) + failures
+    return float(failures / total) if total > 0 else float("nan")
+
+
+def _heldout_trajectory_failure_rate(results: Dict) -> float:
+    total = int(results.get("overall", {}).get("n_trajectories", 0))
+    failures = sum(int(v) for v in results.get("failure_counts", {}).values())
+    return float(failures / total) if total > 0 else float("nan")
+
+
+def attach_relative_to_clean_block(results_by_profile: Dict[str, Dict]) -> Dict[str, Dict]:
+    clean = results_by_profile.get("clean")
+    if clean is None:
+        return {}
+
+    comparisons = {}
+    clean_failure_rate = _block_failure_rate(clean)
+    for profile, profile_results in results_by_profile.items():
+        if profile == "clean":
+            continue
+        failure_rate = _block_failure_rate(profile_results)
+        profile_comparison = {
+            "position_rmse": _comparison_entry(
+                profile_results["position_rmse"]["mean"],
+                clean["position_rmse"]["mean"],
+            ),
+            "rotation_geodesic": _comparison_entry(
+                profile_results["rotation_geodesic"]["mean"],
+                clean["rotation_geodesic"]["mean"],
+            ),
+            "velocity_rmse": _comparison_entry(
+                profile_results["velocity_rmse"]["mean"],
+                clean["velocity_rmse"]["mean"],
+            ),
+            "angular_rmse": _comparison_entry(
+                profile_results["angular_rmse"]["mean"],
+                clean["angular_rmse"]["mean"],
+            ),
+            "failure_rate": _comparison_entry(
+                failure_rate,
+                clean_failure_rate,
+            ),
+        }
+        profile_results["relative_to_clean"] = profile_comparison
+        comparisons[profile] = profile_comparison
+    return comparisons
+
+
+def attach_relative_to_clean_heldout(results_by_profile: Dict[str, Dict]) -> Dict[str, Dict]:
+    clean = results_by_profile.get("clean")
+    if clean is None:
+        return {}
+
+    comparisons = {}
+    clean_failure_rate = _heldout_trajectory_failure_rate(clean)
+    for profile, profile_results in results_by_profile.items():
+        if profile == "clean":
+            continue
+        failure_rate = _heldout_trajectory_failure_rate(profile_results)
+        profile_comparison = {
+            "position_rmse": _comparison_entry(
+                profile_results["overall"]["position_rmse"]["mean"],
+                clean["overall"]["position_rmse"]["mean"],
+            ),
+            "rotation_geodesic": _comparison_entry(
+                profile_results["overall"]["rotation_geodesic"]["mean"],
+                clean["overall"]["rotation_geodesic"]["mean"],
+            ),
+            "velocity_rmse": _comparison_entry(
+                profile_results["overall"]["velocity_rmse"]["mean"],
+                clean["overall"]["velocity_rmse"]["mean"],
+            ),
+            "angular_rmse": _comparison_entry(
+                profile_results["overall"]["angular_rmse"]["mean"],
+                clean["overall"]["angular_rmse"]["mean"],
+            ),
+            "success_rate": _comparison_entry(
+                profile_results["overall"]["success_rate"],
+                clean["overall"]["success_rate"],
+                higher_is_better=True,
+            ),
+            "trajectory_failure_rate": _comparison_entry(
+                failure_rate,
+                clean_failure_rate,
+            ),
+        }
+        profile_results["relative_to_clean"] = profile_comparison
+        comparisons[profile] = profile_comparison
+    return comparisons
+
+
+def print_relative_to_clean_summary(
+    comparisons: Dict[str, Dict],
+    *,
+    title: str,
+    logger: Optional[logging.Logger] = None,
+):
+    if not comparisons:
+        return
+
+    log = logger.info if logger else print
+    log("=" * 50)
+    log(title)
+    log("=" * 50)
+    for profile, profile_comparison in comparisons.items():
+        log(f"[{profile}]")
+        for metric_name, entry in profile_comparison.items():
+            ratio_text = _format_ratio_value(entry["ratio_to_clean"])
+            degradation_text = _format_pct_value(entry["degradation_pct"])
+            log(f"{metric_name}: ratio={ratio_text}  degradation={degradation_text}")
+
+
 def print_evaluation_results(results: Dict,
                              logger: Optional[logging.Logger] = None):
     """Pretty-print evaluation results."""
@@ -1707,6 +2016,8 @@ def save_heldout_evaluation_results(results: Dict, output_dir: Path):
             }
             if profile_results.get("noise_budget") is not None:
                 entry["noise_budget"] = profile_results["noise_budget"]
+            if profile_results.get("relative_to_clean") is not None:
+                entry["relative_to_clean"] = profile_results["relative_to_clean"]
             payload[profile] = entry
         with open(output_dir / "heldout_evaluation.json", "w") as f:
             json.dump(payload, f, indent=2)
@@ -1736,6 +2047,14 @@ def save_heldout_evaluation_results(results: Dict, output_dir: Path):
                 summary_lines.append(
                     f"Noise budget: {format_noise_budget_summary(profile_results['noise_budget'])}"
                 )
+            if profile_results.get("relative_to_clean") is not None:
+                summary_lines.append("Relative to clean:")
+                for metric_name, entry in profile_results["relative_to_clean"].items():
+                    ratio_text = _format_ratio_value(entry["ratio_to_clean"])
+                    degradation_text = _format_pct_value(entry["degradation_pct"])
+                    summary_lines.append(
+                        f"  {metric_name}: ratio={ratio_text}, degradation={degradation_text}"
+                    )
             summary_lines.append("")
 
             rows = profile_results.get("trajectory_rows", [])
@@ -1757,6 +2076,7 @@ def save_heldout_evaluation_results(results: Dict, output_dir: Path):
                 "failure_counts": results["failure_counts"],
                 "block_failure_counts": results.get("block_failure_counts", {}),
                 "noise_budget": results.get("noise_budget"),
+                "relative_to_clean": results.get("relative_to_clean"),
             },
             f,
             indent=2,
@@ -1804,6 +2124,14 @@ def save_heldout_evaluation_results(results: Dict, output_dir: Path):
         lines.append(f"Block failures: {failure_text}")
     if results.get("noise_budget") is not None:
         lines.append(f"Noise budget: {format_noise_budget_summary(results['noise_budget'])}")
+    if results.get("relative_to_clean") is not None:
+        lines.append("Relative to clean:")
+        for metric_name, entry in results["relative_to_clean"].items():
+            ratio_text = _format_ratio_value(entry["ratio_to_clean"])
+            degradation_text = _format_pct_value(entry["degradation_pct"])
+            lines.append(
+                f"{metric_name}: ratio={ratio_text}, degradation={degradation_text}"
+            )
 
     lines.append("")
     lines.append("By Scenario")
@@ -1854,6 +2182,14 @@ def save_block_evaluation_results(results: Dict, output_dir: Path):
                 lines.append(
                     f"Noise budget: {format_noise_budget_summary(profile_results['noise_budget'])}"
                 )
+            if profile_results.get("relative_to_clean") is not None:
+                lines.append("Relative to clean:")
+                for metric_name, entry in profile_results["relative_to_clean"].items():
+                    ratio_text = _format_ratio_value(entry["ratio_to_clean"])
+                    degradation_text = _format_pct_value(entry["degradation_pct"])
+                    lines.append(
+                        f"  {metric_name}: ratio={ratio_text}, degradation={degradation_text}"
+                    )
             lines.append("")
 
         with open(output_dir / "block_evaluation.txt", "w") as f:
@@ -1893,6 +2229,12 @@ def save_block_evaluation_results(results: Dict, output_dir: Path):
     lines.append(f"Evaluated samples: {results['n_samples']}")
     if results.get("noise_budget") is not None:
         lines.append(f"Noise budget: {format_noise_budget_summary(results['noise_budget'])}")
+    if results.get("relative_to_clean") is not None:
+        lines.append("Relative to clean:")
+        for metric_name, entry in results["relative_to_clean"].items():
+            ratio_text = _format_ratio_value(entry["ratio_to_clean"])
+            degradation_text = _format_pct_value(entry["degradation_pct"])
+            lines.append(f"{metric_name}: ratio={ratio_text}, degradation={degradation_text}")
 
     with open(output_dir / "block_evaluation.txt", "w") as f:
         f.write("\n".join(lines).rstrip() + "\n")

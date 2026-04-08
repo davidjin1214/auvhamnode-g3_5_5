@@ -135,6 +135,13 @@ full navigation posterior error model
 | `nominal_eval` | 评估 | 正常导航不确定性 |
 | `degraded_eval` | 评估 | 更强的退化压力测试 |
 
+评估侧另外支持一个 bias-type profile：
+
+| Profile | 用途 | 说明 |
+|---|---|---|
+| `heading_biased_eval` | 评估 | 在 `nominal_eval` 基础上叠加固定幅值的 yaw bias |
+| `current_bias_eval` | 评估 | 仅用于 OC；在 `nominal_eval` 基础上叠加固定幅值的 current bias |
+
 旧的：
 
 ```bash
@@ -201,6 +208,14 @@ profile 对应的 `alpha`：
 
 上面三组值仍表示 profile 的基础量级；当前代码会将它们映射为 yaw-dominant 的逐轴标准差。
 
+评估侧新增的 `heading_biased_eval` 使用以下规则：
+
+- 随机部分沿用 `nominal_eval` 的逐轴姿态标准差；
+- 再叠加固定幅值的 yaw bias：`0.015 rad`；
+- bias 的符号按样本固定，在一条 rollout 内不随时间变化。
+
+这样可以把“带方向性的 heading 偏差”和“零均值小扰动”区分开来，同时又避免整个评估只落在单一正负号上。
+
 ## 6.3 海流估计误差 `delta_v_c`
 
 OC 场景下海流误差使用各轴独立预算：
@@ -212,6 +227,13 @@ OC 场景下海流误差使用各轴独立预算：
 | `degraded_eval` | `0.030 m/s` | `0.015 m/s` |
 
 这部分误差会和姿态一起影响 OC 下的等效初始条件。
+
+评估侧新增的 `current_bias_eval` 使用以下规则：
+
+- 随机部分沿用 `nominal_eval` 的 `delta_v_c` 标准差；
+- 再叠加固定幅值的 current bias：`0.015 / 0.015 / 0.005 m/s`；
+- bias 的符号按样本固定，在一条 rollout 内不随时间变化；
+- 该 profile 仅对 ocean-current 模型开放。
 
 ## 6.4 执行器反馈误差 `delta_u_act`
 
@@ -258,8 +280,10 @@ OC 场景下海流误差使用各轴独立预算：
 
 训练完成后，脚本还会自动运行 profile-aware 评估：
 
-- block evaluation 默认：`clean nominal_eval`
-- held-out trajectory evaluation 默认：`clean nominal_eval degraded_eval`
+- NOC block evaluation 默认：`clean nominal_eval`
+- NOC held-out trajectory evaluation 默认：`clean nominal_eval degraded_eval heading_biased_eval`
+- OC block evaluation 默认：`clean nominal_eval heading_biased_eval current_bias_eval`
+- OC held-out trajectory evaluation 默认：`clean nominal_eval degraded_eval heading_biased_eval current_bias_eval`
 
 可以按需修改，例如：
 
@@ -286,7 +310,14 @@ OC 场景下海流误差使用各轴独立预算：
 
 - `delta_nu_r` 的逐通道 `sigma_i`
 - 姿态扰动的逐轴标准差
+- 若存在 bias-type profile，还会记录 bias 的幅值与模式
 - `delta_u_act` 与 `delta_v_c` 的实际配置值
+
+多 profile 评估结果现在还会额外给出相对 `clean` 的比较指标，包括：
+
+- `ratio_to_clean`
+- `degradation_pct`
+- 以及 `success_rate` / `failure_rate` 一类稳定性指标的相对变化
 
 这些信息会写入运行目录中的 `noise_budgets.json`，并同步写入评估 JSON / TXT 结果。
 
@@ -346,7 +377,7 @@ OC 场景下海流误差使用各轴独立预算：
 python evaluate_rollout_benchmark.py \
   --checkpoint ./checkpoints/<run>/best_model.pt \
   --mode heldout \
-  --noise_profiles clean nominal_eval degraded_eval \
+  --noise_profiles clean nominal_eval degraded_eval heading_biased_eval current_bias_eval \
   --noise_seed 2024
 ```
 
@@ -355,6 +386,8 @@ python evaluate_rollout_benchmark.py \
 - `--noise_profiles` 可以传一个、多个，或者 `all`
 - `clean` 表示不注 noisy IC
 - `nominal_eval` 和 `degraded_eval` 会在 rollout 初值上注入与训练端一致的 profile 噪声
+- `heading_biased_eval` 会在 `nominal_eval` 的随机扰动基础上再叠加固定幅值的 yaw bias
+- `current_bias_eval` 会在 `nominal_eval` 的海流扰动基础上再叠加固定幅值的 current bias，仅对 OC checkpoint 可用
 
 如果传入多个 profile，benchmark 会按 profile 分目录写结果。
 
@@ -422,8 +455,8 @@ python train_auv_hamnode.py \
 
 当前更值得继续推进的是：
 
-1. 在评估侧补充 bias-type profile，例如 `heading_biased_eval` 与 `current_bias_eval`。
-2. 增加基于 noisy / clean 比值和退化百分比的稳健性报告指标。
+1. 在评估侧继续补充 bias-type profile；其中 `heading_biased_eval` 与 `current_bias_eval` 已完成。
+2. 继续扩展基于 noisy / clean 比值和退化百分比的稳健性报告指标。
 3. 视研究目标再决定是否引入 receding-horizon benchmark 与 `current-unobservable` 扩展。
 
 因此，当前文档里的 profile 仍应被解释为：

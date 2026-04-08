@@ -16,9 +16,10 @@ DEVICE=""
 PROGRESS_EVERY=5
 NUM_DIAGNOSTIC_PLOTS=6
 SUMMARY_HORIZON=60
-NOISE_PROFILES="clean nominal_eval degraded_eval"
+NOISE_PROFILES="auto"
 NOISE_SEED=2024
 EXTRA_EVAL_ARGS=()
+NOISE_PROFILES_ARR=()
 
 usage() {
   cat <<'EOF'
@@ -42,7 +43,9 @@ Options:
   --num-diagnostic-plots N     Default: 6
   --summary-horizon N          Default: 60
   --noise-profiles "A B"       Rollout init-noise profiles forwarded to benchmark.
-                               Default: "clean nominal_eval degraded_eval"
+                               Default: auto
+                               auto -> noc: "clean nominal_eval degraded_eval heading_biased_eval"
+                                       oc:  "clean nominal_eval degraded_eval heading_biased_eval current_bias_eval"
   --noise-seed N               Base seed for noisy initialization. Default: 2024
   --extra-eval-arg ARG         Extra arg forwarded to evaluation; repeatable
   --help                       Show this message
@@ -56,6 +59,23 @@ EOF
 
 latest_profile_suite() {
   find "${CHECKPOINT_ROOT}" -mindepth 1 -maxdepth 1 -type d -name "sweep_*_noise_*_*" | sort | tail -n 1
+}
+
+resolve_suite_profile() {
+  local suite_dir="$1"
+  local config_file="${suite_dir}/suite_config.txt"
+  local profile=""
+
+  if [[ -f "${config_file}" ]]; then
+    profile="$(awk -F= '$1=="profile"{print $2}' "${config_file}" | tail -n 1)"
+  fi
+  if [[ -z "${profile}" ]]; then
+    case "$(basename "${suite_dir}")" in
+      sweep_oc_*) profile="oc" ;;
+      sweep_noc_*) profile="noc" ;;
+    esac
+  fi
+  printf "%s" "${profile}"
 }
 
 while [[ $# -gt 0 ]]; do
@@ -147,6 +167,17 @@ if [[ -z "${SUITE_DIR}" || ! -d "${SUITE_DIR}" ]]; then
   exit 1
 fi
 
+if [[ "${NOISE_PROFILES}" == "auto" ]]; then
+  SUITE_PROFILE="$(resolve_suite_profile "${SUITE_DIR}")"
+  if [[ "${SUITE_PROFILE}" == "oc" ]]; then
+    NOISE_PROFILES="clean nominal_eval degraded_eval heading_biased_eval current_bias_eval"
+  else
+    NOISE_PROFILES="clean nominal_eval degraded_eval heading_biased_eval"
+  fi
+fi
+
+read -r -a NOISE_PROFILES_ARR <<< "${NOISE_PROFILES}"
+
 eval_cmd=(
   bash "${ROOT_DIR}/scripts/batch_eval_models.sh"
   --suite-dir "${SUITE_DIR}"
@@ -158,10 +189,12 @@ eval_cmd=(
   --progress-every "${PROGRESS_EVERY}"
   --num-diagnostic-plots "${NUM_DIAGNOSTIC_PLOTS}"
   --extra-eval-arg "--noise_profiles"
-  --extra-eval-arg "${NOISE_PROFILES}"
-  --extra-eval-arg "--noise_seed"
-  --extra-eval-arg "${NOISE_SEED}"
 )
+for profile_name in "${NOISE_PROFILES_ARR[@]}"; do
+  eval_cmd+=(--extra-eval-arg "${profile_name}")
+done
+eval_cmd+=(--extra-eval-arg "--noise_seed")
+eval_cmd+=(--extra-eval-arg "${NOISE_SEED}")
 if [[ -n "${DEVICE}" ]]; then
   eval_cmd+=(--device "${DEVICE}")
 fi

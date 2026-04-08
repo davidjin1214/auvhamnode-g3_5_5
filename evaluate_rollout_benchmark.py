@@ -304,7 +304,8 @@ def build_parser():
         default=["clean"],
         help=(
             "Noise profiles for rollout initialization. "
-            "Choose any of: clean nominal_eval degraded_eval all. "
+            "Choose any of: clean nominal_eval degraded_eval heading_biased_eval current_bias_eval all. "
+            "current_bias_eval requires an ocean-current checkpoint. "
             "Examples: --noise_profiles clean nominal_eval | --noise_profiles all"
         ),
     )
@@ -605,12 +606,20 @@ def main():
     )
     output_root.mkdir(parents=True, exist_ok=True)
 
+    model, train_cfg, normalizer = build_model(args.checkpoint, device)
+    available_noise_profiles = (
+        ["clean", "nominal_eval", "degraded_eval", "heading_biased_eval", "current_bias_eval"]
+        if getattr(train_cfg, "ocean_current", False) else
+        ["clean", "nominal_eval", "degraded_eval", "heading_biased_eval"]
+    )
     try:
-        noise_profiles = resolve_noise_profiles(args.noise_profiles)
+        noise_profiles = resolve_noise_profiles(
+            args.noise_profiles,
+            available_profiles=available_noise_profiles,
+        )
     except ValueError as exc:
         parser.exit(1, f"{exc}\n")
 
-    model, train_cfg, normalizer = build_model(args.checkpoint, device)
     model_spec = get_model_spec(train_cfg.model_type)
     dataset_path = resolve_dataset_path(train_cfg, args.dataset)
     dataset = load_dataset_artifact(dataset_path) if dataset_path and dataset_path.exists() else None
