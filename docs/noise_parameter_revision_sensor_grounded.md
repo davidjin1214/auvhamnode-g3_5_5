@@ -49,6 +49,12 @@ REMUS 100 典型配置（经 NTNU AUR-Lab、WHOI OSL 文档及 DSTO 技术报告
   - 在 2.0 m/s 时：±(0.002×2.0 + 0.001) = **±0.005 m/s**
 - 单 ping 标准差：±3 mm/s（1200 kHz）
 
+**BT 测量量语义：** DVL 底部跟踪测量的是 AUV 体系坐标下**相对于海底的速度**，
+即总体速度 `v_total`（非相对速度 `v_r`）。在有海流场景下，`v_total = v_r + R^T v_c^n`。
+由于 DVL 噪声是加性的，`nu_r = nu_total - R^T v_c^n` 为线性变换，
+在 `nu_r` 上加等幅高斯噪声与在 `nu_total` 上加噪**数学等价**。
+详细论证见 [noise_model_design.md](./noise_model_design.md) Section 4.2。
+
 **水体跟踪（Water-Track）精度：** 与 BT 相同规格
 
 **数据来源：**
@@ -337,10 +343,21 @@ def _profile_depth_ref_std(profile: str) -> float:
 if getattr(model, "absolute_depth_context", False):
     depth_std = scale * _profile_depth_ref_std(cfg.profile)
     if depth_std > 0.0:
-        y0[:, layout.depth_ref] = y0[:, layout.depth_ref] + depth_std * torch.randn(
-            batch_size, 1, dtype=dtype, device=device
+        depth_noise = _sample_scaled_noise(
+            torch.tensor([depth_std], dtype=dtype, device=device),
+            batch_size,
+            device=device,
+            dtype=dtype,
+            sample_ids=sample_ids,
+            base_seed=base_seed,
+            stream=67,
         )
+        y0[:, layout.depth_ref] = y0[:, layout.depth_ref] + depth_noise
 ```
+
+> **注意：** 必须使用 `_sample_scaled_noise` 而非直接 `torch.randn`，
+> 以保证评估阶段通过 `sample_ids` + `base_seed` 获得确定性噪声，
+> 与其他噪声通道的种子协议一致。
 
 > **注意：** 此变更仅在 `absolute_depth_context=True` 时生效。
 > 如果 `include_depth_in_potential=False`，depth_ref 不进入势能计算，
@@ -392,12 +409,14 @@ if getattr(model, "absolute_depth_context", False):
 
 | 现有设计 | 理由 |
 |----------|------|
-| 海流噪声（`_profile_current_std`）值 | `nominal_eval: [0.012, 0.012, 0.006] m/s` 合理对应 DVL 水流估计不确定性；不修改 |
+| 海流噪声（`_profile_current_std`）值 | `nominal_eval: [0.012, 0.012, 0.006] m/s` 合理对应 DVL BT/WT 差值法（~0.007 m/s RSS）加时空变化余量；垂向取水平一半反映海流场垂向变化较慢。不修改 |
 | SO(3) 指数映射 + SO(3) 投影 | 几何正确，各向异性输入天然兼容，无需修改 |
 | Curriculum 调度（warmup/ramp/mix_ratio） | 与噪声幅度标定无关，不修改 |
 | `_sample_scaled_noise` | 已支持向量 std，无需修改 |
 | `normalizer` 参数 | 保留（用于 loss 归一化 + `u_dim≠3` 执行器 fallback） |
 | profile 名称和枚举 | 保持兼容性 |
+| 各通道独立采样（无交叉相关） | 真实 EKF 后验中姿态/速度/海流误差存在交叉相关（通过 R 耦合），但相关系数高度依赖 EKF 调参和传感器可用性。独立采样覆盖更广的初始条件空间，对鲁棒性测试是更保守的简化 |
+| ODE 空间（nu_r）加噪而非数据空间（nu_total） | DVL BT 噪声为加性高斯，nu_r = nu_total - R^T v_c^n 为线性变换，两者等价。姿态误差通过 R^T v_c^n 引入的二阶交叉项量级约 δR × v_c ≈ 0.017×0.2 ≈ 0.003 m/s，在 nominal_eval 层级与 DVL 噪声同量级，作为 IC 扰动可接受 |
 
 ---
 
