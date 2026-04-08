@@ -123,17 +123,41 @@ nu_r = nu_total - R^T v_c^n
 
 复核后，这个担心对当前训练主线不成立。训练前已经先做了与模型语义一致的状态适配，再构造 normalizer。因此当前方案在“噪声定义”和“训练语义”之间的一致性比表面看起来更好。
 
-## 4.4 当前实现中最该优先修正的点
+## 4.4 第一阶段修订的落实情况
 
-`noise_mix_ratio` 的文档语义是“部分训练样本使用 noisy IC”，但当前实现更接近“整个 batch noisy 或整个 batch clean”。
+第一阶段修订已经完成了最关键的三项：
 
-这会导致：
+- `noise_mix_ratio` 已改为逐样本 noisy mask；
+- 姿态误差已从 isotropic 调整为 yaw-dominant；
+- 训练与评估产物已开始记录各 profile 的实际噪声预算。
 
-- 噪声暴露粒度偏粗；
-- 梯度方差偏大；
-- 与“部分样本存在状态估计误差”这一目标语义不完全一致。
+这意味着当前实现已经比文档初稿阶段更接近目标语义：
 
-因此，从实现优先级看，`mix_ratio` 改为逐样本生效，是最直接也最值得优先做的修订。
+- 噪声暴露粒度更符合“部分样本存在状态估计误差”；
+- 姿态误差结构更贴近 AUV 导航中的 heading-dominant 特征；
+- profile 的实际物理强度也变得可追溯。
+
+## 4.5 还需要再明确的一层边界
+
+虽然当前方案已经在 ODE 语义上闭环，但它仍然不是导航滤波误差的完整统计模型。
+
+更准确地说，当前方案做的是：
+
+- 围绕模型真实消费的状态变量定义误差预算；
+- 用 profile + 数据统计量近似地控制误差半径；
+- 将这种误差注入用作 filtered-state robustness regularization。
+
+它没有做的是：
+
+- 复现真实导航滤波器的联合协方差结构；
+- 显式建模长期时间相关 bias；
+- 给出可直接外推到所有平台和工况的 vendor-level 误差规格。
+
+因此，后续文档和实验结论里应始终避免把当前 profile 直接表述成“真实导航误差本身”，而应表述成：
+
+```text
+面向滤波后状态观测误差的结构化鲁棒性近似
+```
 
 ---
 
@@ -267,6 +291,15 @@ sigma_i = max(floor_i, alpha * std_i)
 ```
 
 其中线速度 floor 为 `0.005 m/s`，角速度 floor 为 `0.0015 rad/s`。
+
+这里还需要强调一点：由于 `std_i` 来自训练集统计，这组 profile 的一部分含义是**数据集相对的**，而不是完全固定的物理标尺。
+
+这带来两个直接推论：
+
+- 在同一数据集上比较不同模型，这样定义完全可以接受；
+- 但在不同数据集或不同采样范围之间比较时，`nominal_eval` 的实际物理强度会漂移。
+
+因此，后续实现里建议把各 profile 真实落地的逐通道 `sigma_i` 一并记录到运行产物中，而不是只保存 profile 名称。
 
 结合当前数据统计，这意味着典型速度噪声量级大致落在：
 
@@ -553,6 +586,8 @@ predict for a short window -> receive a new filtered state -> reinitialize -> pr
 
 这样更接近真实滤波状态误差的离散程度，也更有利于评估外推性能。
 
+这里建议再加一个约束：只有在**已经记录并可回溯实际噪声预算**之后，再引入这类随机化。否则训练 profile 的语义会进一步变模糊，不利于复现实验。
+
 ## 9.4 profile 语义应从“大小分级”升级为“误差类型分级”
 
 建议今后将 profile 理解为两类：
@@ -579,6 +614,38 @@ predict for a short window -> receive a new filtered state -> reinitialize -> pr
 
 对后一种情况，不应直接复用当前的 current-state noise profile 作为默认 nominal 设定。
 
+## 9.5 建议的分阶段执行方式
+
+为了避免文档目标和代码状态再次脱节，建议按两个阶段推进。
+
+### 第一阶段：收紧训练语义，保持主线不变
+
+这一阶段只做最必要、最不改变问题定义的修订。
+目前这部分已经完成：
+
+1. 保留当前 `IC-only` 主线。
+2. 将 `mix_ratio` 改为 sample-level noisy mask。
+3. 将姿态误差从 isotropic 改为 yaw-dominant。
+4. 在训练和评估产物中记录各 profile 实际落地的噪声预算。
+5. 在文档和结果说明中明确 `current-observable` 是当前默认增强接口假设。
+
+这一阶段完成后，就可以较稳妥地回答：
+
+```text
+模型对小的 filtered-state 初始误差是否更鲁棒？
+```
+
+### 第二阶段：增强评估现实性，不急于增加训练复杂度
+
+这一阶段优先扩评估，而不是重新把复杂噪声塞回训练端：
+
+1. 新增 `heading_biased_eval`。
+2. 仅对 `current-observable` 任务新增 `current_bias_eval`。
+3. 输出 noisy / clean 比值、退化百分比、failure rate 增量等稳健性统计。
+4. 增加 receding-horizon benchmark。
+
+只有当研究问题明确转向“更一般、较弱接口下的真实部署可用性”时，再单独引入 `current-unobservable`。
+
 ---
 
 ## 10. 建议如何报告结果
@@ -599,6 +666,14 @@ predict for a short window -> receive a new filtered state -> reinitialize -> pr
 - 不同 seed 下趋势一致；
 
 那么“模型对滤波后状态观测误差更鲁棒”的结论才更有说服力。
+
+此外，建议把每个 profile 对应的实际噪声预算也一并报告，至少包括：
+
+- `delta_nu_r` 的逐通道 `sigma_i`
+- 姿态扰动标准差
+- `delta_v_c` 与 `delta_u_act` 的配置值
+
+否则，`nominal_eval` / `degraded_eval` 仍然容易被读者误解为跨数据集不变的绝对规格。
 
 ---
 
@@ -645,15 +720,19 @@ current-unobservable 作为面向真实部署可用性的可选扩展保留。
 
 ## 11.3 当前最务实的推进顺序
 
-如果近期只推进最关键的修订，我建议顺序如下：
+如果近期只推进最关键的修订，我建议顺序如下。
+其中前五步已完成，后续重点从第六步开始：
 
 1. 保留当前 `IC-only` 主线。
 2. 将 `mix_ratio` 改为逐样本生效。
 3. 将姿态误差从 isotropic 改为 yaw-dominant。
-4. 当前研究阶段默认采用 `current-observable`，并在文档中明确这是增强接口假设。
-5. 仅对 `current-observable` 任务新增 `current_bias_eval`。
-6. 将 `current-unobservable` 保留为可选扩展，并在研究目标转向真实部署可用性时补充进来。
-7. 增加 receding-horizon benchmark。
+4. 在训练与评估产物中记录各 profile 的实际噪声预算。
+5. 当前研究阶段默认采用 `current-observable`，并在文档中明确这是增强接口假设。
+6. 新增 `heading_biased_eval`。
+7. 仅对 `current-observable` 任务新增 `current_bias_eval`。
+8. 增加基于退化百分比和 failure rate 增量的报告指标。
+9. 将 `current-unobservable` 保留为可选扩展，并在研究目标转向真实部署可用性时补充进来。
+10. 增加 receding-horizon benchmark。
 
 这条路线能够在不破坏当前训练主线清晰度的前提下，让 robustness 结论逐步向真实部署语义靠拢。
 

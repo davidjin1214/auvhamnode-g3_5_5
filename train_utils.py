@@ -7,6 +7,7 @@ checkpointing, and evaluation metrics.
 
 import dataclasses
 from copy import deepcopy
+import math
 
 import torch
 import torch.nn as nn
@@ -600,12 +601,27 @@ def _profile_alpha(profile: str) -> float:
     }.get(profile, 0.0)
 
 
-def _profile_rotation_std(profile: str) -> float:
-    return {
+def _profile_rotation_std_vector(
+    profile: str,
+    dtype: torch.dtype,
+    device: torch.device,
+) -> torch.Tensor:
+    base_std = {
         "nominal_train": 0.0035,
         "nominal_eval": 0.0050,
         "degraded_eval": 0.0120,
     }.get(profile, 0.0)
+    if base_std <= 0.0:
+        return torch.zeros(3, dtype=dtype, device=device)
+
+    yaw_ratio = 3.0
+    roll_pitch_std = base_std * math.sqrt(3.0 / (2.0 + yaw_ratio ** 2))
+    yaw_std = yaw_ratio * roll_pitch_std
+    return torch.tensor(
+        [roll_pitch_std, roll_pitch_std, yaw_std],
+        dtype=dtype,
+        device=device,
+    )
 
 
 def _profile_current_std(profile: str, dtype: torch.dtype, device: torch.device) -> torch.Tensor:
@@ -671,6 +687,123 @@ def _sample_scaled_noise(
     return out
 
 
+def summarize_noise_budget(
+    cfg: Optional[NoiseConfig],
+    normalizer: StateNormalizer,
+    *,
+    u_dim: int,
+    ocean_current: bool,
+    epoch: Optional[int] = None,
+    dtype: torch.dtype = torch.float32,
+    device: str = "cpu",
+) -> Dict:
+    profile = "clean" if cfg is None else cfg.profile
+    if cfg is None:
+        cfg = NoiseConfig(
+            profile="clean",
+            scale=0.0,
+            warmup_epochs=0,
+            ramp_epochs=1,
+            mix_ratio=0.0,
+        )
+
+    report_epoch = (
+        int(epoch)
+        if epoch is not None
+        else int(cfg.warmup_epochs + cfg.ramp_epochs)
+    )
+    epoch_scale = float(cfg.epoch_scale(report_epoch))
+    dev = torch.device(device)
+
+    vel_floor = torch.tensor(
+        [
+            cfg.linear_floor_std,
+            cfg.linear_floor_std,
+            cfg.linear_floor_std,
+            cfg.angular_floor_std,
+            cfg.angular_floor_std,
+            cfg.angular_floor_std,
+        ],
+        dtype=dtype,
+        device=dev,
+    )
+    alpha = _profile_alpha(profile)
+    vel_std = normalizer.std_vel.to(device=dev, dtype=dtype)
+    nu_r_std = epoch_scale * torch.maximum(alpha * vel_std, vel_floor)
+
+    rot_std = epoch_scale * _profile_rotation_std_vector(profile, dtype=dtype, device=dev)
+    act_std = epoch_scale * _profile_actuator_std(
+        profile,
+        u_dim,
+        normalizer.std_act,
+        dtype=dtype,
+        device=dev,
+    )
+    current_std = (
+        epoch_scale * _profile_current_std(profile, dtype=dtype, device=dev)
+        if ocean_current
+        else None
+    )
+
+    actuator_labels = (
+        ["delta_r", "delta_s", "rpm"]
+        if u_dim == 3 else
+        [f"a{i}" for i in range(u_dim)]
+    )
+
+    return {
+        "profile": profile,
+        "is_active": bool(cfg.is_active),
+        "epoch": report_epoch,
+        "epoch_scale": epoch_scale,
+        "global_scale": float(cfg.scale),
+        "warmup_epochs": int(cfg.warmup_epochs),
+        "ramp_epochs": int(cfg.ramp_epochs),
+        "mix_ratio": float(cfg.mix_ratio),
+        "velocity_alpha": float(alpha),
+        "linear_floor_std": float(cfg.linear_floor_std),
+        "angular_floor_std": float(cfg.angular_floor_std),
+        "nu_r_std": {
+            name: float(value)
+            for name, value in zip(["u", "v", "w", "p", "q", "r"], nu_r_std.cpu().tolist())
+        },
+        "rotation_std": {
+            name: float(value)
+            for name, value in zip(["roll", "pitch", "yaw"], rot_std.cpu().tolist())
+        },
+        "u_act_std": {
+            name: float(value)
+            for name, value in zip(actuator_labels, act_std.cpu().tolist())
+        },
+        "v_c_std": (
+            {
+                name: float(value)
+                for name, value in zip(["x", "y", "z"], current_std.cpu().tolist())
+            }
+            if current_std is not None else None
+        ),
+    }
+
+
+def format_noise_budget_summary(budget: Optional[Dict]) -> str:
+    if not budget:
+        return "clean"
+
+    nu_r_text = ", ".join(
+        f"{name}={value:.4f}"
+        for name, value in budget.get("nu_r_std", {}).items()
+    )
+    rot_text = ", ".join(
+        f"{name}={value:.4f}"
+        for name, value in budget.get("rotation_std", {}).items()
+    )
+    return (
+        f"profile={budget.get('profile', 'clean')} | epoch_scale={budget.get('epoch_scale', 0.0):.3f}"
+        f" | mix_ratio={budget.get('mix_ratio', 0.0):.3f}"
+        f" | nu_r[{nu_r_text}] | rot[{rot_text}]"
+    )
+
+
 def build_noisy_initial_condition(
     clean_state: torch.Tensor,
     cfg: NoiseConfig,
@@ -718,10 +851,10 @@ def build_noisy_initial_condition(
         stream=11,
     )
 
-    rot_std = scale * _profile_rotation_std(cfg.profile)
-    if rot_std > 0.0:
+    rot_std = scale * _profile_rotation_std_vector(cfg.profile, dtype=dtype, device=device)
+    if torch.any(rot_std > 0):
         delta_theta = _sample_scaled_noise(
-            torch.full((3,), rot_std, dtype=dtype, device=device),
+            rot_std,
             batch_size,
             device=device,
             dtype=dtype,
@@ -887,6 +1020,7 @@ def se3_trajectory_loss(
     normalizer: StateNormalizer,
     target_ode: Optional[torch.Tensor] = None,
     pred_ode: Optional[torch.Tensor] = None,
+    frame_weights: Optional[torch.Tensor] = None,
     weights: Optional[Dict[str, float]] = None,
     so3_regularization_weight: float = 0.0,
 ) -> Tuple[torch.Tensor, Dict[str, torch.Tensor]]:
@@ -908,20 +1042,37 @@ def se3_trajectory_loss(
     def wt(k):
         return w.get(k, 1.0)
 
+    def weighted_mean(values: torch.Tensor, weights: Optional[torch.Tensor]) -> torch.Tensor:
+        if weights is None:
+            return values.mean()
+        weighted = values * weights
+        denom = weights.sum().clamp_min(1.0)
+        return weighted.sum() / denom
+
+    weights_bt = None
+    if frame_weights is not None:
+        weights_bt = frame_weights.to(device=pred.device, dtype=pred.dtype)
+
     dx = (pred[..., :3] - target[..., :3]) / normalizer.std_pos
-    loss_pos = (dx ** 2).mean()
+    loss_pos = weighted_mean(dx ** 2, None if weights_bt is None else weights_bt.unsqueeze(-1))
 
     R_t = target[..., 3:12].reshape(-1, 3, 3)
     R_raw = pred[..., 3:12].reshape(-1, 3, 3)
     R_p = compute_rotation_matrix(pred[..., 3:12].reshape(-1, 9))
-    loss_rot = geodesic_distance_so3(R_t, R_p).pow(2).mean()
+    rot_sq = geodesic_distance_so3(R_t, R_p).pow(2).reshape(target.shape[0], target.shape[1])
+    loss_rot = weighted_mean(rot_sq, weights_bt)
 
     so3_reg, so3_orth, so3_det = so3_constraint_terms(R_raw)
 
     vel_target = target_ode if target_ode is not None else target
     vel_pred = pred_ode if pred_ode is not None else pred
     dv = (vel_pred[..., 12:18] - vel_target[..., 12:18]) / normalizer.std_vel
-    vel_mse = (dv ** 2).mean(dim=(0, 1))
+    if weights_bt is None:
+        vel_mse = (dv ** 2).mean(dim=(0, 1))
+    else:
+        vel_num = ((dv ** 2) * weights_bt.unsqueeze(-1)).sum(dim=(0, 1))
+        vel_den = weights_bt.sum().clamp_min(1.0)
+        vel_mse = vel_num / vel_den
 
     loss_act = torch.zeros((), dtype=pred.dtype, device=pred.device)
     if normalizer.std_act is not None:
@@ -930,7 +1081,10 @@ def se3_trajectory_loss(
         du_act = (
             pred[..., u_act_slice] - target[..., u_act_slice]
         ) / normalizer.std_act.view(1, 1, -1)
-        loss_act = (du_act ** 2).mean()
+        loss_act = weighted_mean(
+            du_act ** 2,
+            None if weights_bt is None else weights_bt.unsqueeze(-1),
+        )
 
     comp_names = ["u", "v", "w", "p", "q", "r"]
     vel_losses = {name: vel_mse[i] for i, name in enumerate(comp_names)}
@@ -1490,6 +1644,8 @@ def print_evaluation_results(results: Dict,
     log(f"Solver failures: {results['solver_failed_batches']}  "
         f"Invalid predictions: {results['invalid_prediction_batches']}")
     log(f"Evaluated on {results['n_samples']} samples")
+    if results.get("noise_budget") is not None:
+        log(f"Noise budget: {format_noise_budget_summary(results['noise_budget'])}")
 
 
 def print_heldout_evaluation_results(results: Dict,
@@ -1525,6 +1681,8 @@ def print_heldout_evaluation_results(results: Dict,
             f"{k}={v}" for k, v in sorted(results["block_failure_counts"].items())
         )
         log(f"Block failures: {failures}")
+    if results.get("noise_budget") is not None:
+        log(f"Noise budget: {format_noise_budget_summary(results['noise_budget'])}")
 
     for scenario, summary in results["by_scenario"].items():
         log(
@@ -1541,12 +1699,15 @@ def save_heldout_evaluation_results(results: Dict, output_dir: Path):
     if "overall" not in results:
         payload = {}
         for profile, profile_results in results.items():
-            payload[profile] = {
+            entry = {
                 "overall": profile_results["overall"],
                 "by_scenario": profile_results["by_scenario"],
                 "failure_counts": profile_results["failure_counts"],
                 "block_failure_counts": profile_results.get("block_failure_counts", {}),
             }
+            if profile_results.get("noise_budget") is not None:
+                entry["noise_budget"] = profile_results["noise_budget"]
+            payload[profile] = entry
         with open(output_dir / "heldout_evaluation.json", "w") as f:
             json.dump(payload, f, indent=2)
 
@@ -1571,6 +1732,10 @@ def save_heldout_evaluation_results(results: Dict, output_dir: Path):
                 f"Lin vel RMSE [m/s]: {overall['velocity_rmse']['mean']:.4f}  "
                 f"Ang vel RMSE [r/s]: {overall['angular_rmse']['mean']:.4f}"
             )
+            if profile_results.get("noise_budget") is not None:
+                summary_lines.append(
+                    f"Noise budget: {format_noise_budget_summary(profile_results['noise_budget'])}"
+                )
             summary_lines.append("")
 
             rows = profile_results.get("trajectory_rows", [])
@@ -1591,6 +1756,7 @@ def save_heldout_evaluation_results(results: Dict, output_dir: Path):
                 "by_scenario": results["by_scenario"],
                 "failure_counts": results["failure_counts"],
                 "block_failure_counts": results.get("block_failure_counts", {}),
+                "noise_budget": results.get("noise_budget"),
             },
             f,
             indent=2,
@@ -1636,6 +1802,8 @@ def save_heldout_evaluation_results(results: Dict, output_dir: Path):
             f"{k}={v}" for k, v in sorted(results["block_failure_counts"].items())
         )
         lines.append(f"Block failures: {failure_text}")
+    if results.get("noise_budget") is not None:
+        lines.append(f"Noise budget: {format_noise_budget_summary(results['noise_budget'])}")
 
     lines.append("")
     lines.append("By Scenario")
@@ -1682,6 +1850,10 @@ def save_block_evaluation_results(results: Dict, output_dir: Path):
                 f"Ang vel RMSE [r/s]: mean={profile_results['angular_rmse']['mean']:.4f}, "
                 f"std={profile_results['angular_rmse']['std']:.4f}"
             )
+            if profile_results.get("noise_budget") is not None:
+                lines.append(
+                    f"Noise budget: {format_noise_budget_summary(profile_results['noise_budget'])}"
+                )
             lines.append("")
 
         with open(output_dir / "block_evaluation.txt", "w") as f:
@@ -1719,6 +1891,8 @@ def save_block_evaluation_results(results: Dict, output_dir: Path):
         f"Invalid predictions: {results['invalid_prediction_batches']}"
     )
     lines.append(f"Evaluated samples: {results['n_samples']}")
+    if results.get("noise_budget") is not None:
+        lines.append(f"Noise budget: {format_noise_budget_summary(results['noise_budget'])}")
 
     with open(output_dir / "block_evaluation.txt", "w") as f:
         f.write("\n".join(lines).rstrip() + "\n")

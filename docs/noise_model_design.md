@@ -4,6 +4,11 @@
 
 这份文档描述的是**当前代码实现**已经采用的噪声接口。
 
+同时，这份文档也会标出当前实现与新版修订方向之间仍然存在的差距。换言之：
+
+- 本文首先回答“代码现在实际做了什么”；
+- 然后显式注明“哪些点只是当前近似实现，还不是最终推荐形态”。
+
 旧版文档里基于 `Level 1 / Level 2 / Level 3` 的整段 AR(1) 轨迹噪声设计，
 已经不再代表当前主训练路径。当前仓库的训练器只对 rollout 初值敏感，因此主方案已经收敛为：
 
@@ -89,6 +94,28 @@ nu_r = nu_total - R^T v_c^n
 
 当前 block 的起点位置按约定总是 0，因此不再对 `Δp(t0)` 单独加噪。
 
+## 4.4 当前噪声模型的边界
+
+当前实现虽然已经切换到 ODE-space-consistent 的 noisy IC，但它仍然只是一个**结构化鲁棒性正则接口**，而不是完整的导航误差后验模型。
+
+具体来说，当前实现默认的是：
+
+- 在 `nu_r / R / u_act / v_c` 等通道上分别施加零均值扰动；
+- 各通道误差预算主要通过 profile 常数和训练集统计量来确定；
+- 重点是控制模型真正消费的变量误差半径，而不是复现导航滤波器的联合协方差结构。
+
+因此，当前噪声接口更准确的定位是：
+
+```text
+filtered-state robustness regularization
+```
+
+而不是：
+
+```text
+full navigation posterior error model
+```
+
 ---
 
 ## 5. Profile 接口
@@ -139,6 +166,14 @@ sigma_i = max(floor_i, alpha * std_i)
 - `alpha` 由 profile 决定
 - `floor_i` 保证噪声不会不现实地趋近于 0
 
+这意味着当前 `nominal_*` / `degraded_*` 的一部分语义是**相对训练数据分布**的，而不是完全固定的物理规格。
+
+因此，解释结果时应注意：
+
+- 同一数据集内比较不同模型时，这种定义是合理的；
+- 跨数据集、跨采样范围比较时，profile 的实际物理强度可能漂移；
+- 推荐在运行产物中额外记录各通道最终落地的 `sigma_i`，避免 `nominal_eval` 被误读成绝对不变的噪声标准。
+
 当前实现使用：
 
 - 线速度 floor: `0.005 m/s`
@@ -152,11 +187,19 @@ profile 对应的 `alpha`：
 
 ## 6.2 姿态初值误差 `delta_theta`
 
-当前姿态初值误差为各向同性小角度扰动，随后通过 SO(3) 指数映射作用到旋转矩阵：
+当前姿态初值误差已经调整为 **yaw-dominant 的各向异性小角度扰动**，随后通过 SO(3) 指数映射作用到旋转矩阵。
+
+实现原则是：
+
+- 保持与旧版 profile 接近的总量级；
+- 让 yaw 方向成为主导误差；
+- 使初始姿态误差更贴近 AUV 导航中常见的 heading-dominant 特征。
 
 - `nominal_train`: `0.0035 rad`
 - `nominal_eval`: `0.0050 rad`
 - `degraded_eval`: `0.0120 rad`
+
+上面三组值仍表示 profile 的基础量级；当前代码会将它们映射为 yaw-dominant 的逐轴标准差。
 
 ## 6.3 海流估计误差 `delta_v_c`
 
@@ -211,6 +254,8 @@ OC 场景下海流误差使用各轴独立预算：
 
 这样可以减少 noisy IC 直接把优化过程打崩的风险。
 
+当前实现中，`noise_mix_ratio` 已按 **sample-level noisy mask** 生效。也就是说，`noise_mix_ratio=0.5` 现在表示大约一半训练样本使用 noisy IC，而不是按 batch 粗粒度开关。
+
 训练完成后，脚本还会自动运行 profile-aware 评估：
 
 - block evaluation 默认：`clean nominal_eval`
@@ -236,6 +281,14 @@ OC 场景下海流误差使用各轴独立预算：
 --block_eval_noise_profiles none
 --heldout_eval_noise_profiles none
 ```
+
+训练与评估输出现在还会额外记录各 profile 的实际噪声预算，包括：
+
+- `delta_nu_r` 的逐通道 `sigma_i`
+- 姿态扰动的逐轴标准差
+- `delta_u_act` 与 `delta_v_c` 的实际配置值
+
+这些信息会写入运行目录中的 `noise_budgets.json`，并同步写入评估 JSON / TXT 结果。
 
 ## 7.1 不同实验目标下的参数取向
 
@@ -356,3 +409,24 @@ python train_auv_hamnode.py \
 ```
 
 通常不建议把 `degraded_eval` 作为默认训练 profile。
+
+---
+
+## 11. 当前状态与下一步重点
+
+第一阶段修订已经完成：
+
+1. `noise_mix_ratio` 已改为 sample-level mask。
+2. 姿态误差已改为 yaw-dominant。
+3. 训练与评估产物会记录实际噪声预算。
+
+当前更值得继续推进的是：
+
+1. 在评估侧补充 bias-type profile，例如 `heading_biased_eval` 与 `current_bias_eval`。
+2. 增加基于 noisy / clean 比值和退化百分比的稳健性报告指标。
+3. 视研究目标再决定是否引入 receding-horizon benchmark 与 `current-unobservable` 扩展。
+
+因此，当前文档里的 profile 仍应被解释为：
+
+- 当前研究阶段的 robustness interface；
+- 而不是可直接外推到所有部署条件的真实导航误差标准。

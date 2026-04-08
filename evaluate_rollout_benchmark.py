@@ -37,7 +37,12 @@ from rollout_benchmark_reporting import (
     write_metric_contract,
     write_summary_report,
 )
-from train_utils import noise_cfg_from_profile, resolve_noise_profiles
+from train_utils import (
+    noise_cfg_from_profile,
+    resolve_noise_profiles,
+    summarize_noise_budget,
+    format_noise_budget_summary,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -374,6 +379,16 @@ def run_single_benchmark(
             "Requested noisy rollout benchmarking but the checkpoint does not contain "
             "a saved normalizer. Re-train with the updated pipeline."
         )
+    noise_budget = (
+        summarize_noise_budget(
+            noise_cfg,
+            normalizer,
+            u_dim=int(getattr(train_cfg, "u_dim", 3)),
+            ocean_current=bool(getattr(train_cfg, "ocean_current", False)),
+            device=str(device),
+        )
+        if normalizer is not None else None
+    )
     evaluations = []
     horizon_rows = []
     specs_by_scenario = {
@@ -389,6 +404,7 @@ def run_single_benchmark(
             f"Starting rollout benchmark | checkpoint={args.checkpoint} | device={device}"
             f" | mode={args.mode}"
             f" | noise_profile={noise_profile}"
+            f" | noise_budget={format_noise_budget_summary(noise_budget)}"
             f" | scenarios={','.join(s.name for s in scenarios)}"
             f" | trajectories={total_traj} | max_horizon={max_rollout_time:.1f}s"
             f" | output_dir={output_dir}"
@@ -500,6 +516,7 @@ def run_single_benchmark(
         "mode": args.mode,
         "noise_profile": noise_profile,
         "noise_seed": args.noise_seed,
+        "noise_budget": noise_budget,
         "generation_config_source": generation_config_source,
         "num_traj_per_scenario": args.num_traj_per_scenario,
         "horizons_s": horizons,

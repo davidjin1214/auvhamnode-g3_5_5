@@ -32,6 +32,7 @@ from copy import deepcopy
 import pickle
 import time
 import argparse
+import json
 
 from torchdiffeq import odeint
 
@@ -50,6 +51,8 @@ from train_utils import (
     infer_dataset_kind_from_path,
     noise_cfg_from_profile,
     resolve_noise_profiles,
+    summarize_noise_budget,
+    format_noise_budget_summary,
 )
 from auv_model_registry import (
     canonicalize_model_type,
@@ -240,20 +243,32 @@ class AUVHamNODETrainer:
 
             # Build (possibly noisy) initial condition; supervision is always clean.
             noise_cfg = self.config.get_noise_config()
-            use_noisy_ic = False
+            clean_y0 = self.model.to_ode_state(batch[:, 0])
+            noisy_mask = None
+            frame_weights = None
             if train and noise_cfg.is_active and noise_cfg.epoch_scale(epoch) > 0.0:
-                use_noisy_ic = float(torch.rand((), device=batch.device).item()) < noise_cfg.mix_ratio
-
-            if use_noisy_ic:
-                y0 = build_noisy_initial_condition(
-                    batch[:, 0],
-                    noise_cfg,
-                    self.model,
-                    self.normalizer,
-                    epoch,
-                )
+                noisy_mask = torch.rand(batch.shape[0], device=batch.device) < noise_cfg.mix_ratio
+                if torch.any(noisy_mask):
+                    noisy_y0 = build_noisy_initial_condition(
+                        clean_y0,
+                        noise_cfg,
+                        self.model,
+                        self.normalizer,
+                        epoch,
+                        state_is_ode=True,
+                    )
+                    y0 = torch.where(noisy_mask[:, None], noisy_y0, clean_y0)
+                    frame_weights = torch.ones(
+                        batch.shape[0],
+                        batch.shape[1],
+                        dtype=batch.dtype,
+                        device=batch.device,
+                    )
+                    frame_weights[noisy_mask, 0] = 0.0
+                else:
+                    y0 = clean_y0
             else:
-                y0 = self.model.to_ode_state(batch[:, 0])
+                y0 = clean_y0
 
             try:
                 pred = odeint(
@@ -274,18 +289,12 @@ class AUVHamNODETrainer:
             # Target is always the clean ground-truth trajectory.
             # Convert to ODE convention; position/rotation/actuator are identical.
             target_ode = self.model.to_ode_state(batch)
-            loss_target = target_ode
-            loss_pred = pred_ode
-            if use_noisy_ic and target_ode.shape[1] > 1:
-                # Skip t=0: y0 is noisy but target[:, 0] is clean, so the
-                # t=0 residual reflects the injected IC noise, not dynamics error.
-                loss_target = target_ode[:, 1:]
-                loss_pred = pred_ode[:, 1:]
 
             loss, comp = se3_trajectory_loss(
-                loss_target,
-                loss_pred,
+                target_ode,
+                pred_ode,
                 self.normalizer,
+                frame_weights=frame_weights,
                 weights={"actuator": self.config.actuator_loss_weight},
                 so3_regularization_weight=self.config.so3_regularization_weight,
             )
@@ -542,6 +551,15 @@ def train_auv_hamnode(
         u_dim=config.u_dim,
     )
     logger.info(normalizer.summary())
+    training_noise_budget = summarize_noise_budget(
+        config.get_noise_config(),
+        normalizer,
+        u_dim=config.u_dim,
+        ocean_current=config.ocean_current,
+        epoch=config.noise_warmup_epochs + config.noise_ramp_epochs,
+        device=config.device,
+    )
+    logger.info("Training noise budget: %s", format_noise_budget_summary(training_noise_budget))
 
     trainer = AUVHamNODETrainer(config, model_class,
                                 normalizer=normalizer, M_init=M_init)
@@ -559,9 +577,23 @@ def train_auv_hamnode(
         profile_name: noise_cfg_from_profile(profile_name)
         for profile_name in block_profile_names
     }
+    block_noise_budgets = {
+        profile_name: summarize_noise_budget(
+            noise_cfg,
+            normalizer,
+            u_dim=config.u_dim,
+            ocean_current=config.ocean_current,
+            device=config.device,
+        )
+        for profile_name, noise_cfg in block_eval_profiles.items()
+    }
     results = {}
     for profile_name, noise_cfg in block_eval_profiles.items():
         logger.info(f"Block evaluation profile: {profile_name}")
+        logger.info(
+            "Block evaluation noise budget: %s",
+            format_noise_budget_summary(block_noise_budgets[profile_name]),
+        )
         profile_results = evaluate_trajectory_prediction(
             model,
             test_loader,
@@ -573,6 +605,7 @@ def train_auv_hamnode(
             normalizer=normalizer,
             noise_seed=config.seed + 1000,
         )
+        profile_results["noise_budget"] = block_noise_budgets[profile_name]
         print_evaluation_results(profile_results, logger)
         results[profile_name] = profile_results
     save_block_evaluation_results(results, trainer.run_dir)
@@ -590,9 +623,23 @@ def train_auv_hamnode(
         profile_name: noise_cfg_from_profile(profile_name)
         for profile_name in heldout_profile_names
     }
+    heldout_noise_budgets = {
+        profile_name: summarize_noise_budget(
+            noise_cfg,
+            normalizer,
+            u_dim=config.u_dim,
+            ocean_current=config.ocean_current,
+            device=config.device,
+        )
+        for profile_name, noise_cfg in heldout_eval_profiles.items()
+    }
     heldout_results = {}
     for profile_name, noise_cfg in heldout_eval_profiles.items():
         logger.info(f"Held-out evaluation profile: {profile_name}")
+        logger.info(
+            "Held-out evaluation noise budget: %s",
+            format_noise_budget_summary(heldout_noise_budgets[profile_name]),
+        )
         profile_results = evaluate_heldout_trajectories(
             model,
             dataset,
@@ -603,9 +650,18 @@ def train_auv_hamnode(
             normalizer=normalizer,
             noise_seed=config.seed + 2000,
         )
+        profile_results["noise_budget"] = heldout_noise_budgets[profile_name]
         print_heldout_evaluation_results(profile_results, logger)
         heldout_results[profile_name] = profile_results
     save_heldout_evaluation_results(heldout_results, trainer.run_dir)
+
+    noise_budget_payload = {
+        "training": training_noise_budget,
+        "block_eval": block_noise_budgets,
+        "heldout_eval": heldout_noise_budgets,
+    }
+    with open(trainer.run_dir / "noise_budgets.json", "w") as f:
+        json.dump(noise_budget_payload, f, indent=2)
 
     with open(trainer.run_dir / "heldout_evaluation.pkl", "wb") as f:
         pickle.dump(heldout_results, f)
