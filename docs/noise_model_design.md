@@ -16,7 +16,7 @@ IC-only, profile-based, ODE-space-consistent noise
 | 版本 | 日期 | 主要变化 |
 |------|------|----------|
 | v1 | 2025-xx-xx | IC-only profile 方案上线；速度噪声使用 `alpha × dataset_std`。**代码已实现。** |
-| v2 | 2026-04-08 | 速度噪声改为传感器绝对值；旋转噪声改为各向异性（tilt/heading 分离）；执行器噪声对齐电位计精度；新增 depth_ref 噪声（条件性）。详见 [noise_parameter_revision_sensor_grounded.md](./noise_parameter_revision_sensor_grounded.md)。**待实现，下述 Section 6 描述的是 v2 目标值。** |
+| v2 | 2026-04-08 | 速度噪声改为传感器绝对值；旋转噪声改为各向异性（tilt/heading 分离）；执行器噪声对齐电位计精度；新增 depth_ref 噪声（条件性）。详见 [noise_parameter_revision_sensor_grounded.md](./noise_parameter_revision_sensor_grounded.md)。**已实现（2026-04-08），下述 Section 6 描述的是当前实际值。** |
 
 更完整的设计背景和取舍，请参见：
 

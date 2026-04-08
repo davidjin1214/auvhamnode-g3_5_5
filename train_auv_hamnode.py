@@ -663,13 +663,6 @@ def main():
         ),
     )
     parser.add_argument(
-        "--noise_level", type=int, default=0, choices=[0, 1, 2, 3],
-        help=(
-            "Legacy noise interface kept for backward compatibility. "
-            "Mapped to profiles: 0=clean, 1=nominal_train, 2=nominal_eval, 3=degraded_eval."
-        ),
-    )
-    parser.add_argument(
         "--noise_scale", type=float, default=1.0,
         help="Global noise magnitude multiplier (default 1.0); use <1 for ablation",
     )
@@ -764,7 +757,6 @@ def main():
         device=args.device,
         seed=args.seed,
         noise_profile=args.noise_profile,
-        noise_level=args.noise_level,
         noise_scale=args.noise_scale,
         noise_ramp_epochs=args.noise_ramp,
         noise_warmup_epochs=args.noise_warmup_epochs,

@@ -93,8 +93,8 @@ class NoiseConfig:
     warmup_epochs: int = 20     # fully clean warmup before noisy IC regularization
     ramp_epochs: int = 80       # linear ramp after warmup
     mix_ratio: float = 0.5      # fraction of training samples using noisy IC
-    linear_floor_std: float = 0.005   # m/s
-    angular_floor_std: float = 0.0015 # rad/s
+    linear_floor_std: float = 0.001   # m/s  (DVL hardware noise floor: 1 mm/s)
+    angular_floor_std: float = 0.0002 # rad/s (HG1700 gyro noise floor)
 
     @property
     def is_active(self) -> bool:
@@ -164,6 +164,23 @@ def setup_logging(log_dir: Path, name: str = "training") -> logging.Logger:
     return logger
 
 
+# Fields removed in v2 noise scheme. Kept here so TrainConfig.from_dict can
+# silently drop them when loading checkpoints written by older code.
+_DEPRECATED_TRAIN_CONFIG_FIELDS: frozenset = frozenset({
+    "noise_level",
+    "noise_vel_lin_std",
+    "noise_vel_ang_std",
+    "noise_rot_init_std",
+    "noise_act_noise_std",
+    "noise_current_std",
+    "noise_ar1_corr",
+    "noise_bias_ratio",
+    "noise_dropout_prob",
+    "noise_walk_ratio",
+    "noise_mult_coeff",
+})
+
+
 @dataclass
 class TrainConfig:
     """Training configuration."""
@@ -196,25 +213,12 @@ class TrainConfig:
     # interface. The remaining noise_* fields are retained for backward
     # compatibility with older configs and scripts.
     noise_profile: Optional[str] = None
-    noise_level: int = 0              # legacy alias: 0=clean 1=nominal_train 2=nominal_eval 3=degraded_eval
     noise_scale: float = 1.0          # global noise magnitude multiplier
     noise_ramp_epochs: int = 100      # curriculum ramp: 0 → full over N epochs
     noise_warmup_epochs: int = 20     # clean warmup before enabling noisy IC
     noise_mix_ratio: float = 0.5      # fraction of samples using noisy IC
-    noise_linear_floor_std: float = 0.005   # m/s
-    noise_angular_floor_std: float = 0.0015 # rad/s
-    # Legacy fields kept so old configs still load. The IC-only profile path no
-    # longer consumes these values directly.
-    noise_vel_lin_std: float = 0.02
-    noise_vel_ang_std: float = 0.005
-    noise_rot_init_std: float = 0.005
-    noise_act_noise_std: float = 0.005
-    noise_current_std: float = 0.05
-    noise_ar1_corr: float = 0.85
-    noise_bias_ratio: float = 0.25
-    noise_dropout_prob: float = 0.12
-    noise_walk_ratio: float = 0.05
-    noise_mult_coeff: float = 0.003
+    noise_linear_floor_std: float = 0.001   # m/s  (DVL hardware noise floor: 1 mm/s)
+    noise_angular_floor_std: float = 0.0002 # rad/s (HG1700 gyro noise floor)
 
     # Ocean current
     ocean_current: bool = False
@@ -291,13 +295,13 @@ class TrainConfig:
     @classmethod
     def from_dict(cls, data: Dict) -> "TrainConfig":
         valid = {field.name for field in dataclasses.fields(cls)}
-        unknown = sorted(set(data) - valid)
+        unknown = sorted(set(data) - valid - _DEPRECATED_TRAIN_CONFIG_FIELDS)
         if unknown:
             raise ValueError(
                 "Unknown TrainConfig fields: "
                 + ", ".join(unknown)
             )
-        return cls(**data)
+        return cls(**{k: v for k, v in data.items() if k in valid})
 
     def get_noise_config(self) -> "NoiseConfig":
         """Extract a NoiseConfig from this TrainConfig's noise_* fields."""
@@ -313,15 +317,7 @@ class TrainConfig:
         )
 
     def resolved_noise_profile(self) -> str:
-        if self.noise_profile is not None:
-            return self.noise_profile
-        legacy_map = {
-            0: "clean",
-            1: "nominal_train",
-            2: "nominal_eval",
-            3: "degraded_eval",
-        }
-        return legacy_map.get(int(self.noise_level), "clean")
+        return self.noise_profile if self.noise_profile is not None else "clean"
 
 
 @dataclass
@@ -592,20 +588,87 @@ def _dvl_dropout_freeze(
     return delta_nu
 
 
-def _profile_alpha(profile: str) -> float:
-    return {
-        "nominal_train": 0.03,
-        "nominal_eval": 0.05,
-        "degraded_eval": 0.10,
-    }.get(profile, 0.0)
+# Deterministic noise stream IDs for _sample_scaled_noise — must be unique per channel.
+_STREAM_NU_R    = 11
+_STREAM_ROT     = 23
+_STREAM_ACT     = 37
+_STREAM_CURRENT = 53
+_STREAM_DEPTH   = 67
 
 
-def _profile_rotation_std(profile: str) -> float:
-    return {
-        "nominal_train": 0.0035,
-        "nominal_eval": 0.0050,
-        "degraded_eval": 0.0120,
+def _profile_velocity_std(
+    profile: str,
+    dtype: torch.dtype,
+    device: torch.device,
+) -> torch.Tensor:
+    """Absolute velocity noise 1-sigma [u, v, w, p, q, r] based on REMUS-100 sensor specs.
+
+    Linear velocity (m/s) — Teledyne RDI Explorer 1200 kHz DVL bottom-track accuracy:
+      ±0.2%×V ± 1 mm/s (long-term). At 1.5 m/s: ±0.004 m/s.
+    Angular velocity (rad/s) — Honeywell HG1700 AG58 gyro:
+      ARW 0.125 deg/sqrt(hr); post-filter dominant term ~0.5–3 mrad/s.
+
+    References:
+      [1] Teledyne RDI Workhorse Navigator/Explorer datasheet (BODC mirror)
+      [2] Honeywell HG1700 AG58 datasheet (NovAtel mirror)
+    """
+    lin = {
+        "nominal_train": 0.003,   # ~DVL noise floor; mild IC regularization
+        "nominal_eval":  0.005,   # DVL BT @ 1.5 m/s measured accuracy (with margin)
+        "degraded_eval": 0.020,   # DVL marginal operation (~4× nominal)
     }.get(profile, 0.0)
+    ang = {
+        "nominal_train": 0.0005,  # HG1700-class gyro, post-filter tight estimate
+        "nominal_eval":  0.001,   # 1 mrad/s, conservative estimate
+        "degraded_eval": 0.003,   # 3 mrad/s during vibration / large maneuvers
+    }.get(profile, 0.0)
+    return torch.tensor([lin, lin, lin, ang, ang, ang], dtype=dtype, device=device)
+
+
+def _profile_rotation_std(
+    profile: str,
+    dtype: torch.dtype,
+    device: torch.device,
+) -> torch.Tensor:
+    """Anisotropic rotation noise 1-sigma [sigma_roll, sigma_pitch, sigma_yaw] (rad).
+
+    Roll/pitch are gravity-constrained (accelerometer correction available in EKF);
+    yaw has no absolute reference underwater (compass only), so uncertainty is ~3–4×
+    larger than tilt.
+
+    References:
+      [1] Honeywell HG1700 AG58 datasheet: accel bias 1 mg → ~1 mrad static tilt error
+      [2] KVH 1725 FOG Compass datasheet: heading accuracy ±0.5° RMS
+      [3] Open-water compass typical: ±1° nominal, ±3° near magnetic disturbances
+    """
+    tilt, yaw = {
+        "nominal_train": (0.003, 0.009),   # tilt ~0.2°, heading ~0.5°; mild regularization
+        "nominal_eval":  (0.005, 0.017),   # tilt ~0.3°, heading ~1.0°; typical compass
+        "degraded_eval": (0.015, 0.052),   # tilt ~0.9°, heading ~3.0°; magnetic disturbance
+    }.get(profile, (0.0, 0.0))
+    return torch.tensor([tilt, tilt, yaw], dtype=dtype, device=device)
+
+
+def _profile_depth_ref_std(
+    profile: str,
+    dtype: torch.dtype,
+    device: torch.device,
+) -> torch.Tensor:
+    """1-sigma depth reference uncertainty (m) when absolute_depth_context=True.
+
+    Error source: pressure-to-depth conversion bias from water density variation
+    (sensor is surface-zeroed; residual error is dominated by density non-uniformity).
+
+    References:
+      [1] DSTO ADA604237: REMUS-100 Honeywell automotive-grade pressure sensor ±1% FS BFSL
+      [2] IOC/UNESCO seawater equation of state (density effect on depth conversion)
+    """
+    val = {
+        "nominal_train": 0.0,   # disabled during training; avoid corrupting early potential learning
+        "nominal_eval":  0.3,   # uniform water column, well-calibrated
+        "degraded_eval": 1.0,   # thermocline or density anomaly region
+    }.get(profile, 0.0)
+    return torch.tensor([val], dtype=dtype, device=device)
 
 
 def _profile_current_std(profile: str, dtype: torch.dtype, device: torch.device) -> torch.Tensor:
@@ -626,10 +689,13 @@ def _profile_actuator_std(
     device: torch.device,
 ) -> torch.Tensor:
     if u_dim == 3:
+        # [delta_r (rad), delta_s (rad), RPM]
+        # Angle: potentiometer/LVDT accuracy ±0.5–1.0° (0.009–0.017 rad)
+        # RPM:   Hall-effect sensor accuracy ±5–10 RPM
         table = {
-            "nominal_train": [0.002, 0.002, 3.0],
-            "nominal_eval": [0.003, 0.003, 5.0],
-            "degraded_eval": [0.008, 0.008, 15.0],
+            "nominal_train": [0.004, 0.004,  3.0],  # ~0.23°; mild regularization
+            "nominal_eval":  [0.009, 0.009,  8.0],  # ~0.52°; potentiometer accuracy
+            "degraded_eval": [0.017, 0.017, 20.0],  # ~0.97°; aged/uncalibrated
         }
         values = table.get(profile, [0.0, 0.0, 0.0])
         return torch.tensor(values, dtype=dtype, device=device)
@@ -693,21 +759,13 @@ def build_noisy_initial_condition(
     dtype = y0.dtype
     layout = model.layout
 
-    vel_std = normalizer.std_vel.to(device=device, dtype=dtype)
-    alpha = _profile_alpha(cfg.profile)
+    profile_vel_std = _profile_velocity_std(cfg.profile, dtype=dtype, device=device)
     vel_floor = torch.tensor(
-        [
-            cfg.linear_floor_std,
-            cfg.linear_floor_std,
-            cfg.linear_floor_std,
-            cfg.angular_floor_std,
-            cfg.angular_floor_std,
-            cfg.angular_floor_std,
-        ],
+        [cfg.linear_floor_std] * 3 + [cfg.angular_floor_std] * 3,
         dtype=dtype,
         device=device,
     )
-    nu_r_std = scale * torch.maximum(alpha * vel_std, vel_floor)
+    nu_r_std = scale * torch.maximum(profile_vel_std, vel_floor)
     y0[:, layout.nu_r] = y0[:, layout.nu_r] + _sample_scaled_noise(
         nu_r_std,
         batch_size,
@@ -715,19 +773,19 @@ def build_noisy_initial_condition(
         dtype=dtype,
         sample_ids=sample_ids,
         base_seed=base_seed,
-        stream=11,
+        stream=_STREAM_NU_R,
     )
 
-    rot_std = scale * _profile_rotation_std(cfg.profile)
-    if rot_std > 0.0:
+    rot_std_vec = scale * _profile_rotation_std(cfg.profile, dtype=dtype, device=device)
+    if torch.any(rot_std_vec > 0):
         delta_theta = _sample_scaled_noise(
-            torch.full((3,), rot_std, dtype=dtype, device=device),
+            rot_std_vec,
             batch_size,
             device=device,
             dtype=dtype,
             sample_ids=sample_ids,
             base_seed=base_seed,
-            stream=23,
+            stream=_STREAM_ROT,
         )
         R_clean = y0[:, 3:12].reshape(batch_size, 3, 3)
         R_delta = _so3_exp_map(delta_theta)
@@ -749,7 +807,7 @@ def build_noisy_initial_condition(
             dtype=dtype,
             sample_ids=sample_ids,
             base_seed=base_seed,
-            stream=37,
+            stream=_STREAM_ACT,
         )
 
     if getattr(model, "ocean_current", False):
@@ -762,7 +820,20 @@ def build_noisy_initial_condition(
                 dtype=dtype,
                 sample_ids=sample_ids,
                 base_seed=base_seed,
-                stream=53,
+                stream=_STREAM_CURRENT,
+            )
+
+    if getattr(model, "absolute_depth_context", False):
+        depth_std = scale * _profile_depth_ref_std(cfg.profile, dtype=dtype, device=device)
+        if torch.any(depth_std > 0):
+            y0[:, layout.depth_ref] = y0[:, layout.depth_ref] + _sample_scaled_noise(
+                depth_std,
+                batch_size,
+                device=device,
+                dtype=dtype,
+                sample_ids=sample_ids,
+                base_seed=base_seed,
+                stream=_STREAM_DEPTH,
             )
 
     return y0
