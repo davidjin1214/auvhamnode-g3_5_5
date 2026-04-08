@@ -11,15 +11,24 @@
 IC-only, profile-based, ODE-space-consistent noise
 ```
 
+**修订历史：**
+
+| 版本 | 日期 | 主要变化 |
+|------|------|----------|
+| v1 | 2025-xx-xx | IC-only profile 方案上线；速度噪声使用 `alpha × dataset_std` |
+| v2 | 2026-04-08 | 速度噪声改为传感器绝对值；旋转噪声改为各向异性（tilt/heading 分离）；执行器噪声对齐电位计精度；新增 depth_ref 噪声（条件性）。详见 [noise_parameter_revision_sensor_grounded.md](./noise_parameter_revision_sensor_grounded.md) |
+
 更完整的设计背景和取舍，请参见：
 
-- [docs/noise_robustness_experiment_design_codex.md](/Users/xiangjin/Library/CloudStorage/OneDrive-Personal/我的/Code/auv_se3node/g3_5_5/docs/noise_robustness_experiment_design_codex.md)
+- [docs/noise_robustness_experiment_design_codex.md](./noise_robustness_experiment_design_codex.md)
+- [docs/noise_parameter_revision_sensor_grounded.md](./noise_parameter_revision_sensor_grounded.md)（v2 修订方案，含传感器规格来源）
 
 ---
 
 ## 2. 当前问题定义
 
-训练数据来自仿真器真值，部署时模型拿到的是导航系统估计状态。当前训练要解决的问题是：
+训练数据来自仿真器真值，部署时模型拿到的是**导航滤波器的后验估计状态**（非原始传感器数据）。
+当前训练要解决的问题是：
 
 ```text
 给定带噪初始导航状态估计 y0_hat，
@@ -33,7 +42,11 @@ y0_noisy -> ODE rollout -> pred_{1:T}
 target = clean future trajectory
 ```
 
-这不是“从带噪观测序列学习动力学”，而是“对带噪初始状态更鲁棒”。
+这不是"从带噪观测序列学习动力学"，而是"对带噪初始状态更鲁棒"。
+
+噪声分布应模拟**导航 EKF 的后验估计误差**，其特征是：
+- 零均值高斯（EKF 的无偏性保证）
+- 量级由各传感器精度决定，而非由飞行速度范围决定
 
 ---
 
@@ -65,11 +78,11 @@ nu_r = nu_total - R^T v_c^n
 
 ## 4. 当前实现的核心原则
 
-## 4.1 只对初值加噪
+### 4.1 只对初值加噪
 
 当前训练路径中，噪声只作用于 `t=0` 的初始状态。不会再构造整段 noisy block 作为主训练输入。
 
-## 4.2 先在 ODE 语义上采样，再回到数据语义
+### 4.2 先在 ODE 语义上采样，再回到数据语义
 
 当前实现的逻辑是：
 
@@ -83,9 +96,9 @@ nu_r = nu_total - R^T v_c^n
 
 - 控制 `nu_r` 噪声预算；
 - 保证 OC 场景下 `R`、`nu_r`、`v_c^n` 的语义一致；
-- 避免旧方案里“data-space 看起来噪声不大，但 ODE 实际输入已经被过度污染”的问题。
+- 避免旧方案里"data-space 看起来噪声不大，但 ODE 实际输入已经被过度污染"的问题。
 
-## 4.3 block-relative 位置不作为独立噪声通道
+### 4.3 block-relative 位置不作为独立噪声通道
 
 当前 block 的起点位置按约定总是 0，因此不再对 `Δp(t0)` 单独加噪。
 
@@ -104,9 +117,9 @@ nu_r = nu_total - R^T v_c^n
 | Profile | 用途 | 说明 |
 |---|---|---|
 | `clean` | 训练 / 评估 | 不加 noisy IC |
-| `nominal_train` | 训练 | 推荐的轻量 IC 正则 |
-| `nominal_eval` | 评估 | 正常导航不确定性 |
-| `degraded_eval` | 评估 | 更强的退化压力测试 |
+| `nominal_train` | 训练 | 推荐的轻量 IC 正则，幅度略低于 nominal_eval |
+| `nominal_eval` | 评估 | 模拟典型运行条件下 EKF 后验误差（对应传感器正常工作） |
+| `degraded_eval` | 评估 | 退化工况压力测试（DVL 临界、磁场干扰等） |
 
 旧的：
 
@@ -123,64 +136,81 @@ nu_r = nu_total - R^T v_c^n
 
 ---
 
-## 6. 各通道噪声的当前设计
+## 6. 各通道噪声设计（v2，传感器精度基准）
 
-## 6.1 相对速度 `delta_nu_r`
+> **v2 修订说明：** 下述数值基于 REMUS 100 实际传感器规格（Teledyne RDI Explorer
+> 1200 kHz DVL、Honeywell HG1700 AG58 IMU、磁罗盘），替换了原先的
+> `alpha × dataset_std` 相对值方案。详细推导见
+> [noise_parameter_revision_sensor_grounded.md](./noise_parameter_revision_sensor_grounded.md)。
 
-速度噪声不再使用“所有轴统一标量”的设计，而是按通道自然尺度确定：
+### 6.1 相对速度 `delta_nu_r`
 
-```text
-sigma_i = max(floor_i, alpha * std_i)
-```
+速度噪声使用**绝对传感器精度值**，不再依赖 `dataset_std`：
 
-其中：
+| 通道 | nominal_train | nominal_eval | degraded_eval | 传感器依据 |
+|------|:-------------:|:------------:|:-------------:|-----------|
+| u, v, w（线速度，m/s） | 0.003 | 0.005 | 0.020 | DVL BT 精度 ±0.2%×V±1mm/s，在 1.5 m/s 时 ≈0.004 m/s |
+| p, q, r（角速度，rad/s） | 0.0005 | 0.001 | 0.003 | HG1700 陀螺 ARW 0.125 deg/√hr，滤波后主导项 ≈0.5–3 mrad/s |
 
-- `std_i` 来自训练集统计
-- `alpha` 由 profile 决定
-- `floor_i` 保证噪声不会不现实地趋近于 0
+`floor` 值（安全下界，通常不生效）：
 
-当前实现使用：
+- 线速度：`0.001 m/s`（DVL 硬件噪声底）
+- 角速度：`0.0002 rad/s`（HG1700 陀螺噪声底）
 
-- 线速度 floor: `0.005 m/s`
-- 角速度 floor: `0.0015 rad/s`
+### 6.2 姿态初值误差 `delta_theta`
 
-profile 对应的 `alpha`：
+> **v2 关键变化：旋转噪声改为各向异性**，分离重力约束轴（横滚/俯仰）与非约束轴（航向）。
 
-- `nominal_train`: `0.03`
-- `nominal_eval`: `0.05`
-- `degraded_eval`: `0.10`
+`delta_theta = [delta_roll, delta_pitch, delta_yaw]` 通过 SO(3) 指数映射作用到旋转矩阵：
 
-## 6.2 姿态初值误差 `delta_theta`
+| 轴 | nominal_train | nominal_eval | degraded_eval | 传感器依据 |
+|----|:-------------:|:------------:|:-------------:|-----------|
+| 横滚 roll（rad） | 0.003 | 0.005 | 0.015 | HG1700 加速度计 1mg，重力约束，动态残差 3–7 mrad |
+| 俯仰 pitch（rad） | 0.003 | 0.005 | 0.015 | 同上 |
+| **航向 yaw（rad）** | **0.009** | **0.017** | **0.052** | **磁罗盘：开阔水域 ±1°（0.017 rad），干扰环境 ±3°（0.052 rad）** |
 
-当前姿态初值误差为各向同性小角度扰动，随后通过 SO(3) 指数映射作用到旋转矩阵：
+> **为什么航向噪声远大于倾角噪声？**
+> 横滚/俯仰受重力持续约束，EKF 可用加速度计持续修正；
+> 航向在水下无绝对参考（无 GPS），仅靠磁罗盘辅助，精度受当地磁场异常影响，
+> 典型精度比倾角差约 3–4 倍。
 
-- `nominal_train`: `0.0035 rad`
-- `nominal_eval`: `0.0050 rad`
-- `degraded_eval`: `0.0120 rad`
+### 6.3 海流估计误差 `delta_v_c`
 
-## 6.3 海流估计误差 `delta_v_c`
+OC 场景下海流误差使用各轴独立预算（此部分 v2 未修改）：
 
-OC 场景下海流误差使用各轴独立预算：
-
-| Profile | `v_cx, v_cy` | `v_cz` |
+| Profile | `v_cx, v_cy`（m/s） | `v_cz`（m/s） |
 |---|---:|---:|
-| `nominal_train` | `0.008 m/s` | `0.004 m/s` |
-| `nominal_eval` | `0.012 m/s` | `0.006 m/s` |
-| `degraded_eval` | `0.030 m/s` | `0.015 m/s` |
+| `nominal_train` | 0.008 | 0.004 |
+| `nominal_eval` | 0.012 | 0.006 |
+| `degraded_eval` | 0.030 | 0.015 |
 
 这部分误差会和姿态一起影响 OC 下的等效初始条件。
 
-## 6.4 执行器反馈误差 `delta_u_act`
+### 6.4 执行器反馈误差 `delta_u_act`
 
-执行器噪声改成了按通道设置，不再使用单一标量：
+执行器噪声按通道设置，v2 对齐 REMUS 100 实际舵面传感器精度：
 
-| 通道 | nominal_train | nominal_eval | degraded_eval |
-|---|---:|---:|---:|
-| `delta_r` | `0.002 rad` | `0.003 rad` | `0.008 rad` |
-| `delta_s` | `0.002 rad` | `0.003 rad` | `0.008 rad` |
-| `rpm` | `3 rpm` | `5 rpm` | `15 rpm` |
+| 通道 | nominal_train | nominal_eval | degraded_eval | 传感器依据 |
+|------|:-------------:|:------------:|:-------------:|-----------|
+| `delta_r`（rad） | 0.004 | 0.009 | 0.017 | 电位计/LVDT 精度 ±0.5–1°（0.009–0.017 rad） |
+| `delta_s`（rad） | 0.004 | 0.009 | 0.017 | 同上 |
+| `rpm` | 3 | 8 | 20 | 霍尔效应传感器精度 ±5–10 RPM |
 
-如果未来 `u_dim != 3`，当前实现会退化为按 actuator 标准差比例缩放。
+如果 `u_dim != 3`，当前实现退化为按 actuator 标准差比例缩放。
+
+### 6.5 绝对深度参考误差 `delta_depth_ref`（条件性）
+
+仅在 `absolute_depth_context=True` 时生效。误差来源为水体密度差异引起的压强-深度换算偏差
+（深度计已表面调零，随机零均值误差由密度不均匀性主导）：
+
+| Profile | sigma_depth_ref（m） | 说明 |
+|---------|:--------------------:|------|
+| `nominal_train` | 0.0（不加） | 训练时默认关闭，避免影响势能梯度学习早期阶段 |
+| `nominal_eval` | 0.3 | 均匀水体，校准良好 |
+| `degraded_eval` | 1.0 | 存在热跃层或密度异常 |
+
+传感器依据：DSTO ADA604237 记录 REMUS 100 装备 Honeywell 汽车级压力传感器，
+精度 ±1% FS BFSL ≈ ±1.4 m（100 m 额定深度，未修正）；调零后实际误差由密度差异决定。
 
 ---
 
@@ -237,21 +267,15 @@ OC 场景下海流误差使用各轴独立预算：
 --heldout_eval_noise_profiles none
 ```
 
-## 7.1 不同实验目标下的参数取向
+### 7.1 不同实验目标下的参数取向
 
-这组参数没有唯一“全局最优”组合，因为你可能在优化不同目标。
+这组参数没有唯一"全局最优"组合，因为你可能在优化不同目标。
 
 当前最常见的三种目标是：
 
 1. 追求最稳训练：少炸、少 early stop、少 seed 敏感。
 2. 追求最强 noisy robustness：带噪评估时退化更小。
 3. 追求尽量不损失 clean 指标：clean held-out 尽量接近纯 clean training。
-
-它们的差别在于主优化方向不同：
-
-- 更高的 noisy 暴露通常更有利于鲁棒性；
-- 但 noisy 暴露越强，clean 上界越容易下降；
-- 更保守的噪声调度通常最稳，但 noisy 增益也更有限。
 
 推荐起点如下：
 
@@ -263,18 +287,9 @@ OC 场景下海流误差使用各轴独立预算：
 
 使用建议：
 
-- 如果你刚开始做新数据集或新模型，先从“最稳训练”配置开始。
-- 如果 clean 结果已经很好，接下来主要想验证鲁棒性，再切到“最强 noisy robustness”。
-- 如果论文主表仍然以 clean 成绩为核心，而你只想要一点点鲁棒性正则，就用“尽量保 clean 指标”。
-
-一个务实的顺序是：
-
-```text
-先跑最稳训练
-再根据 held-out noisy 退化幅度，决定是否把 mix_ratio / scale 往上调
-```
-
-这样比一开始就上高强度 noisy 配置更稳妥。
+- 如果你刚开始做新数据集或新模型，先从"最稳训练"配置开始。
+- 如果 clean 结果已经很好，接下来主要想验证鲁棒性，再切到"最强 noisy robustness"。
+- 如果论文主表仍然以 clean 成绩为核心，而你只想要一点点鲁棒性正则，就用"尽量保 clean 指标"。
 
 ---
 
