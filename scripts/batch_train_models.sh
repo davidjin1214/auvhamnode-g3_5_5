@@ -3,7 +3,16 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CHECKPOINT_ROOT="${ROOT_DIR}/checkpoints"
-PYTHON_BIN="${PYTHON_BIN:-python}"
+if [[ -n "${PYTHON_BIN:-}" ]]; then
+  PYTHON_CMD=("${PYTHON_BIN}")
+  PYTHON_DESC="${PYTHON_BIN}"
+elif command -v conda >/dev/null 2>&1; then
+  PYTHON_CMD=(conda run -n mytorch1 python)
+  PYTHON_DESC="conda run -n mytorch1 python"
+else
+  PYTHON_CMD=(python)
+  PYTHON_DESC="python"
+fi
 
 PROFILE="oc"
 GROUP="all"
@@ -189,7 +198,7 @@ group=${GROUP}
 models=${MODELS[*]:-}
 dataset=${DATASET}
 seeds=${SEEDS[*]}
-python_bin=${PYTHON_BIN}
+python_bin=${PYTHON_DESC}
 device=${DEVICE:-auto}
 extra_train_args=${EXTRA_TRAIN_ARGS[*]:-}
 EOF
@@ -224,7 +233,7 @@ for model_type in "${MODEL_LIST[@]}"; do
     fi
 
     cmd=(
-      "${PYTHON_BIN}" "${ROOT_DIR}/train_auv_hamnode.py"
+      "${PYTHON_CMD[@]}" "${ROOT_DIR}/train_auv_hamnode.py"
       --dataset "${DATASET}"
       --model_type "${model_type}"
       --save_dir "${SUITE_DIR}"

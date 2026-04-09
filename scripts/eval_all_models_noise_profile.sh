@@ -3,7 +3,13 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CHECKPOINT_ROOT="${ROOT_DIR}/checkpoints"
-PYTHON_BIN="${PYTHON_BIN:-python}"
+if [[ -n "${PYTHON_BIN:-}" ]]; then
+  PYTHON_CMD=("${PYTHON_BIN}")
+elif command -v conda >/dev/null 2>&1; then
+  PYTHON_CMD=(conda run -n mytorch1 python)
+else
+  PYTHON_CMD=(python)
+fi
 
 SUITE_NAME=""
 SUITE_DIR=""
@@ -17,6 +23,7 @@ PROGRESS_EVERY=5
 NUM_DIAGNOSTIC_PLOTS=6
 SUMMARY_HORIZON=60
 NOISE_PROFILES="auto"
+NOISE_REFERENCE="auto"
 NOISE_SEED=2024
 EXTRA_EVAL_ARGS=()
 NOISE_PROFILES_ARR=()
@@ -45,7 +52,10 @@ Options:
   --noise-profiles "A B"       Rollout init-noise profiles forwarded to benchmark.
                                Default: auto
                                auto -> noc: "clean nominal_eval degraded_eval heading_biased_eval"
-                                       oc:  "clean nominal_eval degraded_eval heading_biased_eval current_bias_eval"
+                                       oc/dr:  "clean nominal_eval degraded_eval heading_biased_eval"
+                                       oc/ins: "clean nominal_eval degraded_eval heading_biased_eval current_bias_eval"
+  --noise-reference REF        remus100_dr | remus100_ins | auto
+                               Default: auto
   --noise-seed N               Base seed for noisy initialization. Default: 2024
   --extra-eval-arg ARG         Extra arg forwarded to evaluation; repeatable
   --help                       Show this message
@@ -76,6 +86,19 @@ resolve_suite_profile() {
     esac
   fi
   printf "%s" "${profile}"
+}
+
+resolve_suite_noise_reference() {
+  local suite_dir="$1"
+  local config_file=""
+
+  config_file="$(find "${suite_dir}" -mindepth 2 -maxdepth 2 -type f -name "config.json" | sort | head -n 1)"
+  if [[ -z "${config_file}" || ! -f "${config_file}" ]]; then
+    printf ""
+    return
+  fi
+
+  "${PYTHON_CMD[@]}" -c 'import json,sys; print(json.load(open(sys.argv[1])).get("noise_reference", ""))' "${config_file}"
 }
 
 while [[ $# -gt 0 ]]; do
@@ -128,6 +151,10 @@ while [[ $# -gt 0 ]]; do
       NOISE_PROFILES="$2"
       shift 2
       ;;
+    --noise-reference)
+      NOISE_REFERENCE="$2"
+      shift 2
+      ;;
     --noise-seed)
       NOISE_SEED="$2"
       shift 2
@@ -167,9 +194,25 @@ if [[ -z "${SUITE_DIR}" || ! -d "${SUITE_DIR}" ]]; then
   exit 1
 fi
 
+if [[ "${NOISE_REFERENCE}" == "auto" ]]; then
+  NOISE_REFERENCE="$(resolve_suite_noise_reference "${SUITE_DIR}")"
+  if [[ -z "${NOISE_REFERENCE}" ]]; then
+    NOISE_REFERENCE="remus100_dr"
+  fi
+fi
+
+case "${NOISE_REFERENCE}" in
+  remus100_dr|remus100_ins) ;;
+  *)
+    echo "Unsupported --noise-reference: ${NOISE_REFERENCE}." >&2
+    echo "Expected remus100_dr, remus100_ins, or auto." >&2
+    exit 1
+    ;;
+esac
+
 if [[ "${NOISE_PROFILES}" == "auto" ]]; then
   SUITE_PROFILE="$(resolve_suite_profile "${SUITE_DIR}")"
-  if [[ "${SUITE_PROFILE}" == "oc" ]]; then
+  if [[ "${SUITE_PROFILE}" == "oc" && "${NOISE_REFERENCE}" == "remus100_ins" ]]; then
     NOISE_PROFILES="clean nominal_eval degraded_eval heading_biased_eval current_bias_eval"
   else
     NOISE_PROFILES="clean nominal_eval degraded_eval heading_biased_eval"
@@ -193,6 +236,8 @@ eval_cmd=(
 for profile_name in "${NOISE_PROFILES_ARR[@]}"; do
   eval_cmd+=(--extra-eval-arg "${profile_name}")
 done
+eval_cmd+=(--extra-eval-arg "--noise_reference")
+eval_cmd+=(--extra-eval-arg "${NOISE_REFERENCE}")
 eval_cmd+=(--extra-eval-arg "--noise_seed")
 eval_cmd+=(--extra-eval-arg "${NOISE_SEED}")
 if [[ -n "${DEVICE}" ]]; then
@@ -208,12 +253,12 @@ echo "[stage=eval]"
 "${eval_cmd[@]}"
 
 echo "[stage=summarize]"
-"${PYTHON_BIN}" "${ROOT_DIR}/scripts/summarize_sweep.py" \
+"${PYTHON_CMD[@]}" "${ROOT_DIR}/scripts/summarize_sweep.py" \
   --suite-dir "${SUITE_DIR}" \
   --horizon "${SUMMARY_HORIZON}"
 
 echo "[stage=report]"
-"${PYTHON_BIN}" "${ROOT_DIR}/scripts/build_experiment_report.py" \
+"${PYTHON_CMD[@]}" "${ROOT_DIR}/scripts/build_experiment_report.py" \
   --suite-dir "${SUITE_DIR}" \
   --horizon "${SUMMARY_HORIZON}"
 

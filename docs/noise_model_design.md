@@ -2,6 +2,12 @@
 
 ## 1. 文档状态
 
+更新说明：
+
+- 当前代码实现已经继续演进到基于 `noise_reference` 的 v3 版本。
+- 如果你要查和当前代码一致的推荐预算，请优先看：
+  [`docs/noise_design_v3_remus100_reference_grounded.md`](/Users/xiangjin/Library/CloudStorage/OneDrive-Personal/我的/Code/auv_se3node/g3_5_5/docs/noise_design_v3_remus100_reference_grounded.md)
+
 这份文档描述的是**当前代码实现**已经采用的噪声接口。
 
 同时，这份文档也会标出当前实现与新版修订方向之间仍然存在的差距。换言之：

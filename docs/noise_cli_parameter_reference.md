@@ -93,6 +93,7 @@ bash scripts/eval_all_models_noise_profile.sh \
 | 参数 | 取值 | 默认值 | 说明 |
 |---|---|---:|---|
 | `--noise_profile` | `clean`, `nominal_train`, `nominal_eval`, `degraded_eval` | `None` | 推荐接口。通常训练只用 `clean` 或 `nominal_train` |
+| `--noise_reference` | `remus100_dr`, `remus100_ins` | `remus100_dr` | v3 物理参考模式。`dr`=典型 DVL/compass DR；`ins`=增强惯导 / current estimation |
 | `--noise_level` | `0`, `1`, `2`, `3` | `0` | 旧接口兼容：`0=clean`, `1=nominal_train`, `2=nominal_eval`, `3=degraded_eval` |
 | `--noise_scale` | 浮点数 | `1.0` | 全局噪声强度缩放 |
 | `--noise_ramp` | 整数 | `100` | noisy IC 强度 ramp 长度 |
@@ -103,13 +104,13 @@ bash scripts/eval_all_models_noise_profile.sh \
 
 | 参数 | 取值 | CLI 默认值 | 实际默认规则 | 说明 |
 |---|---|---:|---|---|
-| `--block_eval_noise_profiles` | `clean`, `nominal_eval`, `degraded_eval`, `heading_biased_eval`, `current_bias_eval`, `all`, `none` | `None` | `NOC -> clean nominal_eval`; `OC -> clean nominal_eval heading_biased_eval current_bias_eval` | block-level 自动评估 profile 集合 |
-| `--heldout_eval_noise_profiles` | 同上 | `None` | `NOC -> clean nominal_eval degraded_eval heading_biased_eval`; `OC -> clean nominal_eval degraded_eval heading_biased_eval current_bias_eval` | held-out 自动评估 profile 集合 |
+| `--block_eval_noise_profiles` | `clean`, `nominal_eval`, `degraded_eval`, `heading_biased_eval`, `current_bias_eval`, `all`, `none` | `None` | `NOC -> clean nominal_eval`; `OC + remus100_dr -> clean nominal_eval heading_biased_eval`; `OC + remus100_ins -> clean nominal_eval heading_biased_eval current_bias_eval` | block-level 自动评估 profile 集合 |
+| `--heldout_eval_noise_profiles` | 同上 | `None` | `NOC -> clean nominal_eval degraded_eval heading_biased_eval`; `OC + remus100_dr -> clean nominal_eval degraded_eval heading_biased_eval`; `OC + remus100_ins -> clean nominal_eval degraded_eval heading_biased_eval current_bias_eval` | held-out 自动评估 profile 集合 |
 
 限制：
 
 - `current_bias_eval` 仅允许 ocean-current 任务使用
-- `all` 会根据当前任务是 `OC` 还是 `NOC` 自动展开
+- `all` 会根据当前任务是否 `OC` 自动展开，但不会区分 `remus100_dr` / `remus100_ins`
 - `none` 可用于跳过该阶段自动评估
 
 ### 1.4 Ocean-current / 先验相关参数
@@ -127,6 +128,8 @@ bash scripts/eval_all_models_noise_profile.sh \
 ### 1.5 新版噪声方案下的关键行为
 
 - 训练期噪声仍是 `IC-only`
+- `delta_nu_r` 已不再依赖训练集 `std_vel`
+- `noise_reference=remus100_dr` 是当前默认语义
 - `noise_mix_ratio` 已按 sample-level 生效
 - 训练后自动评估支持 `heading_biased_eval`
 - 训练后自动评估支持 `current_bias_eval`
@@ -154,6 +157,7 @@ bash scripts/eval_all_models_noise_profile.sh \
 | `--scenarios` | 多个字符串 | `PRBS CHIRP OU` | 场景列表 |
 | `--seed` | 整数 | `42` | resampled 模式的基础 seed |
 | `--noise_profiles` | `clean`, `nominal_eval`, `degraded_eval`, `heading_biased_eval`, `current_bias_eval`, `all` | `clean` | rollout 初值噪声 profile 集合 |
+| `--noise_reference` | `remus100_dr`, `remus100_ins` | `None` | 覆盖 checkpoint 中保存的 noise reference；不传则沿用 checkpoint |
 | `--noise_seed` | 整数 | `2024` | noisy initialization 的基础 seed |
 | `--device` | 字符串 | `None` | 未提供时自动选 `cuda/cpu` |
 | `--mode` | `heldout`, `resampled` | `heldout` | 评估模式 |
@@ -169,6 +173,7 @@ bash scripts/eval_all_models_noise_profile.sh \
 - `all` 会根据 checkpoint 的 `ocean_current` 属性自动展开：
   - `NOC -> clean nominal_eval degraded_eval heading_biased_eval`
   - `OC -> clean nominal_eval degraded_eval heading_biased_eval current_bias_eval`
+- `all` 不会根据 `noise_reference` 区分 `DR/INS`；如果你要严格复现 v3 默认组合，优先显式传 profile 列表
 
 ### 2.3 新版噪声方案下的关键行为
 
@@ -198,13 +203,14 @@ bash scripts/eval_all_models_noise_profile.sh \
 | `--seeds` | `"43 44 45"` 等 | `"43 44 45"` | 训练 seeds |
 | `--device` | 字符串 | 空 | 透传到 `train_auv_hamnode.py` |
 | `--noise-profile` | `clean`, `nominal_train`, `nominal_eval`, `degraded_eval` | `nominal_train` | 训练期 noise profile |
+| `--noise-reference` | `remus100_dr`, `remus100_ins` | `remus100_dr` | v3 物理参考模式 |
 | `--noise-scale` | 浮点数 | `1.0` | 透传 |
 | `--noise-warmup-epochs` | 整数 | `20` | 透传 |
 | `--noise-ramp` | 整数 | `80` | 透传 |
 | `--noise-mix-ratio` | 浮点数 | `0.5` | 透传 |
 | `--block-eval-noise-profiles` | `"A B"` 或 `auto` | `auto` | block-level 自动评估 profile |
 | `--heldout-eval-noise-profiles` | `"A B"` 或 `auto` | `auto` | held-out 自动评估 profile |
-| `--prefix` | 字符串 | 空 | suite 名中的前缀；空时自动用 `noise_<profile>` |
+| `--prefix` | 字符串 | 空 | suite 名中的前缀；空时自动用 `noise_<profile>_<reference>` |
 | `--suite-name` | 字符串 | 空 | 显式 suite 目录名 |
 | `--extra-train-arg` | 任意字符串，可重复 | 空 | 额外透传给 `train_auv_hamnode.py` |
 
@@ -213,19 +219,21 @@ bash scripts/eval_all_models_noise_profile.sh \
 `--block-eval-noise-profiles auto`
 
 - `noc -> clean nominal_eval`
-- `oc -> clean nominal_eval heading_biased_eval current_bias_eval`
+- `oc + remus100_dr -> clean nominal_eval heading_biased_eval`
+- `oc + remus100_ins -> clean nominal_eval heading_biased_eval current_bias_eval`
 
 `--heldout-eval-noise-profiles auto`
 
 - `noc -> clean nominal_eval degraded_eval heading_biased_eval`
-- `oc -> clean nominal_eval degraded_eval heading_biased_eval current_bias_eval`
+- `oc + remus100_dr -> clean nominal_eval degraded_eval heading_biased_eval`
+- `oc + remus100_ins -> clean nominal_eval degraded_eval heading_biased_eval current_bias_eval`
 
 ### 3.3 新版噪声方案下的关键行为
 
 - 顶层脚本内部会把多值 profile 正确拆开，再透传给 `train_auv_hamnode.py`
 - 不再把多值 profile 当成单个字符串传下去
 - 默认 auto 规则已覆盖 `heading_biased_eval`
-- `oc` 默认 auto 规则已覆盖 `current_bias_eval`
+- 只有 `noise_reference=remus100_ins` 时，`oc` 默认 auto 规则才会覆盖 `current_bias_eval`
 
 ---
 
@@ -252,6 +260,7 @@ bash scripts/eval_all_models_noise_profile.sh \
 | `--num-diagnostic-plots` | 整数 | `6` | 透传 |
 | `--summary-horizon` | 整数/浮点数 | `60` | 汇总与报告默认 horizon |
 | `--noise-profiles` | `"A B"` 或 `auto` | `auto` | rollout init-noise profile 集合 |
+| `--noise-reference` | `remus100_dr`, `remus100_ins`, `auto` | `auto` | auto 时从 suite 内 checkpoint `config.json` 解析，否则显式覆盖 benchmark 的物理参考模式 |
 | `--noise-seed` | 整数 | `2024` | noisy initialization 的 seed |
 | `--extra-eval-arg` | 任意字符串，可重复 | 空 | 额外透传给 `evaluate_rollout_benchmark.py` |
 
@@ -262,13 +271,14 @@ bash scripts/eval_all_models_noise_profile.sh \
 `--noise-profiles auto`
 
 - `noc -> clean nominal_eval degraded_eval heading_biased_eval`
-- `oc -> clean nominal_eval degraded_eval heading_biased_eval current_bias_eval`
+- `oc + remus100_dr -> clean nominal_eval degraded_eval heading_biased_eval`
+- `oc + remus100_ins -> clean nominal_eval degraded_eval heading_biased_eval current_bias_eval`
 
 ### 4.3 新版噪声方案下的关键行为
 
 - 顶层脚本内部会把多值 `noise_profiles` 正确拆开，再透传给 `evaluate_rollout_benchmark.py`
 - 不再把 `"clean nominal_eval degraded_eval"` 当成单个参数传下去
-- `auto` 已升级为新版推荐组合
+- `auto` 会结合 `OC/NOC` 和 `noise_reference` 展开新版推荐组合
 
 ---
 
@@ -280,6 +290,7 @@ bash scripts/eval_all_models_noise_profile.sh \
 conda run -n mytorch1 python train_auv_hamnode.py \
   --dataset ./data/auv_oc_traj1000_xxx.pkl \
   --model_type phnode_full \
+  --noise_reference remus100_dr \
   --noise_profile nominal_train \
   --noise_warmup_epochs 20 \
   --noise_ramp 80 \
@@ -292,7 +303,8 @@ conda run -n mytorch1 python train_auv_hamnode.py \
 conda run -n mytorch1 python evaluate_rollout_benchmark.py \
   --checkpoint ./checkpoints/<run>/best_model.pt \
   --mode heldout \
-  --noise_profiles clean nominal_eval degraded_eval heading_biased_eval current_bias_eval
+  --noise_reference remus100_dr \
+  --noise_profiles clean nominal_eval degraded_eval heading_biased_eval
 ```
 
 ### 5.3 整个训练 sweep
@@ -300,6 +312,7 @@ conda run -n mytorch1 python evaluate_rollout_benchmark.py \
 ```bash
 bash scripts/train_all_models_noise_profile.sh \
   --profile oc \
+  --noise-reference remus100_dr \
   --group core
 ```
 
@@ -319,6 +332,7 @@ bash scripts/eval_all_models_noise_profile.sh \
 - `heading_biased_eval` 已贯通
 - `current_bias_eval` 已贯通
 - OC / NOC 上下文对 `all` / `auto` 的展开已区分
+- `remus100_dr` / `remus100_ins` 两套 v3 物理参考模式已贯通
 - shell 包装脚本对多值 profile 的透传已修正
 - 训练后评估已输出 noisy/clean 比值与退化百分比
 

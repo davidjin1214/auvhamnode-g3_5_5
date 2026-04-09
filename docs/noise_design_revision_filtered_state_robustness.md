@@ -2,6 +2,12 @@
 
 ## 1. 文档目的
 
+更新说明：
+
+- 这份文档保留了对旧版 profile 语义的审查过程。
+- 当前代码已经进一步落地为 v3 reference-based 方案；如需查看与代码一致的推荐预算，请优先看：
+  [`docs/noise_design_v3_remus100_reference_grounded.md`](/Users/xiangjin/Library/CloudStorage/OneDrive-Personal/我的/Code/auv_se3node/g3_5_5/docs/noise_design_v3_remus100_reference_grounded.md)
+
 这份文档重新梳理当前项目的噪声设计问题，并统一回答下面四个问题：
 
 1. 当前训练目标

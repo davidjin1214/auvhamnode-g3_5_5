@@ -17,6 +17,7 @@
 conda run -n mytorch1 python train_auv_hamnode.py \
   --dataset ./data/auv_oc_traj1000_xxx.pkl \
   --model_type phnode_full \
+  --noise_reference remus100_dr \
   --noise_profile nominal_train \
   --noise_warmup_epochs 20 \
   --noise_ramp 80 \
@@ -29,6 +30,7 @@ conda run -n mytorch1 python train_auv_hamnode.py \
 conda run -n mytorch1 python train_auv_hamnode.py \
   --dataset ./data/auv_noc_traj1000_xxx.pkl \
   --model_type phnode_full \
+  --noise_reference remus100_dr \
   --noise_profile nominal_train \
   --noise_warmup_epochs 20 \
   --noise_ramp 80 \
@@ -41,6 +43,7 @@ conda run -n mytorch1 python train_auv_hamnode.py \
 conda run -n mytorch1 python train_auv_hamnode.py \
   --dataset ./data/auv_oc_traj1000_xxx.pkl \
   --model_type phnode_full \
+  --noise_reference remus100_ins \
   --noise_profile nominal_train \
   --block_eval_noise_profiles clean nominal_eval heading_biased_eval current_bias_eval \
   --heldout_eval_noise_profiles clean nominal_eval degraded_eval heading_biased_eval current_bias_eval
@@ -50,13 +53,14 @@ conda run -n mytorch1 python train_auv_hamnode.py \
 
 ## 2. 单个 checkpoint 的 rollout benchmark
 
-### 2.1 OC checkpoint，全量新版评估 profile
+### 2.1 OC checkpoint，默认 `remus100_dr` 评估 profile
 
 ```bash
 conda run -n mytorch1 python evaluate_rollout_benchmark.py \
   --checkpoint ./checkpoints/<run>/best_model.pt \
   --mode heldout \
-  --noise_profiles clean nominal_eval degraded_eval heading_biased_eval current_bias_eval
+  --noise_reference remus100_dr \
+  --noise_profiles clean nominal_eval degraded_eval heading_biased_eval
 ```
 
 ### 2.2 NOC checkpoint，全量新版评估 profile
@@ -89,6 +93,7 @@ conda run -n mytorch1 python evaluate_rollout_benchmark.py \
 ```bash
 bash scripts/train_all_models_noise_profile.sh \
   --profile oc \
+  --noise-reference remus100_dr \
   --group core
 ```
 
@@ -96,7 +101,7 @@ bash scripts/train_all_models_noise_profile.sh \
 
 - `block_eval_noise_profiles=auto`
 - `heldout_eval_noise_profiles=auto`
-- 会自动展开为包含 `heading_biased_eval` 和 `current_bias_eval` 的 OC 默认组合
+- 会自动展开为 `remus100_dr` 的 OC 默认组合，不再默认加入 `current_bias_eval`
 
 ### 3.2 NOC sweep，使用新版自动评估组合
 
@@ -112,6 +117,7 @@ bash scripts/train_all_models_noise_profile.sh \
 bash scripts/train_all_models_noise_profile.sh \
   --profile oc \
   --group core \
+  --noise-reference remus100_ins \
   --block-eval-noise-profiles "clean nominal_eval heading_biased_eval current_bias_eval" \
   --heldout-eval-noise-profiles "clean nominal_eval degraded_eval heading_biased_eval current_bias_eval"
 ```
@@ -130,7 +136,8 @@ bash scripts/eval_all_models_noise_profile.sh \
 说明：
 
 - `noise_profiles=auto`
-- 若该 suite 是 OC，会自动加入 `current_bias_eval`
+- 若该 suite 是 `OC + remus100_dr`，不会自动加入 `current_bias_eval`
+- 若该 suite 是 `OC + remus100_ins`，会自动加入 `current_bias_eval`
 - 若该 suite 是 NOC，则不会加入 `current_bias_eval`
 
 ### 4.2 手动指定 rollout profile
@@ -155,7 +162,21 @@ bash scripts/eval_all_models_noise_profile.sh \
 
 ## 5. 最常用的 profile 组合
 
-### 5.1 OC 自动评估推荐组合
+### 5.1 OC `remus100_dr` 自动评估推荐组合
+
+block-level:
+
+```text
+clean nominal_eval heading_biased_eval
+```
+
+held-out / rollout:
+
+```text
+clean nominal_eval degraded_eval heading_biased_eval
+```
+
+### 5.2 OC `remus100_ins` 扩展组合
 
 block-level:
 
@@ -169,7 +190,7 @@ held-out / rollout:
 clean nominal_eval degraded_eval heading_biased_eval current_bias_eval
 ```
 
-### 5.2 NOC 自动评估推荐组合
+### 5.3 NOC 自动评估推荐组合
 
 block-level:
 

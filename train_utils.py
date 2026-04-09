@@ -90,12 +90,13 @@ class NoiseConfig:
     """Noise configuration aligned with the current IC-only training interface."""
 
     profile: str = "clean"      # clean / nominal_train / nominal_eval / degraded_eval / heading_biased_eval / current_bias_eval
+    reference: str = "remus100_dr"  # remus100_dr / remus100_ins
     scale: float = 1.0          # global magnitude multiplier
     warmup_epochs: int = 20     # fully clean warmup before noisy IC regularization
     ramp_epochs: int = 80       # linear ramp after warmup
     mix_ratio: float = 0.5      # fraction of training samples using noisy IC
-    linear_floor_std: float = 0.005   # m/s
-    angular_floor_std: float = 0.0015 # rad/s
+    linear_floor_std: float = 0.005   # legacy compatibility field, not used by v3 budgets
+    angular_floor_std: float = 0.0015 # legacy compatibility field, not used by v3 budgets
 
     @property
     def is_active(self) -> bool:
@@ -118,6 +119,11 @@ AVAILABLE_NOISE_PROFILES = (
     "current_bias_eval",
 )
 
+AVAILABLE_NOISE_REFERENCES = (
+    "remus100_dr",
+    "remus100_ins",
+)
+
 
 def _base_noise_profile(profile: str) -> str:
     return {
@@ -126,14 +132,27 @@ def _base_noise_profile(profile: str) -> str:
     }.get(profile, profile)
 
 
-def noise_cfg_from_profile(profile_name: str) -> Optional["NoiseConfig"]:
+def _resolve_noise_reference(reference: Optional[str]) -> str:
+    ref = str(reference or "remus100_dr").strip().lower()
+    if ref not in AVAILABLE_NOISE_REFERENCES:
+        valid = ", ".join(AVAILABLE_NOISE_REFERENCES)
+        raise ValueError(f"Unsupported noise reference {reference!r}. Expected one of: {valid}")
+    return ref
+
+
+def noise_cfg_from_profile(profile_name: str, *, reference: str = "remus100_dr") -> Optional["NoiseConfig"]:
     if profile_name == "clean":
         return None
     valid_profiles = {"nominal_train", *AVAILABLE_NOISE_PROFILES[1:]}
     if profile_name not in valid_profiles:
         valid = ", ".join(["clean", *sorted(valid_profiles)])
         raise ValueError(f"Unsupported noise profile {profile_name!r}. Expected one of: {valid}")
-    return NoiseConfig(profile=profile_name, warmup_epochs=0, ramp_epochs=1)
+    return NoiseConfig(
+        profile=profile_name,
+        reference=_resolve_noise_reference(reference),
+        warmup_epochs=0,
+        ramp_epochs=1,
+    )
 
 
 def resolve_noise_profiles(values, default_profiles=None, allow_none=False, available_profiles=None):
@@ -157,6 +176,45 @@ def resolve_noise_profiles(values, default_profiles=None, allow_none=False, avai
         if key not in resolved:
             resolved.append(key)
     return resolved
+
+
+def available_eval_noise_profiles(ocean_current: bool) -> List[str]:
+    return (
+        ["clean", "nominal_eval", "degraded_eval", "heading_biased_eval", "current_bias_eval"]
+        if ocean_current else
+        ["clean", "nominal_eval", "degraded_eval", "heading_biased_eval"]
+    )
+
+
+def default_eval_noise_profiles(
+    *,
+    ocean_current: bool,
+    noise_reference: str,
+    phase: str,
+) -> List[str]:
+    reference = _resolve_noise_reference(noise_reference)
+    if phase not in {"block", "heldout"}:
+        raise ValueError(f"Unsupported evaluation phase: {phase}")
+
+    if not ocean_current:
+        return (
+            ["clean", "nominal_eval"]
+            if phase == "block" else
+            ["clean", "nominal_eval", "degraded_eval", "heading_biased_eval"]
+        )
+
+    if reference == "remus100_ins":
+        return (
+            ["clean", "nominal_eval", "heading_biased_eval", "current_bias_eval"]
+            if phase == "block" else
+            ["clean", "nominal_eval", "degraded_eval", "heading_biased_eval", "current_bias_eval"]
+        )
+
+    return (
+        ["clean", "nominal_eval", "heading_biased_eval"]
+        if phase == "block" else
+        ["clean", "nominal_eval", "degraded_eval", "heading_biased_eval"]
+    )
 
 
 def setup_logging(log_dir: Path, name: str = "training") -> logging.Logger:
@@ -215,6 +273,7 @@ class TrainConfig:
     # interface. The remaining noise_* fields are retained for backward
     # compatibility with older configs and scripts.
     noise_profile: Optional[str] = None
+    noise_reference: str = "remus100_dr"
     noise_level: int = 0              # legacy alias: 0=clean 1=nominal_train 2=nominal_eval 3=degraded_eval
     noise_scale: float = 1.0          # global noise magnitude multiplier
     noise_ramp_epochs: int = 100      # curriculum ramp: 0 → full over N epochs
@@ -323,6 +382,7 @@ class TrainConfig:
         profile = self.resolved_noise_profile()
         return NoiseConfig(
             profile=profile,
+            reference=_resolve_noise_reference(self.noise_reference),
             scale=self.noise_scale,
             warmup_epochs=self.noise_warmup_epochs,
             ramp_epochs=self.noise_ramp_epochs,
@@ -611,69 +671,148 @@ def _dvl_dropout_freeze(
     return delta_nu
 
 
-def _profile_alpha(profile: str) -> float:
+def _profile_velocity_spec(
+    profile: str,
+    reference: str,
+    dtype: torch.dtype,
+    device: torch.device,
+) -> Dict[str, torch.Tensor]:
     profile = _base_noise_profile(profile)
+    _resolve_noise_reference(reference)
+    table = {
+        "nominal_train": {
+            "linear_floor": [0.002, 0.002, 0.003],
+            "linear_ratio": [0.002, 0.002, 0.002],
+            "angular_std": [0.0006, 0.0006, 0.0010],
+        },
+        "nominal_eval": {
+            "linear_floor": [0.003, 0.003, 0.004],
+            "linear_ratio": [0.003, 0.003, 0.003],
+            "angular_std": [0.0008, 0.0008, 0.0015],
+        },
+        "degraded_eval": {
+            "linear_floor": [0.006, 0.006, 0.008],
+            "linear_ratio": [0.006, 0.006, 0.006],
+            "angular_std": [0.0015, 0.0015, 0.0030],
+        },
+    }
+    payload = table.get(profile)
+    if payload is None:
+        zeros = torch.zeros(3, dtype=dtype, device=device)
+        return {
+            "linear_floor": zeros,
+            "linear_ratio": zeros,
+            "angular_std": zeros,
+        }
     return {
-        "nominal_train": 0.03,
-        "nominal_eval": 0.05,
-        "degraded_eval": 0.10,
-    }.get(profile, 0.0)
+        key: torch.tensor(values, dtype=dtype, device=device)
+        for key, values in payload.items()
+    }
+
+
+def _profile_velocity_std_from_state(
+    nu_r_state: torch.Tensor,
+    profile: str,
+    reference: str,
+) -> torch.Tensor:
+    spec = _profile_velocity_spec(
+        profile,
+        reference,
+        dtype=nu_r_state.dtype,
+        device=nu_r_state.device,
+    )
+    linear_speed = nu_r_state[:, :3].abs()
+    linear_floor = spec["linear_floor"].view(1, 3)
+    linear_ratio = spec["linear_ratio"].view(1, 3)
+    linear_std = torch.sqrt(linear_floor ** 2 + (linear_ratio * linear_speed) ** 2)
+    angular_std = spec["angular_std"].view(1, 3).expand(nu_r_state.shape[0], 3)
+    return torch.cat([linear_std, angular_std], dim=1)
 
 
 def _profile_rotation_std_vector(
     profile: str,
+    reference: str,
     dtype: torch.dtype,
     device: torch.device,
 ) -> torch.Tensor:
     profile = _base_noise_profile(profile)
-    base_std = {
-        "nominal_train": 0.0035,
-        "nominal_eval": 0.0050,
-        "degraded_eval": 0.0120,
-    }.get(profile, 0.0)
-    if base_std <= 0.0:
+    reference = _resolve_noise_reference(reference)
+    table = {
+        "remus100_dr": {
+            "nominal_train": [0.0015, 0.0015, 0.0060],
+            "nominal_eval": [0.0020, 0.0020, 0.0100],
+            "degraded_eval": [0.0040, 0.0040, 0.0250],
+        },
+        "remus100_ins": {
+            "nominal_train": [0.0008, 0.0008, 0.0030],
+            "nominal_eval": [0.0010, 0.0010, 0.0040],
+            "degraded_eval": [0.0020, 0.0020, 0.0100],
+        },
+    }
+    values = table.get(reference, {}).get(profile)
+    if values is None:
         return torch.zeros(3, dtype=dtype, device=device)
-
-    yaw_ratio = 3.0
-    roll_pitch_std = base_std * math.sqrt(3.0 / (2.0 + yaw_ratio ** 2))
-    yaw_std = yaw_ratio * roll_pitch_std
-    return torch.tensor(
-        [roll_pitch_std, roll_pitch_std, yaw_std],
-        dtype=dtype,
-        device=device,
-    )
+    return torch.tensor(values, dtype=dtype, device=device)
 
 
 def _profile_rotation_bias_vector(
     profile: str,
+    reference: str,
     dtype: torch.dtype,
     device: torch.device,
 ) -> torch.Tensor:
+    reference = _resolve_noise_reference(reference)
     values = {
-        "heading_biased_eval": [0.0, 0.0, 0.0150],
-    }.get(profile, [0.0, 0.0, 0.0])
+        "remus100_dr": {
+            "heading_biased_eval": [0.0, 0.0, 0.0350],
+        },
+        "remus100_ins": {
+            "heading_biased_eval": [0.0, 0.0, 0.0200],
+        },
+    }.get(reference, {}).get(profile, [0.0, 0.0, 0.0])
     return torch.tensor(values, dtype=dtype, device=device)
 
 
 def _profile_current_bias_vector(
     profile: str,
+    reference: str,
     dtype: torch.dtype,
     device: torch.device,
 ) -> torch.Tensor:
-    values = {
-        "current_bias_eval": [0.0150, 0.0150, 0.0050],
-    }.get(profile, [0.0, 0.0, 0.0])
+    reference = _resolve_noise_reference(reference)
+    table = {
+        "remus100_dr": {
+            "current_bias_eval": [0.0500, 0.0500, 0.0200],
+        },
+        "remus100_ins": {
+            "current_bias_eval": [0.0500, 0.0500, 0.0200],
+        },
+    }
+    values = table.get(reference, {}).get(profile, [0.0, 0.0, 0.0])
     return torch.tensor(values, dtype=dtype, device=device)
 
 
-def _profile_current_std(profile: str, dtype: torch.dtype, device: torch.device) -> torch.Tensor:
+def _profile_current_std(
+    profile: str,
+    reference: str,
+    dtype: torch.dtype,
+    device: torch.device,
+) -> torch.Tensor:
     profile = _base_noise_profile(profile)
+    reference = _resolve_noise_reference(reference)
     table = {
-        "nominal_train": [0.008, 0.008, 0.004],
-        "nominal_eval": [0.012, 0.012, 0.006],
-        "degraded_eval": [0.030, 0.030, 0.015],
+        "remus100_dr": {
+            "nominal_train": [0.0, 0.0, 0.0],
+            "nominal_eval": [0.0, 0.0, 0.0],
+            "degraded_eval": [0.0, 0.0, 0.0],
+        },
+        "remus100_ins": {
+            "nominal_train": [0.020, 0.020, 0.008],
+            "nominal_eval": [0.030, 0.030, 0.010],
+            "degraded_eval": [0.060, 0.060, 0.020],
+        },
     }
-    values = table.get(profile, [0.0, 0.0, 0.0])
+    values = table.get(reference, {}).get(profile, [0.0, 0.0, 0.0])
     return torch.tensor(values, dtype=dtype, device=device)
 
 
@@ -681,15 +820,17 @@ def _profile_actuator_std(
     profile: str,
     u_dim: int,
     std_act: Optional[torch.Tensor],
+    reference: str,
     dtype: torch.dtype,
     device: torch.device,
 ) -> torch.Tensor:
     profile = _base_noise_profile(profile)
+    _resolve_noise_reference(reference)
     if u_dim == 3:
         table = {
             "nominal_train": [0.002, 0.002, 3.0],
             "nominal_eval": [0.003, 0.003, 5.0],
-            "degraded_eval": [0.008, 0.008, 15.0],
+            "degraded_eval": [0.004, 0.004, 10.0],
         }
         values = table.get(profile, [0.0, 0.0, 0.0])
         return torch.tensor(values, dtype=dtype, device=device)
@@ -740,18 +881,30 @@ def _sample_scaled_noise(
     stream: int = 0,
 ) -> torch.Tensor:
     std = std.to(device=device, dtype=dtype)
-    dim = int(std.numel())
+    if std.ndim == 1:
+        dim = int(std.numel())
+        std_rows = std.view(1, dim).expand(batch_size, dim)
+    elif std.ndim == 2:
+        if std.shape[0] != batch_size:
+            raise ValueError(
+                f"Per-sample std must have batch dimension {batch_size}, got {tuple(std.shape)}."
+            )
+        dim = int(std.shape[1])
+        std_rows = std
+    else:
+        raise ValueError(f"std must be 1D or 2D, got shape {tuple(std.shape)}.")
+
     if base_seed is None or sample_ids is None:
-        return std.view(1, dim) * torch.randn(batch_size, dim, dtype=dtype, device=device)
+        return std_rows * torch.randn(batch_size, dim, dtype=dtype, device=device)
 
     sample_ids = torch.as_tensor(sample_ids, dtype=torch.long).view(-1).cpu().tolist()
-    std_cpu = std.detach().cpu().to(dtype=torch.float32)
+    std_cpu = std_rows.detach().cpu().to(dtype=torch.float32)
     out = torch.empty(batch_size, dim, dtype=dtype, device=device)
     for idx, sample_id in enumerate(sample_ids):
         gen = torch.Generator(device="cpu")
         gen.manual_seed(int(base_seed) + 1000003 * int(sample_id) + 7919 * int(stream))
         draw = torch.randn(dim, generator=gen, dtype=torch.float32)
-        out[idx] = (std_cpu * draw).to(device=device, dtype=dtype)
+        out[idx] = (std_cpu[idx] * draw).to(device=device, dtype=dtype)
     return out
 
 
@@ -770,6 +923,7 @@ def summarize_noise_budget(
     if cfg is None:
         cfg = NoiseConfig(
             profile="clean",
+            reference="remus100_dr",
             scale=0.0,
             warmup_epochs=0,
             ramp_epochs=1,
@@ -783,27 +937,34 @@ def summarize_noise_budget(
     )
     epoch_scale = float(cfg.epoch_scale(report_epoch))
     dev = torch.device(device)
+    reference = _resolve_noise_reference(cfg.reference)
 
-    vel_floor = torch.tensor(
-        [
-            cfg.linear_floor_std,
-            cfg.linear_floor_std,
-            cfg.linear_floor_std,
-            cfg.angular_floor_std,
-            cfg.angular_floor_std,
-            cfg.angular_floor_std,
-        ],
+    vel_spec = _profile_velocity_spec(profile, reference, dtype=dtype, device=dev)
+    nu_r_ref_speed = torch.tensor([1.0, 1.0, 1.0], dtype=dtype, device=dev)
+    nu_r_linear_std = torch.sqrt(
+        vel_spec["linear_floor"] ** 2 + (vel_spec["linear_ratio"] * nu_r_ref_speed) ** 2
+    )
+    nu_r_std = epoch_scale * torch.cat([nu_r_linear_std, vel_spec["angular_std"]], dim=0)
+
+    rot_std = epoch_scale * _profile_rotation_std_vector(
+        profile,
+        reference,
         dtype=dtype,
         device=dev,
     )
-    alpha = _profile_alpha(profile)
-    vel_std = normalizer.std_vel.to(device=dev, dtype=dtype)
-    nu_r_std = epoch_scale * torch.maximum(alpha * vel_std, vel_floor)
-
-    rot_std = epoch_scale * _profile_rotation_std_vector(profile, dtype=dtype, device=dev)
-    rot_bias = epoch_scale * _profile_rotation_bias_vector(profile, dtype=dtype, device=dev)
+    rot_bias = epoch_scale * _profile_rotation_bias_vector(
+        profile,
+        reference,
+        dtype=dtype,
+        device=dev,
+    )
     current_bias = (
-        epoch_scale * _profile_current_bias_vector(profile, dtype=dtype, device=dev)
+        epoch_scale * _profile_current_bias_vector(
+            profile,
+            reference,
+            dtype=dtype,
+            device=dev,
+        )
         if ocean_current
         else None
     )
@@ -811,11 +972,17 @@ def summarize_noise_budget(
         profile,
         u_dim,
         normalizer.std_act,
+        reference,
         dtype=dtype,
         device=dev,
     )
     current_std = (
-        epoch_scale * _profile_current_std(profile, dtype=dtype, device=dev)
+        epoch_scale * _profile_current_std(
+            profile,
+            reference,
+            dtype=dtype,
+            device=dev,
+        )
         if ocean_current
         else None
     )
@@ -829,6 +996,7 @@ def summarize_noise_budget(
     return {
         "profile": profile,
         "base_profile": base_profile,
+        "reference": reference,
         "is_active": bool(cfg.is_active),
         "epoch": report_epoch,
         "epoch_scale": epoch_scale,
@@ -836,9 +1004,20 @@ def summarize_noise_budget(
         "warmup_epochs": int(cfg.warmup_epochs),
         "ramp_epochs": int(cfg.ramp_epochs),
         "mix_ratio": float(cfg.mix_ratio),
-        "velocity_alpha": float(alpha),
-        "linear_floor_std": float(cfg.linear_floor_std),
-        "angular_floor_std": float(cfg.angular_floor_std),
+        "nu_r_model": "linear=sqrt(floor^2 + (ratio*|nu_r|)^2); angular=fixed",
+        "nu_r_reference_speed_mps": 1.0,
+        "nu_r_linear_floor_std": {
+            name: float(value)
+            for name, value in zip(["u", "v", "w"], vel_spec["linear_floor"].cpu().tolist())
+        },
+        "nu_r_linear_ratio": {
+            name: float(value)
+            for name, value in zip(["u", "v", "w"], vel_spec["linear_ratio"].cpu().tolist())
+        },
+        "nu_r_angular_std": {
+            name: float(value)
+            for name, value in zip(["p", "q", "r"], vel_spec["angular_std"].cpu().tolist())
+        },
         "nu_r_std": {
             name: float(value)
             for name, value in zip(["u", "v", "w", "p", "q", "r"], nu_r_std.cpu().tolist())
@@ -887,9 +1066,17 @@ def format_noise_budget_summary(budget: Optional[Dict]) -> str:
     if not budget:
         return "clean"
 
-    nu_r_text = ", ".join(
+    nu_r_floor_text = ", ".join(
         f"{name}={value:.4f}"
-        for name, value in budget.get("nu_r_std", {}).items()
+        for name, value in budget.get("nu_r_linear_floor_std", {}).items()
+    )
+    nu_r_ratio_text = ", ".join(
+        f"{name}={value:.4f}"
+        for name, value in budget.get("nu_r_linear_ratio", {}).items()
+    )
+    nu_r_ang_text = ", ".join(
+        f"{name}={value:.4f}"
+        for name, value in budget.get("nu_r_angular_std", {}).items()
     )
     rot_text = ", ".join(
         f"{name}={value:.4f}"
@@ -908,12 +1095,17 @@ def format_noise_budget_summary(budget: Optional[Dict]) -> str:
         if abs(value) > 0.0
     )
     base_profile = budget.get("base_profile")
+    reference = budget.get("reference")
     return (
         f"profile={budget.get('profile', 'clean')}"
         f"{f' (base={base_profile})' if base_profile and base_profile != budget.get('profile', 'clean') else ''}"
+        f"{f' | ref={reference}' if reference else ''}"
         f" | epoch_scale={budget.get('epoch_scale', 0.0):.3f}"
         f" | mix_ratio={budget.get('mix_ratio', 0.0):.3f}"
-        f" | nu_r[{nu_r_text}] | rot[{rot_text}]"
+        f" | nu_r_lin_floor[{nu_r_floor_text}]"
+        f" | nu_r_lin_ratio[{nu_r_ratio_text}]"
+        f" | nu_r_ang[{nu_r_ang_text}]"
+        f" | rot[{rot_text}]"
         f"{f' | rot_bias[{rot_bias_text}]' if rot_bias_text else ''}"
         f"{f' | v_c_bias[{current_bias_text}]' if current_bias_text else ''}"
     )
@@ -940,22 +1132,14 @@ def build_noisy_initial_condition(
     device = y0.device
     dtype = y0.dtype
     layout = model.layout
+    reference = _resolve_noise_reference(cfg.reference)
 
-    vel_std = normalizer.std_vel.to(device=device, dtype=dtype)
-    alpha = _profile_alpha(cfg.profile)
-    vel_floor = torch.tensor(
-        [
-            cfg.linear_floor_std,
-            cfg.linear_floor_std,
-            cfg.linear_floor_std,
-            cfg.angular_floor_std,
-            cfg.angular_floor_std,
-            cfg.angular_floor_std,
-        ],
-        dtype=dtype,
-        device=device,
+    nu_r_clean = y0[:, layout.nu_r]
+    nu_r_std = scale * _profile_velocity_std_from_state(
+        nu_r_clean,
+        cfg.profile,
+        reference,
     )
-    nu_r_std = scale * torch.maximum(alpha * vel_std, vel_floor)
     y0[:, layout.nu_r] = y0[:, layout.nu_r] + _sample_scaled_noise(
         nu_r_std,
         batch_size,
@@ -966,8 +1150,18 @@ def build_noisy_initial_condition(
         stream=11,
     )
 
-    rot_std = scale * _profile_rotation_std_vector(cfg.profile, dtype=dtype, device=device)
-    rot_bias = scale * _profile_rotation_bias_vector(cfg.profile, dtype=dtype, device=device)
+    rot_std = scale * _profile_rotation_std_vector(
+        cfg.profile,
+        reference,
+        dtype=dtype,
+        device=device,
+    )
+    rot_bias = scale * _profile_rotation_bias_vector(
+        cfg.profile,
+        reference,
+        dtype=dtype,
+        device=device,
+    )
     if torch.any(rot_std > 0) or torch.any(rot_bias > 0):
         delta_theta = torch.zeros(batch_size, 3, dtype=dtype, device=device)
         if torch.any(rot_std > 0):
@@ -1000,6 +1194,7 @@ def build_noisy_initial_condition(
         cfg.profile,
         u_act_dim,
         normalizer.std_act,
+        reference,
         dtype=dtype,
         device=device,
     )
@@ -1015,8 +1210,18 @@ def build_noisy_initial_condition(
         )
 
     if getattr(model, "ocean_current", False):
-        current_std = scale * _profile_current_std(cfg.profile, dtype=dtype, device=device)
-        current_bias = scale * _profile_current_bias_vector(cfg.profile, dtype=dtype, device=device)
+        current_std = scale * _profile_current_std(
+            cfg.profile,
+            reference,
+            dtype=dtype,
+            device=device,
+        )
+        current_bias = scale * _profile_current_bias_vector(
+            cfg.profile,
+            reference,
+            dtype=dtype,
+            device=device,
+        )
         if torch.any(current_std > 0):
             y0[:, layout.v_c] = y0[:, layout.v_c] + _sample_scaled_noise(
                 current_std,

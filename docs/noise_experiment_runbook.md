@@ -11,10 +11,12 @@
 
 ## 1. 推荐实验结构
 
-建议把新版噪声方案实验分成两条线：
+建议把新版噪声方案实验分成两条主线：
 
-- `OC` 主实验：验证 `nominal_eval`、`degraded_eval`、`heading_biased_eval`、`current_bias_eval`
+- `OC + remus100_dr` 主实验：验证 `nominal_eval`、`degraded_eval`、`heading_biased_eval`
 - `NOC` 对照实验：验证不含海流状态时的鲁棒性趋势是否保持一致
+
+`current_bias_eval` 现在更适合放在 `OC + remus100_ins` 扩展实验里，而不是默认主线。
 
 建议执行顺序：
 
@@ -32,6 +34,7 @@
 conda run -n mytorch1 python train_auv_hamnode.py \
   --dataset ./data/auv_oc_traj1000_xxx.pkl \
   --model_type phnode_full \
+  --noise_reference remus100_dr \
   --noise_profile nominal_train \
   --noise_warmup_epochs 20 \
   --noise_ramp 80 \
@@ -40,8 +43,8 @@ conda run -n mytorch1 python train_auv_hamnode.py \
 
 默认自动评估 profile：
 
-- block-level: `clean nominal_eval heading_biased_eval current_bias_eval`
-- held-out: `clean nominal_eval degraded_eval heading_biased_eval current_bias_eval`
+- block-level: `clean nominal_eval heading_biased_eval`
+- held-out: `clean nominal_eval degraded_eval heading_biased_eval`
 
 建议重点检查：
 
@@ -54,7 +57,7 @@ conda run -n mytorch1 python train_auv_hamnode.py \
 
 - `noise_mix_ratio` 已按 sample-level 记录
 - `heading_biased_eval` 的 budget 中存在 yaw bias
-- `current_bias_eval` 的 budget 中存在 `v_c` bias
+- `delta_nu_r` budget 已记录为 state-dependent 的 floor/ratio 结构
 - `relative_to_clean` 已写入结果文件
 
 ### 2.2 单个 checkpoint 的 rollout benchmark
@@ -63,7 +66,8 @@ conda run -n mytorch1 python train_auv_hamnode.py \
 conda run -n mytorch1 python evaluate_rollout_benchmark.py \
   --checkpoint ./checkpoints/<run>/best_model.pt \
   --mode heldout \
-  --noise_profiles clean nominal_eval degraded_eval heading_biased_eval current_bias_eval
+  --noise_reference remus100_dr \
+  --noise_profiles clean nominal_eval degraded_eval heading_biased_eval
 ```
 
 建议重点检查：
@@ -74,7 +78,6 @@ conda run -n mytorch1 python evaluate_rollout_benchmark.py \
 你应该确认：
 
 - `config.noise_budget` 存在
-- `current_bias_eval` 成功展开
 - 每个 profile 都有独立输出目录
 
 ### 2.3 OC 主 sweep
@@ -82,6 +85,7 @@ conda run -n mytorch1 python evaluate_rollout_benchmark.py \
 ```bash
 bash scripts/train_all_models_noise_profile.sh \
   --profile oc \
+  --noise-reference remus100_dr \
   --group core
 ```
 
@@ -93,8 +97,8 @@ bash scripts/train_all_models_noise_profile.sh \
 
 其中 `auto` 会展开为：
 
-- block-level: `clean nominal_eval heading_biased_eval current_bias_eval`
-- held-out: `clean nominal_eval degraded_eval heading_biased_eval current_bias_eval`
+- block-level: `clean nominal_eval heading_biased_eval`
+- held-out: `clean nominal_eval degraded_eval heading_biased_eval`
 
 ### 2.4 OC 主 sweep 的 rollout 评估
 
@@ -111,7 +115,7 @@ bash scripts/eval_all_models_noise_profile.sh \
 
 其中 `auto` 会展开为：
 
-- `clean nominal_eval degraded_eval heading_biased_eval current_bias_eval`
+- `clean nominal_eval degraded_eval heading_biased_eval`
 
 ### 2.5 OC 实验产物
 
@@ -124,6 +128,24 @@ bash scripts/eval_all_models_noise_profile.sh \
 - `checkpoints/<suite>/sweep_model_metrics.csv`
 - `checkpoints/<suite>/experiment_report.md`
 
+### 2.6 OC + remus100_ins 扩展实验
+
+只有当你明确要评估增强惯导 / current estimation 场景时，才建议启用这一条线。
+
+训练示例：
+
+```bash
+bash scripts/train_all_models_noise_profile.sh \
+  --profile oc \
+  --noise-reference remus100_ins \
+  --group core
+```
+
+此时 `auto` 会重新包含 `current_bias_eval`：
+
+- block-level: `clean nominal_eval heading_biased_eval current_bias_eval`
+- held-out: `clean nominal_eval degraded_eval heading_biased_eval current_bias_eval`
+
 ---
 
 ## 3. NOC 对照实验
@@ -134,6 +156,7 @@ bash scripts/eval_all_models_noise_profile.sh \
 conda run -n mytorch1 python train_auv_hamnode.py \
   --dataset ./data/auv_noc_traj1000_xxx.pkl \
   --model_type phnode_full \
+  --noise_reference remus100_dr \
   --noise_profile nominal_train \
   --noise_warmup_epochs 20 \
   --noise_ramp 80 \
@@ -204,12 +227,15 @@ bash scripts/eval_all_models_noise_profile.sh \
 
 ## 4. 推荐比较方式
 
-完成 `OC` 与 `NOC` 两条线后，建议至少比较以下内容：
+完成 `OC + remus100_dr` 与 `NOC` 两条线后，建议至少比较以下内容：
 
 - clean 基线性能
 - `nominal_eval` 相对 clean 的退化比例
 - `degraded_eval` 相对 clean 的退化比例
 - `heading_biased_eval` 是否引起明显额外退化
+
+如果你另外跑了 `OC + remus100_ins` 扩展线，再额外比较：
+
 - `current_bias_eval` 是否成为 `OC` 模型的主要脆弱点
 
 优先读取的字段：
@@ -223,7 +249,8 @@ bash scripts/eval_all_models_noise_profile.sh \
 ## 5. 常见提醒
 
 - `current_bias_eval` 只适用于 ocean-current 模型或 checkpoint。
+- `remus100_dr` 是当前默认语义；只有在明确研究增强配置时才切到 `remus100_ins`。
 - 直接调用 Python 脚本时，多值 profile 参数不要写成一个整体字符串。
 - 调用顶层 Bash 包装脚本时，多值 profile 参数应写成一个带空格的字符串，由脚本内部拆分。
-- `scripts/eval_all_models_noise_profile.sh` 的 `auto` 规则依赖 `suite_config.txt` 或 suite 目录名中的 `oc/noc` 信息。
+- `scripts/eval_all_models_noise_profile.sh` 的 `auto` 规则依赖 `oc/noc` 和 suite 内 checkpoint 的 `noise_reference`。
 - 如果只是检查链路是否打通，优先跑单模型 smoke test，而不是直接跑全 sweep。

@@ -40,6 +40,8 @@ from rollout_benchmark_reporting import (
 from train_utils import (
     noise_cfg_from_profile,
     resolve_noise_profiles,
+    available_eval_noise_profiles,
+    default_eval_noise_profiles,
     summarize_noise_budget,
     format_noise_budget_summary,
 )
@@ -310,6 +312,16 @@ def build_parser():
         ),
     )
     parser.add_argument(
+        "--noise_reference",
+        type=str,
+        default=None,
+        choices=["remus100_dr", "remus100_ins"],
+        help=(
+            "Override the checkpoint noise reference for rollout benchmarking. "
+            "When omitted, use the value stored in the checkpoint config."
+        ),
+    )
+    parser.add_argument(
         "--noise_seed",
         type=int,
         default=2024,
@@ -374,7 +386,8 @@ def run_single_benchmark(
     noise_profile,
     ground_truth_cache_dir,
 ):
-    noise_cfg = noise_cfg_from_profile(noise_profile)
+    noise_reference = args.noise_reference or getattr(train_cfg, "noise_reference", "remus100_dr")
+    noise_cfg = noise_cfg_from_profile(noise_profile, reference=noise_reference)
     if noise_cfg is not None and normalizer is None:
         raise ValueError(
             "Requested noisy rollout benchmarking but the checkpoint does not contain "
@@ -607,14 +620,23 @@ def main():
     output_root.mkdir(parents=True, exist_ok=True)
 
     model, train_cfg, normalizer = build_model(args.checkpoint, device)
-    available_noise_profiles = (
-        ["clean", "nominal_eval", "degraded_eval", "heading_biased_eval", "current_bias_eval"]
-        if getattr(train_cfg, "ocean_current", False) else
-        ["clean", "nominal_eval", "degraded_eval", "heading_biased_eval"]
+    if args.noise_reference is not None:
+        train_cfg.noise_reference = args.noise_reference
+    available_noise_profiles = available_eval_noise_profiles(
+        getattr(train_cfg, "ocean_current", False)
     )
     try:
+        default_profiles = (
+            default_eval_noise_profiles(
+                ocean_current=bool(getattr(train_cfg, "ocean_current", False)),
+                noise_reference=getattr(train_cfg, "noise_reference", "remus100_dr"),
+                phase="heldout",
+            )
+            if args.noise_profiles == ["auto"] else None
+        )
         noise_profiles = resolve_noise_profiles(
-            args.noise_profiles,
+            args.noise_profiles if default_profiles is None else None,
+            default_profiles=default_profiles,
             available_profiles=available_noise_profiles,
         )
     except ValueError as exc:

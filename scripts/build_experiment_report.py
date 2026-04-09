@@ -297,14 +297,16 @@ def build_report_text(
 ) -> str:
     generated_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     dataset_paths = sorted({record["dataset_path"] for record in run_records if record["dataset_path"]})
-    best_run = min(
-        (
-            record
-            for record in run_records
-            if _is_finite(record["resampled_position_median"])
-        ),
-        key=lambda record: record["resampled_position_median"],
+    finite_resampled_runs = [
+        record
+        for record in run_records
+        if _is_finite(record["resampled_position_median"])
+    ]
+    best_run = (
+        min(finite_resampled_runs, key=lambda record: record["resampled_position_median"])
+        if finite_resampled_runs else None
     )
+    best_model = model_records[0] if model_records else None
     main_runs = [record for record in run_records if record["model_type"] == "phnode_full"]
     main_range = float("nan")
     if main_runs:
@@ -420,14 +422,26 @@ def build_report_text(
         "",
         "## Key Findings",
         "",
-        f"- Best single run: `{best_run['run_name']}` with resampled@{horizon_s:.0f}s "
-        f"`pos median={_fmt(best_run['resampled_position_median'], 4)} m`, "
-        f"`p95={_fmt(best_run['resampled_position_p95'], 4)} m`, "
-        f"`completion={_fmt_pct(best_run['resampled_completion_rate'])}`.",
-        f"- Best model family by resampled mean is `{model_records[0]['group']}/{model_records[0]['model_type']}` "
-        f"with `pos median={_fmt(model_records[0]['resampled_position_median_mean'], 4)} m` and "
-        f"`completion={_fmt_pct(model_records[0]['resampled_completion_rate_mean'])}`.",
     ]
+    if best_run is not None:
+        lines.append(
+            f"- Best single run: `{best_run['run_name']}` with resampled@{horizon_s:.0f}s "
+            f"`pos median={_fmt(best_run['resampled_position_median'], 4)} m`, "
+            f"`p95={_fmt(best_run['resampled_position_p95'], 4)} m`, "
+            f"`completion={_fmt_pct(best_run['resampled_completion_rate'])}`."
+        )
+    else:
+        lines.append(
+            f"- Best single run: `NA`. No run has a finite resampled position median at `{horizon_s:.1f}s`."
+        )
+    if best_model is not None:
+        lines.append(
+            f"- Best model family by resampled mean is `{best_model['group']}/{best_model['model_type']}` "
+            f"with `pos median={_fmt(best_model['resampled_position_median_mean'], 4)} m` and "
+            f"`completion={_fmt_pct(best_model['resampled_completion_rate_mean'])}`."
+        )
+    else:
+        lines.append("- Best model family by resampled mean: `NA`.")
     if main_runs and _is_finite(main_range):
         lines.append(
             f"- Main model `main/phnode_full` is competitive at its best seeds, but has noticeable seed sensitivity: "

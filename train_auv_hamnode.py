@@ -51,6 +51,8 @@ from train_utils import (
     infer_dataset_kind_from_path,
     noise_cfg_from_profile,
     resolve_noise_profiles,
+    available_eval_noise_profiles,
+    default_eval_noise_profiles,
     summarize_noise_budget,
     format_noise_budget_summary,
     attach_relative_to_clean_block,
@@ -571,20 +573,16 @@ def train_auv_hamnode(
     logger.info("Running detailed evaluation...")
     model = trainer.get_model()
     eval_device = torch.device(config.device)
-    available_eval_profiles = (
-        ["clean", "nominal_eval", "degraded_eval", "heading_biased_eval", "current_bias_eval"]
-        if config.ocean_current else
-        ["clean", "nominal_eval", "degraded_eval", "heading_biased_eval"]
+    available_eval_profiles = available_eval_noise_profiles(config.ocean_current)
+    default_block_profiles = default_eval_noise_profiles(
+        ocean_current=config.ocean_current,
+        noise_reference=config.noise_reference,
+        phase="block",
     )
-    default_block_profiles = (
-        ["clean", "nominal_eval", "heading_biased_eval", "current_bias_eval"]
-        if config.ocean_current else
-        ["clean", "nominal_eval"]
-    )
-    default_heldout_profiles = (
-        ["clean", "nominal_eval", "degraded_eval", "heading_biased_eval", "current_bias_eval"]
-        if config.ocean_current else
-        ["clean", "nominal_eval", "degraded_eval", "heading_biased_eval"]
+    default_heldout_profiles = default_eval_noise_profiles(
+        ocean_current=config.ocean_current,
+        noise_reference=config.noise_reference,
+        phase="heldout",
     )
 
     block_profile_names = resolve_noise_profiles(
@@ -594,7 +592,10 @@ def train_auv_hamnode(
         available_profiles=available_eval_profiles,
     )
     block_eval_profiles = {
-        profile_name: noise_cfg_from_profile(profile_name)
+        profile_name: noise_cfg_from_profile(
+            profile_name,
+            reference=config.noise_reference,
+        )
         for profile_name in block_profile_names
     }
     block_noise_budgets = {
@@ -647,7 +648,10 @@ def train_auv_hamnode(
         available_profiles=available_eval_profiles,
     )
     heldout_eval_profiles = {
-        profile_name: noise_cfg_from_profile(profile_name)
+        profile_name: noise_cfg_from_profile(
+            profile_name,
+            reference=config.noise_reference,
+        )
         for profile_name in heldout_profile_names
     }
     heldout_noise_budgets = {
@@ -749,6 +753,17 @@ def main():
             "clean=disable noisy IC, "
             "nominal_train=default mild IC regularization, "
             "nominal_eval/degraded_eval mainly for ablation."
+        ),
+    )
+    parser.add_argument(
+        "--noise_reference",
+        type=str,
+        default="remus100_dr",
+        choices=["remus100_dr", "remus100_ins"],
+        help=(
+            "Physical reference used by the v3 noisy-IC budget. "
+            "remus100_dr=typical DVL/compass dead reckoning; "
+            "remus100_ins=enhanced inertial/current-estimation setup."
         ),
     )
     parser.add_argument(
@@ -855,6 +870,7 @@ def main():
         device=args.device,
         seed=args.seed,
         noise_profile=args.noise_profile,
+        noise_reference=args.noise_reference,
         noise_level=args.noise_level,
         noise_scale=args.noise_scale,
         noise_ramp_epochs=args.noise_ramp,

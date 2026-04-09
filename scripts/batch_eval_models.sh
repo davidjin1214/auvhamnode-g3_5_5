@@ -2,7 +2,13 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-PYTHON_BIN="${PYTHON_BIN:-python}"
+if [[ -n "${PYTHON_BIN:-}" ]]; then
+  PYTHON_CMD=("${PYTHON_BIN}")
+elif command -v conda >/dev/null 2>&1; then
+  PYTHON_CMD=(conda run -n mytorch1 python)
+else
+  PYTHON_CMD=(python)
+fi
 
 SUITE_DIR=""
 MODE="heldout"
@@ -136,7 +142,7 @@ tail -n +2 "${MANIFEST_PATH}" | while IFS=$'\t' read -r model_group model_type s
   fi
 
   cmd=(
-    "${PYTHON_BIN}" "${ROOT_DIR}/evaluate_rollout_benchmark.py"
+    "${PYTHON_CMD[@]}" "${ROOT_DIR}/evaluate_rollout_benchmark.py"
     --checkpoint "${local_checkpoint_path}"
     --mode "${MODE}"
     --output_dir "${eval_root}"

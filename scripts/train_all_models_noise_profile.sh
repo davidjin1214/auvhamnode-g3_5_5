@@ -12,6 +12,7 @@ DEVICE=""
 DATASET=""
 SUITE_NAME=""
 NOISE_PROFILE="nominal_train"
+NOISE_REFERENCE="remus100_dr"
 NOISE_SCALE="1.0"
 NOISE_WARMUP_EPOCHS="20"
 NOISE_RAMP="80"
@@ -41,6 +42,8 @@ Options:
   --device DEVICE                   Forwarded to train_auv_hamnode.py
   --noise-profile PROFILE           One of clean nominal_train nominal_eval degraded_eval
                                     Default: nominal_train
+  --noise-reference REF             One of remus100_dr remus100_ins
+                                    Default: remus100_dr
   --noise-scale FLOAT               Global noise multiplier. Default: 1.0
   --noise-warmup-epochs N           Fully clean warmup epochs. Default: 20
   --noise-ramp N                    Ramp length after warmup. Default: 80
@@ -48,12 +51,14 @@ Options:
   --block-eval-noise-profiles "A B" Post-training block eval profiles.
                                     Default: auto
                                     auto -> noc: "clean nominal_eval"
-                                            oc:  "clean nominal_eval heading_biased_eval current_bias_eval"
+                                            oc/dr:  "clean nominal_eval heading_biased_eval"
+                                            oc/ins: "clean nominal_eval heading_biased_eval current_bias_eval"
   --heldout-eval-noise-profiles "A B"
                                     Post-training heldout eval profiles.
                                     Default: auto
                                     auto -> noc: "clean nominal_eval degraded_eval heading_biased_eval"
-                                            oc:  "clean nominal_eval degraded_eval heading_biased_eval current_bias_eval"
+                                            oc/dr:  "clean nominal_eval degraded_eval heading_biased_eval"
+                                            oc/ins: "clean nominal_eval degraded_eval heading_biased_eval current_bias_eval"
   --prefix NAME                     Prefix embedded in the suite folder name
   --suite-name NAME                 Explicit suite folder name under checkpoints/
   --extra-train-arg ARG             Extra arg forwarded to training; repeatable
@@ -122,6 +127,10 @@ while [[ $# -gt 0 ]]; do
       NOISE_PROFILE="$2"
       shift 2
       ;;
+    --noise-reference)
+      NOISE_REFERENCE="$2"
+      shift 2
+      ;;
     --noise-scale)
       NOISE_SCALE="$2"
       shift 2
@@ -187,6 +196,15 @@ case "${NOISE_PROFILE}" in
     ;;
 esac
 
+case "${NOISE_REFERENCE}" in
+  remus100_dr|remus100_ins) ;;
+  *)
+    echo "Unsupported --noise-reference: ${NOISE_REFERENCE}." >&2
+    echo "Expected remus100_dr or remus100_ins." >&2
+    exit 1
+    ;;
+esac
+
 if [[ -z "${DATASET}" ]]; then
   DATASET="$(resolve_default_dataset "${PROFILE}")"
 fi
@@ -198,12 +216,16 @@ if [[ -z "${DATASET}" || ! -f "${DATASET}" ]]; then
 fi
 
 if [[ -z "${PREFIX}" ]]; then
-  PREFIX="noise_${NOISE_PROFILE}"
+  PREFIX="noise_${NOISE_PROFILE}_${NOISE_REFERENCE}"
 fi
 
 if [[ "${BLOCK_EVAL_NOISE_PROFILES}" == "auto" ]]; then
   if [[ "${PROFILE}" == "oc" ]]; then
-    BLOCK_EVAL_NOISE_PROFILES="clean nominal_eval heading_biased_eval current_bias_eval"
+    if [[ "${NOISE_REFERENCE}" == "remus100_ins" ]]; then
+      BLOCK_EVAL_NOISE_PROFILES="clean nominal_eval heading_biased_eval current_bias_eval"
+    else
+      BLOCK_EVAL_NOISE_PROFILES="clean nominal_eval heading_biased_eval"
+    fi
   else
     BLOCK_EVAL_NOISE_PROFILES="clean nominal_eval"
   fi
@@ -211,7 +233,11 @@ fi
 
 if [[ "${HELDOUT_EVAL_NOISE_PROFILES}" == "auto" ]]; then
   if [[ "${PROFILE}" == "oc" ]]; then
-    HELDOUT_EVAL_NOISE_PROFILES="clean nominal_eval degraded_eval heading_biased_eval current_bias_eval"
+    if [[ "${NOISE_REFERENCE}" == "remus100_ins" ]]; then
+      HELDOUT_EVAL_NOISE_PROFILES="clean nominal_eval degraded_eval heading_biased_eval current_bias_eval"
+    else
+      HELDOUT_EVAL_NOISE_PROFILES="clean nominal_eval degraded_eval heading_biased_eval"
+    fi
   else
     HELDOUT_EVAL_NOISE_PROFILES="clean nominal_eval degraded_eval heading_biased_eval"
   fi
@@ -229,6 +255,8 @@ cmd=(
   --prefix "${PREFIX}"
   --extra-train-arg "--noise_profile"
   --extra-train-arg "${NOISE_PROFILE}"
+  --extra-train-arg "--noise_reference"
+  --extra-train-arg "${NOISE_REFERENCE}"
   --extra-train-arg "--noise_scale"
   --extra-train-arg "${NOISE_SCALE}"
   --extra-train-arg "--noise_warmup_epochs"

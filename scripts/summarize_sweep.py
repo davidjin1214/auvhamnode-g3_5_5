@@ -65,7 +65,10 @@ def _find_latest_rollout_summary(run_dir: Path) -> Path | None:
     if not rollout_root.exists():
         return None
     summaries = sorted(
-        rollout_root.glob("*/summary.json"),
+        [
+            *rollout_root.glob("*/summary.json"),
+            *rollout_root.glob("*/*/summary.json"),
+        ],
         key=lambda path: path.stat().st_mtime,
     )
     return summaries[-1] if summaries else None
