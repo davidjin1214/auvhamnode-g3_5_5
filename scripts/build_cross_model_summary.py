@@ -25,12 +25,63 @@ HORIZONS = ("10.0", "30.0", "60.0")
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--suite-core", required=True)
-    parser.add_argument("--suite-ablation", required=True)
-    parser.add_argument("--suite-focus", required=True)
+    parser.add_argument(
+        "--suite-dir",
+        dest="suite_dirs",
+        action="append",
+        default=[],
+        help=(
+            "Sweep directory to include. Repeat this flag to aggregate multiple suites. "
+            "Preferred interface."
+        ),
+    )
+    parser.add_argument(
+        "--suite-core",
+        dest="legacy_suite_core",
+        help="Legacy alias for the first suite directory.",
+    )
+    parser.add_argument(
+        "--suite-ablation",
+        dest="legacy_suite_ablation",
+        help="Legacy alias for the second suite directory.",
+    )
+    parser.add_argument(
+        "--suite-focus",
+        dest="legacy_suite_focus",
+        help="Legacy alias for the third suite directory.",
+    )
     parser.add_argument("--output-dir", default="checkpoints")
     parser.add_argument("--prefix", default="all_model")
-    return parser.parse_args()
+    parser.add_argument(
+        "--block-profile",
+        default=None,
+        help="Noise profile to read from block_evaluation.json when multiple profiles exist.",
+    )
+    parser.add_argument(
+        "--heldout-profile",
+        default=None,
+        help="Noise profile to read from heldout_evaluation.json when multiple profiles exist.",
+    )
+    parser.add_argument(
+        "--rollout-profile",
+        default=None,
+        help="Noise profile directory to read under rollout_benchmark when multiple profiles exist.",
+    )
+    args = parser.parse_args()
+
+    legacy_dirs = [
+        args.legacy_suite_core,
+        args.legacy_suite_ablation,
+        args.legacy_suite_focus,
+    ]
+    for suite_dir in legacy_dirs:
+        if suite_dir:
+            args.suite_dirs.append(suite_dir)
+
+    if not args.suite_dirs:
+        parser.error("Provide at least one suite via --suite-dir or the legacy --suite-* flags.")
+
+    return args
 
 
 def safe_float(value: object) -> float:
@@ -96,6 +147,28 @@ def read_json(path: Path) -> dict:
         return json.load(handle)
 
 
+def select_profile_payload(payload: dict, profile: str | None) -> dict:
+    if not isinstance(payload, dict):
+        return {}
+    if "overall" in payload or "position_rmse" in payload:
+        return payload
+    if profile and isinstance(payload.get(profile), dict):
+        return payload[profile]
+    for candidate in (
+        "nominal_eval",
+        "clean",
+        "degraded_eval",
+        "heading_biased_eval",
+        "current_bias_eval",
+    ):
+        if isinstance(payload.get(candidate), dict):
+            return payload[candidate]
+    for value in payload.values():
+        if isinstance(value, dict):
+            return value
+    return {}
+
+
 def parse_best_validation(training_log: Path) -> tuple[float, int | None]:
     best_line = None
     with training_log.open(errors="ignore") as handle:
@@ -110,10 +183,11 @@ def parse_best_validation(training_log: Path) -> tuple[float, int | None]:
     return float(match.group(1)), int(match.group(2))
 
 
-def resampled_summary_path(run_dir: Path) -> Path:
+def resampled_summary_path(run_dir: Path, profile: str | None = None) -> Path:
+    suffix = f"{profile}/summary.json" if profile else "summary.json"
     matches = sorted(
         glob.glob(
-            str(run_dir / "rollout_benchmark" / "resampled_traj30_seed42_*" / "summary.json")
+            str(run_dir / "rollout_benchmark" / "resampled_traj30_seed42_*" / suffix)
         )
     )
     if not matches:
@@ -121,7 +195,12 @@ def resampled_summary_path(run_dir: Path) -> Path:
     return Path(matches[-1])
 
 
-def extract_row(run_dir: Path) -> dict:
+def extract_row(
+    run_dir: Path,
+    block_profile: str | None = None,
+    heldout_profile: str | None = None,
+    rollout_profile: str | None = None,
+) -> dict:
     run_name = run_dir.name
     match = SEED_PATTERN.match(run_name)
     if not match:
@@ -131,9 +210,9 @@ def extract_row(run_dir: Path) -> dict:
     seed = int(seed_text)
 
     config = read_json(run_dir / "config.json")
-    heldout = read_json(run_dir / "heldout_evaluation.json")
-    block = read_json(run_dir / "block_evaluation.json")
-    resampled = read_json(resampled_summary_path(run_dir))
+    heldout = select_profile_payload(read_json(run_dir / "heldout_evaluation.json"), heldout_profile)
+    block = select_profile_payload(read_json(run_dir / "block_evaluation.json"), block_profile)
+    resampled = read_json(resampled_summary_path(run_dir, profile=rollout_profile))
     best_test_loss, best_epoch = parse_best_validation(run_dir / "training.log")
 
     row = {
@@ -672,10 +751,17 @@ def main() -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
 
     run_rows = []
-    for suite_dir in (args.suite_core, args.suite_ablation, args.suite_focus):
+    for suite_dir in args.suite_dirs:
         for run_dir in sorted(Path(suite_dir).iterdir()):
             if run_dir.is_dir() and SEED_PATTERN.match(run_dir.name):
-                run_rows.append(extract_row(run_dir))
+                run_rows.append(
+                    extract_row(
+                        run_dir,
+                        block_profile=args.block_profile,
+                        heldout_profile=args.heldout_profile,
+                        rollout_profile=args.rollout_profile,
+                    )
+                )
 
     grouped = defaultdict(list)
     for row in run_rows:

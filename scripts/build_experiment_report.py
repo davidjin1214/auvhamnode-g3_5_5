@@ -11,7 +11,12 @@ from datetime import datetime
 from pathlib import Path
 from typing import Dict, Iterable, List
 
-from summarize_sweep import _find_latest_rollout_summary, _resolve_local_run_dir, load_runs
+from summarize_sweep import (
+    _find_latest_rollout_summary,
+    _resolve_local_run_dir,
+    _select_profile_payload,
+    load_runs,
+)
 
 
 def _read_json(path: Path) -> Dict:
@@ -66,12 +71,19 @@ def _fmt_pct(value, digits=1, nan="NA") -> str:
     return f"{100.0 * float(value):.{digits}f}%"
 
 
-def _collect_run_record(run: Dict, suite_dir: Path, horizon_s: float) -> Dict:
+def _collect_run_record(
+    run: Dict,
+    suite_dir: Path,
+    horizon_s: float,
+    block_profile: str | None = None,
+    heldout_profile: str | None = None,
+    rollout_profile: str | None = None,
+) -> Dict:
     run_dir = _resolve_local_run_dir(suite_dir, run["run_dir"])
     config = _read_json(run_dir / "config.json")
-    block_eval = _read_json(run_dir / "block_evaluation.json")
-    heldout_eval = _read_json(run_dir / "heldout_evaluation.json")
-    rollout_summary_path = _find_latest_rollout_summary(run_dir)
+    block_eval = _select_profile_payload(_read_json(run_dir / "block_evaluation.json"), block_profile)
+    heldout_eval = _select_profile_payload(_read_json(run_dir / "heldout_evaluation.json"), heldout_profile)
+    rollout_summary_path = _find_latest_rollout_summary(run_dir, profile=rollout_profile)
     rollout_summary = _read_json(rollout_summary_path) if rollout_summary_path else {}
     horizon_key = str(float(horizon_s))
 
@@ -542,6 +554,24 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--suite-dir", required=True, type=str, help="Sweep directory under checkpoints/")
     parser.add_argument(
+        "--block-profile",
+        type=str,
+        default=None,
+        help="Noise profile to read from block_evaluation.json when multiple profiles exist.",
+    )
+    parser.add_argument(
+        "--heldout-profile",
+        type=str,
+        default=None,
+        help="Noise profile to read from heldout_evaluation.json when multiple profiles exist.",
+    )
+    parser.add_argument(
+        "--rollout-profile",
+        type=str,
+        default=None,
+        help="Noise profile directory to read under rollout_benchmark when multiple profiles exist.",
+    )
+    parser.add_argument(
         "--horizon",
         type=float,
         default=60.0,
@@ -558,7 +588,14 @@ def main():
     suite_dir = Path(args.suite_dir).resolve()
     runs = load_runs(suite_dir)
     run_records = [
-        _collect_run_record(run, suite_dir=suite_dir, horizon_s=float(args.horizon))
+        _collect_run_record(
+            run,
+            suite_dir=suite_dir,
+            horizon_s=float(args.horizon),
+            block_profile=args.block_profile,
+            heldout_profile=args.heldout_profile,
+            rollout_profile=args.rollout_profile,
+        )
         for run in runs
     ]
     model_records = _aggregate_model_records(run_records)

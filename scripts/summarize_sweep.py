@@ -60,14 +60,47 @@ def _write_csv(path: Path, rows: List[Dict]):
         writer.writerows(rows)
 
 
-def _find_latest_rollout_summary(run_dir: Path) -> Path | None:
+def _select_profile_payload(payload: Dict, profile: str | None) -> Dict:
+    if not isinstance(payload, dict):
+        return {}
+    if "overall" in payload or "position_rmse" in payload:
+        return payload
+    if profile and isinstance(payload.get(profile), dict):
+        return payload[profile]
+    for candidate in (
+        "nominal_eval",
+        "clean",
+        "degraded_eval",
+        "heading_biased_eval",
+        "current_bias_eval",
+    ):
+        if isinstance(payload.get(candidate), dict):
+            return payload[candidate]
+    for value in payload.values():
+        if isinstance(value, dict):
+            return value
+    return {}
+
+
+def _find_latest_rollout_summary(run_dir: Path, profile: str | None = None) -> Path | None:
     rollout_root = run_dir / "rollout_benchmark"
     if not rollout_root.exists():
         return None
+    if profile:
+        patterns = [
+            f"*/{profile}/summary.json",
+            f"*/*/{profile}/summary.json",
+        ]
+    else:
+        patterns = [
+            "*/summary.json",
+            "*/*/summary.json",
+        ]
     summaries = sorted(
         [
-            *rollout_root.glob("*/summary.json"),
-            *rollout_root.glob("*/*/summary.json"),
+            path
+            for pattern in patterns
+            for path in rollout_root.glob(pattern)
         ],
         key=lambda path: path.stat().st_mtime,
     )
@@ -147,13 +180,20 @@ def load_runs(suite_dir: Path) -> List[Dict]:
     )
 
 
-def build_seed_row(run: Dict, suite_dir: Path, horizon_s: float) -> Dict:
+def build_seed_row(
+    run: Dict,
+    suite_dir: Path,
+    horizon_s: float,
+    block_profile: str | None = None,
+    heldout_profile: str | None = None,
+    rollout_profile: str | None = None,
+) -> Dict:
     run_dir = _resolve_local_run_dir(suite_dir, run["run_dir"])
     checkpoint_path = _resolve_local_checkpoint_path(run_dir, run["checkpoint"])
     config_path = run_dir / "config.json"
     block_eval_path = run_dir / "block_evaluation.json"
     heldout_eval_path = run_dir / "heldout_evaluation.json"
-    rollout_summary_path = _find_latest_rollout_summary(run_dir)
+    rollout_summary_path = _find_latest_rollout_summary(run_dir, profile=rollout_profile)
 
     row = {
         "group": run["group"],
@@ -208,7 +248,7 @@ def build_seed_row(run: Dict, suite_dir: Path, horizon_s: float) -> Dict:
             pass
 
     if block_eval_path.exists():
-        block_eval = _read_json(block_eval_path)
+        block_eval = _select_profile_payload(_read_json(block_eval_path), block_profile)
         row["block_position_rmse_mean"] = _safe_float(_safe_get(block_eval, "position_rmse", "mean"))
         row["block_rotation_geodesic_mean"] = _safe_float(
             _safe_get(block_eval, "rotation_geodesic", "mean")
@@ -217,7 +257,7 @@ def build_seed_row(run: Dict, suite_dir: Path, horizon_s: float) -> Dict:
         row["block_angular_rmse_mean"] = _safe_float(_safe_get(block_eval, "angular_rmse", "mean"))
 
     if heldout_eval_path.exists():
-        heldout_eval = _read_json(heldout_eval_path)
+        heldout_eval = _select_profile_payload(_read_json(heldout_eval_path), heldout_profile)
         row["heldout_success_rate"] = _safe_float(_safe_get(heldout_eval, "overall", "success_rate"))
         row["heldout_position_rmse_mean"] = _safe_float(
             _safe_get(heldout_eval, "overall", "position_rmse", "mean")
@@ -338,6 +378,24 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--suite-dir", type=str, required=True, help="Sweep directory under checkpoints/")
     parser.add_argument(
+        "--block-profile",
+        type=str,
+        default=None,
+        help="Noise profile to read from block_evaluation.json when it stores multiple profiles.",
+    )
+    parser.add_argument(
+        "--heldout-profile",
+        type=str,
+        default=None,
+        help="Noise profile to read from heldout_evaluation.json when it stores multiple profiles.",
+    )
+    parser.add_argument(
+        "--rollout-profile",
+        type=str,
+        default=None,
+        help="Noise profile directory to read under rollout_benchmark when multiple profiles exist.",
+    )
+    parser.add_argument(
         "--horizon",
         type=float,
         default=60.0,
@@ -347,7 +405,17 @@ def main():
 
     suite_dir = Path(args.suite_dir).resolve()
     runs = load_runs(suite_dir)
-    seed_rows = [build_seed_row(run, suite_dir=suite_dir, horizon_s=float(args.horizon)) for run in runs]
+    seed_rows = [
+        build_seed_row(
+            run,
+            suite_dir=suite_dir,
+            horizon_s=float(args.horizon),
+            block_profile=args.block_profile,
+            heldout_profile=args.heldout_profile,
+            rollout_profile=args.rollout_profile,
+        )
+        for run in runs
+    ]
     model_rows = aggregate_model_rows(seed_rows)
 
     _write_csv(suite_dir / "sweep_seed_metrics.csv", seed_rows)
