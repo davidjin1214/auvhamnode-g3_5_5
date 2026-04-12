@@ -27,6 +27,7 @@ NOISE_REFERENCE="auto"
 NOISE_SEED=2024
 EXTRA_EVAL_ARGS=()
 NOISE_PROFILES_ARR=()
+SUMMARY_PROFILE=""
 
 usage() {
   cat <<'EOF'
@@ -221,6 +222,14 @@ fi
 
 read -r -a NOISE_PROFILES_ARR <<< "${NOISE_PROFILES}"
 
+if [[ " ${NOISE_PROFILES_ARR[*]} " == *" nominal_eval "* ]]; then
+  SUMMARY_PROFILE="nominal_eval"
+elif [[ " ${NOISE_PROFILES_ARR[*]} " == *" clean "* ]]; then
+  SUMMARY_PROFILE="clean"
+elif [[ ${#NOISE_PROFILES_ARR[@]} -gt 0 ]]; then
+  SUMMARY_PROFILE="${NOISE_PROFILES_ARR[0]}"
+fi
+
 eval_cmd=(
   bash "${ROOT_DIR}/scripts/batch_eval_models.sh"
   --suite-dir "${SUITE_DIR}"
@@ -255,11 +264,17 @@ echo "[stage=eval]"
 echo "[stage=summarize]"
 "${PYTHON_CMD[@]}" "${ROOT_DIR}/scripts/summarize_sweep.py" \
   --suite-dir "${SUITE_DIR}" \
+  --block-profile "${SUMMARY_PROFILE}" \
+  --heldout-profile "${SUMMARY_PROFILE}" \
+  --rollout-profile "${SUMMARY_PROFILE}" \
   --horizon "${SUMMARY_HORIZON}"
 
 echo "[stage=report]"
 "${PYTHON_CMD[@]}" "${ROOT_DIR}/scripts/build_experiment_report.py" \
   --suite-dir "${SUITE_DIR}" \
+  --block-profile "${SUMMARY_PROFILE}" \
+  --heldout-profile "${SUMMARY_PROFILE}" \
+  --rollout-profile "${SUMMARY_PROFILE}" \
   --horizon "${SUMMARY_HORIZON}"
 
 echo

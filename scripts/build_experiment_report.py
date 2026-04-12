@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Dict, Iterable, List
 
 from summarize_sweep import (
+    _extract_overall_payload,
     _find_latest_rollout_summary,
     _resolve_local_run_dir,
     _select_profile_payload,
@@ -83,6 +84,7 @@ def _collect_run_record(
     config = _read_json(run_dir / "config.json")
     block_eval = _select_profile_payload(_read_json(run_dir / "block_evaluation.json"), block_profile)
     heldout_eval = _select_profile_payload(_read_json(run_dir / "heldout_evaluation.json"), heldout_profile)
+    heldout_overall = _extract_overall_payload(heldout_eval)
     rollout_summary_path = _find_latest_rollout_summary(run_dir, profile=rollout_profile)
     rollout_summary = _read_json(rollout_summary_path) if rollout_summary_path else {}
     horizon_key = str(float(horizon_s))
@@ -101,14 +103,14 @@ def _collect_run_record(
             _safe_get(block_eval, "rotation_geodesic", "mean")
         ),
         "block_velocity_rmse_mean": _safe_float(_safe_get(block_eval, "velocity_rmse", "mean")),
-        "heldout_success_rate": _safe_float(_safe_get(heldout_eval, "overall", "success_rate")),
+        "heldout_success_rate": _safe_float(_safe_get(heldout_overall, "success_rate")),
         "heldout_position_rmse_mean": _safe_float(
-            _safe_get(heldout_eval, "overall", "position_rmse", "mean")
+            _safe_get(heldout_overall, "position_rmse", "mean")
         ),
         "heldout_rotation_geodesic_mean": _safe_float(
-            _safe_get(heldout_eval, "overall", "rotation_geodesic", "mean")
+            _safe_get(heldout_overall, "rotation_geodesic", "mean")
         ),
-        "heldout_n_trajectories": int(_safe_get(heldout_eval, "overall", "n_trajectories", default=0)),
+        "heldout_n_trajectories": int(_safe_get(heldout_overall, "n_trajectories", default=0)),
         "resampled_completion_rate": _safe_float(
             _safe_get(rollout_summary, "overall", horizon_key, "rates", "completed_to_h")
         ),
@@ -543,7 +545,7 @@ def build_report_text(
             "",
             "- `Block` metrics are short-horizon block prediction errors from `block_evaluation.json`.",
             "- `Heldout` metrics come from `heldout_evaluation.json` and use replayed held-out trajectories.",
-            f"- `Resampled` metrics come from the latest `rollout_benchmark/*/summary.json` at `{horizon_s:.1f}s`.",
+            f"- `Resampled` metrics come from the selected `rollout_benchmark/*/summary.json` at `{horizon_s:.1f}s`.",
             "- For runs that never complete the resampled horizon, some terminal error statistics are `NA` because there is no completed trajectory to condition on.",
         ]
     )

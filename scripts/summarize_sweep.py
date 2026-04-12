@@ -10,6 +10,14 @@ import math
 from pathlib import Path
 from typing import Dict, Iterable, List
 
+DEFAULT_PROFILE_PREFERENCE = (
+    "nominal_eval",
+    "clean",
+    "degraded_eval",
+    "heading_biased_eval",
+    "current_bias_eval",
+)
+
 
 def _read_json(path: Path) -> Dict:
     with open(path) as handle:
@@ -82,29 +90,56 @@ def _select_profile_payload(payload: Dict, profile: str | None) -> Dict:
     return {}
 
 
+def _extract_overall_payload(payload: Dict) -> Dict:
+    if not isinstance(payload, dict):
+        return {}
+    overall = payload.get("overall")
+    if isinstance(overall, dict):
+        return overall
+    return payload
+
+
 def _find_latest_rollout_summary(run_dir: Path, profile: str | None = None) -> Path | None:
     rollout_root = run_dir / "rollout_benchmark"
     if not rollout_root.exists():
         return None
-    if profile:
-        patterns = [
-            f"*/{profile}/summary.json",
-            f"*/*/{profile}/summary.json",
-        ]
-    else:
-        patterns = [
-            "*/summary.json",
-            "*/*/summary.json",
-        ]
-    summaries = sorted(
-        [
-            path
-            for pattern in patterns
-            for path in rollout_root.glob(pattern)
-        ],
+    preferred_profiles = [profile] if profile else list(DEFAULT_PROFILE_PREFERENCE)
+    benchmark_dirs = sorted(
+        [path for path in rollout_root.iterdir() if path.is_dir()],
         key=lambda path: path.stat().st_mtime,
+        reverse=True,
     )
-    return summaries[-1] if summaries else None
+
+    def _legacy_summary_candidates(root: Path) -> List[Path]:
+        return [
+            candidate
+            for candidate in (
+                root / "summary.json",
+                *(root.glob("*/summary.json")),
+            )
+            if candidate.exists()
+        ]
+
+    for benchmark_dir in benchmark_dirs:
+        for profile_name in preferred_profiles:
+            candidate = benchmark_dir / profile_name / "summary.json"
+            if candidate.exists():
+                return candidate
+        legacy = _legacy_summary_candidates(benchmark_dir)
+        if legacy:
+            legacy.sort(key=lambda path: path.stat().st_mtime, reverse=True)
+            return legacy[0]
+
+    for profile_name in preferred_profiles:
+        candidate = rollout_root / profile_name / "summary.json"
+        if candidate.exists():
+            return candidate
+
+    legacy = _legacy_summary_candidates(rollout_root)
+    if legacy:
+        legacy.sort(key=lambda path: path.stat().st_mtime, reverse=True)
+        return legacy[0]
+    return None
 
 
 def _resolve_local_run_dir(suite_dir: Path, run_dir: str) -> Path:
@@ -258,12 +293,13 @@ def build_seed_row(
 
     if heldout_eval_path.exists():
         heldout_eval = _select_profile_payload(_read_json(heldout_eval_path), heldout_profile)
-        row["heldout_success_rate"] = _safe_float(_safe_get(heldout_eval, "overall", "success_rate"))
+        heldout_overall = _extract_overall_payload(heldout_eval)
+        row["heldout_success_rate"] = _safe_float(_safe_get(heldout_overall, "success_rate"))
         row["heldout_position_rmse_mean"] = _safe_float(
-            _safe_get(heldout_eval, "overall", "position_rmse", "mean")
+            _safe_get(heldout_overall, "position_rmse", "mean")
         )
         row["heldout_rotation_geodesic_mean"] = _safe_float(
-            _safe_get(heldout_eval, "overall", "rotation_geodesic", "mean")
+            _safe_get(heldout_overall, "rotation_geodesic", "mean")
         )
 
     if rollout_summary_path is not None:
