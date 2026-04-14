@@ -1,5 +1,7 @@
 # 海流场景下 AUV 动力学建模综合实验报告
 
+> 更新说明：本文档主要总结最初的 clean/noisy 两组核心 sweep。补充实验 `P1-1` 与 `P1-2` 已进一步修正了 noisy-training 相关结论，尤其是否把 `phnode_full` 视为 noisy all-seed winner。更新后的结论见 [docs/oc_followup_results_p1_p2.md](/Users/xiangjin/Library/CloudStorage/OneDrive-Personal/我的/Code/auv_se3node/g3_5_5/docs/oc_followup_results_p1_p2.md)。
+
 ## 1. 实验目标与报告范围
 
 本文档综合分析本仓库中 ocean-current (`oc`) 场景的两组核心实验结果：

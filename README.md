@@ -1,61 +1,58 @@
-# AUVHamNODE Workflow
+# AUV port-Hamiltonian Neural ODE on `SE(3)`
 
-This repository studies AUV dynamics modeling with a port-Hamiltonian Neural ODE on `SE(3)`.
+This repository studies **underwater vehicle dynamics modeling** with structured Neural ODEs, with a focus on:
 
-Core files:
+- learning AUV dynamics on `SE(3)`
+- comparing structured port-Hamiltonian models with black-box baselines
+- evaluating long-horizon rollout behavior
+- studying robustness under **initial-condition noise** in ocean-current (`oc`) settings
 
-- `AUVHamNODE.py`: main structured model
-- `train_auv_hamnode.py`: training entrypoint
-- `evaluate_rollout_benchmark.py`: rollout benchmark entrypoint
-- `data_collection.py`: dataset generation entrypoint
-- `remus100_core.py`: REMUS-100 dynamics and simulator core
+The codebase is a flat Python research repo. It is usable end-to-end today for:
 
-## Environment
+- dataset generation
+- single-run training
+- clean and noisy sweep training
+- rollout benchmark evaluation
+- sweep-level summary/report generation
+- experiment result cataloging and canonical result export
 
-Use a Python environment with the required packages installed, especially:
+## Repository Status
 
-- `torch`
-- `torchdiffeq`
-- `numpy`
-- `matplotlib`
+The current repo state already includes:
 
-## Recommended Workflow
+- clean-data and noisy-data `oc` sweeps under `checkpoints/`
+- follow-up experiments for noisy robustness
+- summary/report scripts for model sweeps
+- a structured result catalog under `analysis/oc_data_catalog/`
 
-For each experiment:
+If you are new to the repo, the most useful current documents are:
 
-1. Generate a dataset.
-2. Train a model on that dataset.
-3. Run rollout benchmark evaluation from `best_model.pt`.
+- [docs/noise_model_design.md](/Users/xiangjin/Library/CloudStorage/OneDrive-Personal/我的/Code/auv_se3node/g3_5_5/docs/noise_model_design.md)
+  Current noisy-IC design background
+- [docs/oc_experiments_comprehensive_report.md](/Users/xiangjin/Library/CloudStorage/OneDrive-Personal/我的/Code/auv_se3node/g3_5_5/docs/oc_experiments_comprehensive_report.md)
+  Main experiment summary
+- [docs/oc_followup_results_p1_p2.md](/Users/xiangjin/Library/CloudStorage/OneDrive-Personal/我的/Code/auv_se3node/g3_5_5/docs/oc_followup_results_p1_p2.md)
+  Follow-up results that update parts of the main summary
+- [docs/oc_data_catalog_plan.md](/Users/xiangjin/Library/CloudStorage/OneDrive-Personal/我的/Code/auv_se3node/g3_5_5/docs/oc_data_catalog_plan.md)
+  Data catalog design and current organization
+- [docs/oc_data_catalog_dictionary.md](/Users/xiangjin/Library/CloudStorage/OneDrive-Personal/我的/Code/auv_se3node/g3_5_5/docs/oc_data_catalog_dictionary.md)
+  Field dictionary for the catalog tables
+- [docs/oc_result_selection_policy.md](/Users/xiangjin/Library/CloudStorage/OneDrive-Personal/我的/Code/auv_se3node/g3_5_5/docs/oc_result_selection_policy.md)
+  Canonical rollout selection rules
+- [docs/oc_catalog_template_usage.md](/Users/xiangjin/Library/CloudStorage/OneDrive-Personal/我的/Code/auv_se3node/g3_5_5/docs/oc_catalog_template_usage.md)
+  Ready-to-use plotting/export templates
 
-The main experiment axes are:
+## Quick Start
 
-- ocean current: `noc` vs `oc`
-- training noise: clean vs noisy
-
-## 1. Generate Data
-
-### CLI
+All local commands should be run in the Conda environment `mytorch1`.
 
 ```bash
-python data_collection.py \
-  --num_traj 500 \
-  --blocks 150 \
-  --seed 42 \
-  --save_dir ./data \
-  --workers 4
+conda activate mytorch1
 ```
 
-Optional switches:
+### 1. Generate a dataset
 
-- `--ocean_current`: generate an ocean-current dataset
-- `--absolute_depth_context`: append block-start absolute depth `z_ref`
-- `--current_speed_max 0.5`: max inertial current speed for `oc`
-- `--no_filter`: disable trajectory filtering
-- `--no_figures`: skip dataset figures
-
-### Recommended commands
-
-No current:
+`noc` dataset:
 
 ```bash
 python data_collection.py \
@@ -66,7 +63,7 @@ python data_collection.py \
   --workers 4
 ```
 
-With current:
+`oc` dataset:
 
 ```bash
 python data_collection.py \
@@ -79,570 +76,295 @@ python data_collection.py \
   --current_speed_max 0.5
 ```
 
-### Output files
+### 2. Train a single model
 
-The dataset filename is generated automatically and looks like:
+Clean training:
 
-```text
-auv_noc_traj500_blk150_s42_<dataset_id>.pkl
-auv_oc_traj500_blk150_s42_<dataset_id>.pkl
+```bash
+python train_auv_hamnode.py \
+  --dataset ./data/oc/<dataset>.pkl \
+  --model_type phnode_full \
+  --save_dir ./checkpoints
 ```
 
-Alongside the `.pkl`, the generator also writes:
+Noisy IC training:
 
-- `.meta.json`
-- `.stats.json`
-- `.stats.npz`
-- `.summary.txt`
-- `<dataset_stem>_figures/`
-
-## 2. Train Models
-
-### Important behavior
-
-- The documentation uses canonical model names only.
-- Training defaults depend on dataset kind inferred from the dataset filename.
-- Keep `noc` or `oc` in the dataset filename. This matters because the script uses that name to choose default hyperparameters.
-- The dataset metadata is authoritative for `ocean_current`, `u_dim`, and related state layout settings.
-
-### Main model
-
-The main structured model is:
-
-```text
---model_type phnode_full
+```bash
+python train_auv_hamnode.py \
+  --dataset ./data/oc/<dataset>.pkl \
+  --model_type phnode_full \
+  --save_dir ./checkpoints \
+  --noise_profile nominal_train \
+  --noise_warmup_epochs 20 \
+  --noise_ramp 80 \
+  --noise_mix_ratio 0.5
 ```
 
-Other supported model types:
+### 3. Run rollout evaluation
 
-Core models:
+```bash
+python evaluate_rollout_benchmark.py \
+  --checkpoint ./checkpoints/<run>/best_model.pt \
+  --mode resampled \
+  --noise_profiles clean nominal_eval degraded_eval heading_biased_eval \
+  --output_dir ./checkpoints/<run>/rollout_benchmark
+```
+
+## Recommended Entry Points
+
+For most work, you do **not** need to manually orchestrate every step.
+
+### Dataset generation
+
+- `data_collection.py`
+
+### Single-run training
+
+- `train_auv_hamnode.py`
+
+### Rollout benchmark
+
+- `evaluate_rollout_benchmark.py`
+
+### Current recommended sweep wrappers
+
+For the current profile-based noisy-IC workflow, prefer:
+
+- `scripts/train_all_models_noise_profile.sh`
+- `scripts/eval_all_models_noise_profile.sh`
+
+Example:
+
+```bash
+bash scripts/train_all_models_noise_profile.sh \
+  --profile oc \
+  --group core \
+  --noise-profile nominal_train
+
+bash scripts/eval_all_models_noise_profile.sh \
+  --suite-dir ./checkpoints/<suite_name>
+```
+
+### Sweep summary/report
+
+- `scripts/summarize_sweep.py`
+- `scripts/build_experiment_report.py`
+
+### Result catalog and template exports
+
+- `scripts/build_oc_data_catalog.py`
+- `scripts/query_oc_catalog_examples.py`
+- `scripts/oc_catalog_templates.py`
+
+## Project Layout
+
+Top-level files worth knowing:
+
+- `AUVHamNODE.py`
+  Main structured port-Hamiltonian model
+- `auv_baselines.py`
+  Baseline and ablation models
+- `auv_model_registry.py`
+  Model registry and name mapping
+- `train_auv_hamnode.py`
+  Main training entrypoint
+- `train_utils.py`
+  Training config, logging, persistence, evaluation helpers
+- `data_collection.py`
+  Dataset generation
+- `evaluate_rollout_benchmark.py`
+  Rollout benchmark entrypoint
+- `rollout_benchmark_engine.py`
+  Benchmark execution
+- `rollout_benchmark_reporting.py`
+  Benchmark summary/report generation
+
+Important directories:
+
+- `scripts/`
+  Sweep wrappers, summary scripts, catalog utilities, template exporters
+- `docs/`
+  Experiment reports, noise design notes, catalog documentation
+- `data/`
+  Generated datasets
+- `checkpoints/`
+  Trained runs and sweep suites
+- `analysis/oc_data_catalog/`
+  Cataloged experiment tables and canonical views
+- `original/bf3n/`
+  Reference material only, not the active implementation
+
+## Main Experimental Axes
+
+The repo is organized around two practical axes:
+
+### 1. Environment type
+
+- `noc`: no ocean current
+- `oc`: ocean current included in the state/simulation
+
+### 2. Training regime
+
+- clean training
+- noisy IC training with profile-based noise
+
+The current research emphasis is on `oc` experiments, especially **clean vs noisy IC training** and long-horizon rollout robustness.
+
+## Supported Model Families
+
+Main structured model:
 
 - `phnode_full`
+
+Other core models:
+
 - `phnode_merged_force`
 - `phnode_qforce`
 - `se3_momentum_blackbox`
 - `se3_accel_blackbox`
 - `blackbox_fullstate`
 
-Ablations:
+Current ablations:
 
 - `ablate_no_mass_prior`
 - `ablate_diag_damping`
 - `ablate_no_lift`
 - `ablate_bu_only`
 
-### Clean training
+## Noise Workflow
 
-No current, no noise:
+The current implementation uses **profile-based IC-only noise**.
 
-```bash
-python train_auv_hamnode.py \
-  --dataset ./data/noc/auv_noc_traj500_blk150_s42_<dataset_id>.pkl \
-  --model_type phnode_full \
-  --save_dir ./checkpoints
-```
+Important profiles:
 
-With current, no noise:
+- `clean`
+- `nominal_train`
+- `nominal_eval`
+- `degraded_eval`
+- `heading_biased_eval`
 
-```bash
-python train_auv_hamnode.py \
-  --dataset ./data/oc/auv_oc_traj500_blk150_s42_<dataset_id>.pkl \
-  --model_type phnode_full \
-  --save_dir ./checkpoints
-```
+Recommended training profile:
 
-### Noisy training
+- `nominal_train`
 
-The current implementation uses **IC-only noise regularization**. Noise is
-applied to the rollout initial condition only, using profile-based settings.
+Recommended benchmark profiles for `oc`:
 
-Recommended profile for training:
+- `clean nominal_eval degraded_eval heading_biased_eval`
 
-- `--noise_profile nominal_train`
+For details, see:
 
-No current, with training noise:
+- [docs/noise_model_design.md](/Users/xiangjin/Library/CloudStorage/OneDrive-Personal/我的/Code/auv_se3node/g3_5_5/docs/noise_model_design.md)
+- [docs/noise_cli_parameter_reference.md](/Users/xiangjin/Library/CloudStorage/OneDrive-Personal/我的/Code/auv_se3node/g3_5_5/docs/noise_cli_parameter_reference.md)
+- [docs/noise_cli_command_templates.md](/Users/xiangjin/Library/CloudStorage/OneDrive-Personal/我的/Code/auv_se3node/g3_5_5/docs/noise_cli_command_templates.md)
 
-```bash
-python train_auv_hamnode.py \
-  --dataset ./data/noc/auv_noc_traj500_blk150_s42_<dataset_id>.pkl \
-  --model_type phnode_full \
-  --save_dir ./checkpoints \
-  --noise_profile nominal_train
-```
+## Training Outputs
 
-With current, with training noise:
-
-```bash
-python train_auv_hamnode.py \
-  --dataset ./data/oc/auv_oc_traj500_blk150_s42_<dataset_id>.pkl \
-  --model_type phnode_full \
-  --save_dir ./checkpoints \
-  --noise_profile nominal_train \
-  --block_eval_noise_profiles clean nominal_eval \
-  --heldout_eval_noise_profiles clean nominal_eval degraded_eval
-```
-
-Useful noise-related overrides:
-
-```bash
---noise_warmup_epochs 20
---noise_ramp 80
---noise_mix_ratio 0.5
---noise_scale 1.0
---block_eval_noise_profiles clean nominal_eval
---heldout_eval_noise_profiles clean nominal_eval degraded_eval
-```
-
-Available profiles:
-
-- `clean`: disable noisy IC
-- `nominal_train`: recommended mild training regularization
-- `nominal_eval`: evaluation profile for normal navigation uncertainty
-- `degraded_eval`: stronger evaluation-only stress profile
-
-Legacy `--noise_level {0,1,2,3}` is still accepted for backward compatibility,
-but `--noise_profile` is the preferred interface.
-
-Post-training automatic evaluation is also profile-aware:
-
-- block evaluation defaults to `clean nominal_eval`
-- held-out evaluation defaults to `clean nominal_eval degraded_eval`
-
-You can override them, for example:
-
-```bash
---block_eval_noise_profiles clean degraded_eval
---heldout_eval_noise_profiles all
-```
-
-Pass `none` to skip a phase entirely:
-
-```bash
---block_eval_noise_profiles none
---heldout_eval_noise_profiles none
-```
-
-### Current-aware feature options
-
-These are mainly relevant for `oc` experiments:
-
-- `--dj_current_feature {none,current_body,total_velocity}`
-- `--actuation_current_feature {none,current_body,total_velocity}`
-
-Recommended starting point for `oc`:
-
-```bash
---dj_current_feature current_body \
---actuation_current_feature current_body
-```
-
-In practice, the script already provides dataset-aware defaults, so you can usually omit these unless you are running an ablation.
-
-### Useful explicit overrides
-
-```bash
---batch_size 4096
---epochs 300
---total_steps 5000
---lr 6e-3
---min_lr 1e-4
---warmup_steps 400
---hidden_dim 128
-```
-
-### Training outputs
-
-Each run creates a directory under `./checkpoints/`, containing at least:
+A typical run directory under `checkpoints/` contains:
 
 - `config.json`
 - `training.log`
 - `training_history.pkl`
 - `best_model.pt`
-- `checkpoint_<epoch>.pt` at save intervals
 - `block_evaluation.json`
 - `heldout_evaluation.json`
-- `evaluation_results.pkl`
-- `heldout_evaluation.pkl`
+- optional checkpoint snapshots
+- rollout results under `rollout_benchmark/`
 
-### Batch sweep scripts
+`training_history.pkl` is the preferred structured source for training curves.
 
-For repeated benchmark sweeps, use the scripts in [scripts/](/Users/xiangjin/Library/CloudStorage/OneDrive-Personal/我的/Code/auv_se3node/g3_5_5/scripts).
+## Result Catalog
 
-Train all core models and ablations on the default `oc` dataset with seeds `42 43 44`:
+The repo now includes a structured result catalog for `oc` experiments:
 
-```bash
-./scripts/batch_train_models.sh
-```
+- [analysis/oc_data_catalog/run_inventory.csv](/Users/xiangjin/Library/CloudStorage/OneDrive-Personal/我的/Code/auv_se3node/g3_5_5/analysis/oc_data_catalog/run_inventory.csv)
+- [analysis/oc_data_catalog/file_inventory.csv](/Users/xiangjin/Library/CloudStorage/OneDrive-Personal/我的/Code/auv_se3node/g3_5_5/analysis/oc_data_catalog/file_inventory.csv)
+- [analysis/oc_data_catalog/training_history_long.csv](/Users/xiangjin/Library/CloudStorage/OneDrive-Personal/我的/Code/auv_se3node/g3_5_5/analysis/oc_data_catalog/training_history_long.csv)
+- [analysis/oc_data_catalog/block_eval_long.csv](/Users/xiangjin/Library/CloudStorage/OneDrive-Personal/我的/Code/auv_se3node/g3_5_5/analysis/oc_data_catalog/block_eval_long.csv)
+- [analysis/oc_data_catalog/heldout_eval_long.csv](/Users/xiangjin/Library/CloudStorage/OneDrive-Personal/我的/Code/auv_se3node/g3_5_5/analysis/oc_data_catalog/heldout_eval_long.csv)
+- [analysis/oc_data_catalog/rollout_summary_long.csv](/Users/xiangjin/Library/CloudStorage/OneDrive-Personal/我的/Code/auv_se3node/g3_5_5/analysis/oc_data_catalog/rollout_summary_long.csv)
+- [analysis/oc_data_catalog/rollout_outcomes_long.csv](/Users/xiangjin/Library/CloudStorage/OneDrive-Personal/我的/Code/auv_se3node/g3_5_5/analysis/oc_data_catalog/rollout_outcomes_long.csv)
+- [analysis/oc_data_catalog/rollout_run_registry.csv](/Users/xiangjin/Library/CloudStorage/OneDrive-Personal/我的/Code/auv_se3node/g3_5_5/analysis/oc_data_catalog/rollout_run_registry.csv)
+- [analysis/oc_data_catalog/canonical_rollout_summary_long.csv](/Users/xiangjin/Library/CloudStorage/OneDrive-Personal/我的/Code/auv_se3node/g3_5_5/analysis/oc_data_catalog/canonical_rollout_summary_long.csv)
+- [analysis/oc_data_catalog/canonical_rollout_outcomes_long.csv](/Users/xiangjin/Library/CloudStorage/OneDrive-Personal/我的/Code/auv_se3node/g3_5_5/analysis/oc_data_catalog/canonical_rollout_outcomes_long.csv)
 
-Run the matching rollout benchmark for every trained run in that sweep:
+Use these rules:
 
-```bash
-./scripts/batch_eval_models.sh \
-  --suite-dir ./checkpoints/<suite_name>
-```
+- use raw tables when you want **all recorded results**
+- use canonical tables when you want the repo’s **default citation/plotting view**
 
-Run both stages end-to-end:
-
-```bash
-./scripts/run_all.sh
-```
-
-This wrapper now runs training, rollout evaluation, and final sweep summarization in one pass.
-
-### Noise-profile sweep scripts
-
-For the current profile-based noisy-IC workflow, prefer these wrappers:
-
-Train a noisy sweep:
+Rebuild the catalog with:
 
 ```bash
-bash ./scripts/train_all_models_noise_profile.sh \
-  --profile oc \
-  --group core \
-  --noise-profile nominal_train \
-  --noise-warmup-epochs 20 \
-  --noise-ramp 80 \
-  --noise-mix-ratio 0.5 \
-  --noise-scale 1.0
+conda run -n mytorch1 python scripts/build_oc_data_catalog.py
 ```
 
-Run the matching benchmark, sweep summary, and experiment report:
+## Plotting and Export Templates
+
+Minimal query/export helpers:
+
+- `scripts/query_oc_catalog_examples.py`
+- `scripts/oc_catalog_templates.py`
+
+Example: plot `train_total` and `test_total` for one run:
 
 ```bash
-bash ./scripts/eval_all_models_noise_profile.sh \
-  --suite-dir ./checkpoints/<suite_name> \
-  --mode heldout \
-  --noise-profiles "clean nominal_eval degraded_eval"
+conda run -n mytorch1 python scripts/oc_catalog_templates.py \
+  plot-training-curves \
+  --run-uid sweep_oc_core_default_auv_oc_traj1000_blk150_s23_d0be9434_s42-43-44_20260404_115414/main_phnode_full_seed42 \
+  --metric-key train_total \
+  --metric-key test_total \
+  --output analysis/oc_data_catalog/examples/main_phnode_full_seed42_total_loss.png
 ```
 
-These wrappers sit on top of `batch_train_models.sh` and `batch_eval_models.sh`,
-but expose the current noise controls directly. They are the recommended entry
-point for new noisy-training experiments.
-
-Summarize a completed sweep across seeds and models:
+Example: export canonical `60s final_position_error median` table for noisy runs:
 
 ```bash
-python ./scripts/summarize_sweep.py \
-  --suite-dir ./checkpoints/<suite_name>
+conda run -n mytorch1 python scripts/oc_catalog_templates.py \
+  export-rollout-table \
+  --canonical \
+  --train-type noisy_train \
+  --eval-profile clean \
+  --eval-profile nominal_eval \
+  --eval-profile degraded_eval \
+  --eval-profile heading_biased_eval \
+  --output analysis/oc_data_catalog/examples/noisy_train_60s_final_position_error_median.csv
 ```
 
-Useful sweep controls:
+See:
 
-```bash
---profile oc
---group core
---group ablation
---group all
---seeds "42 43 44"
---prefix oc_core_default
---device cuda:0
-```
+- [docs/oc_catalog_template_usage.md](/Users/xiangjin/Library/CloudStorage/OneDrive-Personal/我的/Code/auv_se3node/g3_5_5/docs/oc_catalog_template_usage.md)
 
-Useful noisy-sweep controls:
+## Suggested First Reads
 
-```bash
---noise-profile nominal_train
---noise-scale 1.0
---noise-warmup-epochs 20
---noise-ramp 80
---noise-mix-ratio 0.5
---block-eval-noise-profiles "clean nominal_eval"
---heldout-eval-noise-profiles "clean nominal_eval degraded_eval"
-```
+If you only want a fast orientation, read in this order:
 
-Each sweep creates a suite directory under `./checkpoints/`, for example:
-
-```text
-checkpoints/sweep_oc_all_default_auv_oc_traj1000_blk150_s23_d0be9434_s42-43-44_<timestamp>/
-```
-
-Inside that suite, every run gets its own training folder, and each rollout benchmark is written back into the corresponding run directory under `rollout_benchmark/`.
-
-## 3. Evaluate Rollout Benchmark
-
-Evaluation is run from a trained checkpoint, usually `best_model.pt`.
-
-### Held-out benchmark
-
-This uses held-out test trajectories from the dataset.
-
-```bash
-python evaluate_rollout_benchmark.py \
-  --checkpoint ./checkpoints/<run_name>/best_model.pt \
-  --mode heldout \
-  --output_dir ./rollout_benchmark_results \
-  --noise_profiles clean nominal_eval degraded_eval
-```
-
-If the checkpoint already stores the dataset path, `--dataset` is optional.
-
-### Resampled benchmark
-
-This regenerates benchmark trajectories from the stored dataset generation config.
-
-```bash
-python evaluate_rollout_benchmark.py \
-  --checkpoint ./checkpoints/<run_name>/best_model.pt \
-  --mode resampled \
-  --output_dir ./rollout_benchmark_results \
-  --noise_profiles clean nominal_eval degraded_eval
-```
-
-### Useful evaluation options
-
-```bash
---dataset ./data/oc/auv_oc_traj500_blk150_s42_<dataset_id>.pkl
---num_traj_per_scenario 30
---times 10 30 60
---scenarios PRBS CHIRP OU
---noise_profiles clean nominal_eval degraded_eval
---noise_seed 2024
---device cuda
---run_name oc_noisy_eval
---num_diagnostic_plots 6
-```
-
-`--noise_profiles` accepts one, several, or `all`. For example:
-
-```bash
---noise_profiles clean
---noise_profiles nominal_eval degraded_eval
---noise_profiles all
-```
-
-If you pass multiple noise profiles, benchmark outputs are written into
-profile-specific subdirectories under the resolved run directory, for example:
-
-- `.../clean/summary.txt`
-- `.../nominal_eval/summary.txt`
-- `.../degraded_eval/summary.txt`
-
-### Evaluation outputs
-
-Each benchmark run creates a timestamped directory under `./rollout_benchmark_results/`, containing:
-
-- `summary.txt`
-- `summary.json`
-- `trajectory_metrics.csv`
-- `horizon_metrics.csv`
-- `time_series_metrics.csv`
-- `rollout_outcomes.csv`
-- `diagnostic_cases.csv`
-- `diagnostic_plots.csv`
-- `metric_contract.csv`
-- `error_growth.png`
-- `terminal_error_boxplots.png`
-- `example_rollouts.png`
-- `diagnostic_plots/`
-
-If you request multiple noise profiles, the benchmark creates one subdirectory
-per profile, for example:
-
-```text
-rollout_benchmark_results/<run_name>/clean/
-rollout_benchmark_results/<run_name>/nominal_eval/
-rollout_benchmark_results/<run_name>/degraded_eval/
-```
-
-## Experiment Matrix
-
-Recommended minimum experiment set for the main model:
-
-### A. No current, clean
-
-Dataset:
-
-```bash
-python data_collection.py --save_dir ./data/noc
-```
-
-Training:
-
-```bash
-python train_auv_hamnode.py \
-  --dataset ./data/noc/auv_noc_traj500_blk150_s42_<dataset_id>.pkl \
-  --model_type phnode_full
-```
-
-Evaluation:
-
-```bash
-python evaluate_rollout_benchmark.py \
-  --checkpoint ./checkpoints/<run_name>/best_model.pt \
-  --mode heldout
-```
-
-### B. No current, noisy
-
-Training:
-
-```bash
-python train_auv_hamnode.py \
-  --dataset ./data/noc/auv_noc_traj500_blk150_s42_<dataset_id>.pkl \
-  --model_type phnode_full \
-  --noise_profile nominal_train
-```
-
-### C. Current, clean
-
-Dataset:
-
-```bash
-python data_collection.py \
-  --save_dir ./data/oc \
-  --ocean_current \
-  --current_speed_max 0.5
-```
-
-Training:
-
-```bash
-python train_auv_hamnode.py \
-  --dataset ./data/oc/auv_oc_traj500_blk150_s42_<dataset_id>.pkl \
-  --model_type phnode_full
-```
-
-### D. Current, noisy
-
-Training:
-
-```bash
-python train_auv_hamnode.py \
-  --dataset ./data/oc/auv_oc_traj500_blk150_s42_<dataset_id>.pkl \
-  --model_type phnode_full \
-  --noise_profile nominal_train
-```
-
-This is the most realistic and most important setting if your goal is a convincing real-world dynamics story.
+1. `README.md`
+2. [docs/noise_model_design.md](/Users/xiangjin/Library/CloudStorage/OneDrive-Personal/我的/Code/auv_se3node/g3_5_5/docs/noise_model_design.md)
+3. [docs/oc_experiments_comprehensive_report.md](/Users/xiangjin/Library/CloudStorage/OneDrive-Personal/我的/Code/auv_se3node/g3_5_5/docs/oc_experiments_comprehensive_report.md)
+4. [docs/oc_followup_results_p1_p2.md](/Users/xiangjin/Library/CloudStorage/OneDrive-Personal/我的/Code/auv_se3node/g3_5_5/docs/oc_followup_results_p1_p2.md)
+5. [docs/oc_data_catalog_dictionary.md](/Users/xiangjin/Library/CloudStorage/OneDrive-Personal/我的/Code/auv_se3node/g3_5_5/docs/oc_data_catalog_dictionary.md)
 
 ## Practical Notes
 
-### 1. `oc` noise behavior
+- Keep `oc` or `noc` in dataset filenames. The code uses it to infer defaults.
+- Prefer `scripts/train_all_models_noise_profile.sh` and `scripts/eval_all_models_noise_profile.sh` for new noisy experiments.
+- Prefer `training_history.pkl` over `training.log` for plotting.
+- Prefer canonical rollout tables over raw rollout tables when making default figures.
+- `checkpoints/unused/` should not be treated as active experiment results.
 
-The current root version uses an `oc`-aware **IC-consistent** noise scheme:
+## Validation and Testing
 
-- noise is defined around the initial navigation-state uncertainty, not a full noisy sequence
-- OC runs perturb the model-space relative velocity budget and then reconstruct a consistent data-space state
-- the implementation preserves consistency between `nu_r`, `nu_total`, `R`, and `v_c^n`
+There is no separate `tests/` directory yet.
 
-This is intentionally simpler than the older trajectory-level noise design. If
-you need the detailed rationale, see
-[docs/noise_robustness_experiment_design_codex.md](/Users/xiangjin/Library/CloudStorage/OneDrive-Personal/我的/Code/auv_se3node/g3_5_5/docs/noise_robustness_experiment_design_codex.md).
+When modifying the repo, validate the smallest affected workflow:
 
-### 2. When to use `heldout` vs `resampled`
+- dataset generation change: run `data_collection.py`
+- trainer/model change: run one small training job
+- evaluation/report change: run one rollout benchmark or one summary script
+- catalog change: rebuild `analysis/oc_data_catalog/`
 
-- Use `heldout` first. It is the most direct comparison against the test split.
-- Use `resampled` when you want a more benchmark-style stress test using regenerated trajectories from the stored simulation config.
+## Notes for Contributors
 
-### 3. Depth context
-
-Only use `--absolute_depth_context` in data generation if you want models that need block-start absolute depth context. This is mainly relevant if you later plan to enable depth-conditioned potential or force variants.
-
-### 4. Figures during data generation
-
-Dataset figure export is useful for inspection but can slow generation. For quick iterations:
-
-```bash
---no_figures
-```
-
-### 5. GPU selection
-
-Training and evaluation both accept:
-
-```bash
---device cuda
-```
-
-or
-
-```bash
---device cpu
-```
-
-If omitted, the scripts choose CUDA when available.
-
-## Suggested First Runs
-
-If you want a compact first pass, run these two experiments first:
-
-1. `noc + clean`
-2. `oc + noisy`
-
-That gives you one controlled baseline and one realistic target setting.
-
-## Example End-to-End
-
-You can also use shell variables to avoid editing the same path repeatedly.
-
-```bash
-DATASET=./data/oc/auv_oc_traj500_blk150_s42_<dataset_id>.pkl
-RUN_DIR=./checkpoints/<run_name>
-CKPT=$RUN_DIR/best_model.pt
-```
-
-Generate `oc` data:
-
-```bash
-python data_collection.py \
-  --num_traj 500 \
-  --blocks 150 \
-  --seed 42 \
-  --save_dir ./data/oc \
-  --workers 4 \
-  --ocean_current \
-  --current_speed_max 0.5
-```
-
-Train `phnode_full` with noise:
-
-```bash
-python train_auv_hamnode.py \
-  --dataset "$DATASET" \
-  --model_type phnode_full \
-  --save_dir ./checkpoints \
-  --noise_profile nominal_train
-```
-
-Evaluate rollout benchmark:
-
-```bash
-python evaluate_rollout_benchmark.py \
-  --checkpoint "$CKPT" \
-  --mode heldout \
-  --output_dir ./rollout_benchmark_results \
-  --times 10 30 60 \
-  --scenarios PRBS CHIRP OU
-```
-
-Or run the same workflow as a sweep:
-
-```bash
-bash ./scripts/train_all_models_noise_profile.sh \
-  --profile oc \
-  --group core
-
-bash ./scripts/eval_all_models_noise_profile.sh \
-  --suite-dir ./checkpoints/<suite_name> \
-  --mode heldout
-```
-
-## File Lookup Tips
-
-Find generated datasets:
-
-```bash
-find ./data -name "*.pkl"
-```
-
-Find trained checkpoints:
-
-```bash
-find ./checkpoints -name "best_model.pt"
-```
-
-Find benchmark summaries:
-
-```bash
-find ./rollout_benchmark_results -name "summary.txt"
-```
+- Generated artifacts under `data/`, `checkpoints/`, and `analysis/oc_data_catalog/` are working outputs, not source code.
+- Do not hand-edit catalog CSV files; regenerate them from scripts.
+- The repo contains many historical experiment files. When in doubt, treat `docs/` and the catalog tables as the authoritative orientation layer, not random checkpoint subdirectories.

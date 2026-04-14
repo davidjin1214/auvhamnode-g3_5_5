@@ -311,6 +311,22 @@ class TrainConfig:
     dataset_state_dim: Optional[int] = None
     dataset_generation_config: Optional[Dict] = None
 
+    # Legacy checkpoint-only fields from the original observation/init-noise
+    # interface. They are ignored on load because the current IC-noise path
+    # no longer consumes them, but older checkpoint configs may still store
+    # them in config.json.
+    _IGNORED_LEGACY_FIELDS = {
+        "actuator_noise_std",
+        "current_noise_std",
+        "init_rot_std",
+        "init_state_noise",
+        "observation_bias",
+        "observation_noise",
+        "observation_noise_scale",
+        "velocity_bias_std",
+        "velocity_noise_std",
+    }
+
     @classmethod
     def dataset_default_overrides(cls, dataset_kind: str) -> Dict:
         """Return dataset-specific default hyperparameters."""
@@ -369,13 +385,15 @@ class TrainConfig:
     @classmethod
     def from_dict(cls, data: Dict) -> "TrainConfig":
         valid = {field.name for field in dataclasses.fields(cls)}
-        unknown = sorted(set(data) - valid)
+        ignored_legacy = set(getattr(cls, "_IGNORED_LEGACY_FIELDS", ()))
+        unknown = sorted(set(data) - valid - ignored_legacy)
         if unknown:
             raise ValueError(
                 "Unknown TrainConfig fields: "
                 + ", ".join(unknown)
             )
-        return cls(**data)
+        payload = {key: value for key, value in data.items() if key in valid}
+        return cls(**payload)
 
     def get_noise_config(self) -> "NoiseConfig":
         """Extract a NoiseConfig from this TrainConfig's noise_* fields."""
