@@ -1064,13 +1064,15 @@ def _rollout_model_against_ground_truth_payloads(
                 [runtime["current_state"] for runtime in active_runtimes],
                 dim=0,
             )
-            sample_ids = torch.tensor(
+            traj_ids = torch.tensor(
                 [
                     int(runtime["payload"].seed) + 100000 * (idx + 1)
                     for idx, runtime in enumerate(active_runtimes)
                 ],
                 dtype=torch.long,
             )
+            sample_ids = traj_ids.clone()
+            block_indices = torch.zeros_like(traj_ids)
             noisy_states = build_noisy_initial_condition(
                 init_states,
                 noise_cfg,
@@ -1078,6 +1080,8 @@ def _rollout_model_against_ground_truth_payloads(
                 normalizer,
                 epoch=noise_cfg.warmup_epochs + noise_cfg.ramp_epochs,
                 sample_ids=sample_ids,
+                traj_ids=traj_ids,
+                block_indices=block_indices,
                 base_seed=noise_seed,
                 state_is_ode=True,
             )

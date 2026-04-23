@@ -23,6 +23,7 @@ PROGRESS_EVERY=5
 NUM_DIAGNOSTIC_PLOTS=6
 SUMMARY_HORIZON=60
 NOISE_PROFILES="auto"
+NOISE_PROTOCOL="auto"
 NOISE_REFERENCE="auto"
 NOISE_SEED=2024
 EXTRA_EVAL_ARGS=()
@@ -55,6 +56,8 @@ Options:
                                auto -> noc: "clean nominal_eval degraded_eval heading_biased_eval"
                                        oc/dr:  "clean nominal_eval degraded_eval heading_biased_eval"
                                        oc/ins: "clean nominal_eval degraded_eval heading_biased_eval current_bias_eval"
+  --noise-protocol PROTO       auto | clean | iid_noisy_ic | v4_lite
+                               Default: auto
   --noise-reference REF        remus100_dr | remus100_ins | auto
                                Default: auto
   --noise-seed N               Base seed for noisy initialization. Default: 2024
@@ -152,6 +155,10 @@ while [[ $# -gt 0 ]]; do
       NOISE_PROFILES="$2"
       shift 2
       ;;
+    --noise-protocol)
+      NOISE_PROTOCOL="$2"
+      shift 2
+      ;;
     --noise-reference)
       NOISE_REFERENCE="$2"
       shift 2
@@ -211,6 +218,15 @@ case "${NOISE_REFERENCE}" in
     ;;
 esac
 
+case "${NOISE_PROTOCOL}" in
+  auto|clean|iid_noisy_ic|v4_lite) ;;
+  *)
+    echo "Unsupported --noise-protocol: ${NOISE_PROTOCOL}." >&2
+    echo "Expected auto, clean, iid_noisy_ic, or v4_lite." >&2
+    exit 1
+    ;;
+esac
+
 if [[ "${NOISE_PROFILES}" == "auto" ]]; then
   SUITE_PROFILE="$(resolve_suite_profile "${SUITE_DIR}")"
   if [[ "${SUITE_PROFILE}" == "oc" && "${NOISE_REFERENCE}" == "remus100_ins" ]]; then
@@ -247,6 +263,10 @@ for profile_name in "${NOISE_PROFILES_ARR[@]}"; do
 done
 eval_cmd+=(--extra-eval-arg "--noise_reference")
 eval_cmd+=(--extra-eval-arg "${NOISE_REFERENCE}")
+if [[ "${NOISE_PROTOCOL}" != "auto" ]]; then
+  eval_cmd+=(--extra-eval-arg "--noise_protocol")
+  eval_cmd+=(--extra-eval-arg "${NOISE_PROTOCOL}")
+fi
 eval_cmd+=(--extra-eval-arg "--noise_seed")
 eval_cmd+=(--extra-eval-arg "${NOISE_SEED}")
 if [[ -n "${DEVICE}" ]]; then

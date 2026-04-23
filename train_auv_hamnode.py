@@ -222,6 +222,19 @@ class AUVHamNODETrainer:
         for group in self.optimizer.param_groups:
             group["lr"] = initial_lr
 
+    def _unpack_loader_batch(self, batch):
+        """Normalize loader output to a tensor batch plus optional trajectory metadata."""
+        if isinstance(batch, dict):
+            block = batch["block"].to(self.device)
+            traj_ids = batch.get("traj_idx")
+            block_indices = batch.get("block_idx")
+            return (
+                block,
+                traj_ids.to(self.device) if traj_ids is not None else None,
+                block_indices.to(self.device) if block_indices is not None else None,
+            )
+        return batch.to(self.device), None, None
+
     def _run_epoch(self, loader: DataLoader,
                    t_eval: torch.Tensor, train: bool = True,
                    epoch: int = 1,
@@ -242,7 +255,7 @@ class AUVHamNODETrainer:
             if train and global_step >= self.config.total_steps:
                 break
 
-            batch = batch.to(self.device)
+            batch, traj_ids, block_indices = self._unpack_loader_batch(batch)
             attempted_batches += 1
             self.model.reset_nfe()
 
@@ -254,13 +267,20 @@ class AUVHamNODETrainer:
             if train and noise_cfg.is_active and noise_cfg.epoch_scale(epoch) > 0.0:
                 noisy_mask = torch.rand(batch.shape[0], device=batch.device) < noise_cfg.mix_ratio
                 if torch.any(noisy_mask):
+                    noise_kwargs = {"state_is_ode": True}
+                    if noise_cfg.protocol == "v4_lite":
+                        noise_kwargs.update(
+                            traj_ids=traj_ids,
+                            block_indices=block_indices,
+                            base_seed=self.config.seed,
+                        )
                     noisy_y0 = build_noisy_initial_condition(
                         clean_y0,
                         noise_cfg,
                         self.model,
                         self.normalizer,
                         epoch,
-                        state_is_ode=True,
+                        **noise_kwargs,
                     )
                     y0 = torch.where(noisy_mask[:, None], noisy_y0, clean_y0)
                     frame_weights = torch.ones(
@@ -595,6 +615,8 @@ def train_auv_hamnode(
         profile_name: noise_cfg_from_profile(
             profile_name,
             reference=config.noise_reference,
+            protocol=config.noise_protocol,
+            trajectory_correlation=config.noise_ar1_corr,
         )
         for profile_name in block_profile_names
     }
@@ -651,6 +673,8 @@ def train_auv_hamnode(
         profile_name: noise_cfg_from_profile(
             profile_name,
             reference=config.noise_reference,
+            protocol=config.noise_protocol,
+            trajectory_correlation=config.noise_ar1_corr,
         )
         for profile_name in heldout_profile_names
     }
@@ -743,6 +767,16 @@ def main():
     parser.add_argument("--device", type=str,
                         default="cuda" if torch.cuda.is_available() else "cpu")
     parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument(
+        "--noise_protocol",
+        type=str,
+        default=None,
+        choices=["auto", "clean", "iid_noisy_ic", "v4_lite"],
+        help=(
+            "Noise protocol contract. auto=clean profile stays clean, noisy profiles use iid_noisy_ic. "
+            "v4_lite uses trajectory-consistent noisy initial states."
+        ),
+    )
     parser.add_argument(
         "--noise_profile",
         type=str,
@@ -869,6 +903,7 @@ def main():
         run_name=args.run_name,
         device=args.device,
         seed=args.seed,
+        noise_protocol=args.noise_protocol,
         noise_profile=args.noise_profile,
         noise_reference=args.noise_reference,
         noise_level=args.noise_level,

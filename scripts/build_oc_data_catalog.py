@@ -78,6 +78,34 @@ def read_runs_tsv(path: Path) -> list[dict]:
         return list(csv.DictReader(handle, delimiter="\t"))
 
 
+def iter_rollout_summary_files(rollout_root: Path) -> list[Path]:
+    if not rollout_root.exists():
+        return []
+
+    summaries: list[Path] = []
+    pending = [rollout_root]
+    visited: set[Path] = set()
+
+    while pending:
+        current = pending.pop()
+        try:
+            resolved = current.resolve()
+        except FileNotFoundError:
+            continue
+        if resolved in visited:
+            continue
+        visited.add(resolved)
+
+        for child in sorted(current.iterdir()):
+            if child.is_dir():
+                pending.append(child)
+                continue
+            if child.name == "summary.json":
+                summaries.append(child)
+
+    return sorted(summaries)
+
+
 def iter_suite_dirs(checkpoints_dir: Path, include_unused: bool) -> Iterable[Path]:
     for runs_path in sorted(checkpoints_dir.rglob("runs.tsv")):
         suite_dir = runs_path.parent
@@ -118,8 +146,35 @@ def file_row(
     }
 
 
-def derive_train_type(noise_profile: str | None) -> str:
-    if noise_profile:
+def resolve_noise_profile(config: dict) -> str:
+    profile = config.get("noise_profile")
+    if profile:
+        return str(profile)
+    legacy_map = {
+        0: "clean",
+        1: "nominal_train",
+        2: "nominal_eval",
+        3: "degraded_eval",
+    }
+    raw_level = config.get("noise_level", 0)
+    try:
+        level = int(raw_level)
+    except (TypeError, ValueError):
+        level = 0
+    return legacy_map.get(level, "clean")
+
+
+def resolve_noise_protocol(config: dict, noise_profile: str) -> str:
+    protocol = config.get("noise_protocol")
+    if noise_profile == "clean":
+        return "clean"
+    if protocol:
+        return str(protocol)
+    return "iid_noisy_ic"
+
+
+def derive_train_type(noise_profile: str, noise_protocol: str) -> str:
+    if noise_profile != "clean" or noise_protocol != "clean":
         return "noisy_train"
     return "clean_train"
 
@@ -149,7 +204,7 @@ def collect_rollout_summary_rows(
     if not rollout_root.exists():
         return rows, 0
 
-    summaries = sorted(rollout_root.rglob("summary.json"))
+    summaries = iter_rollout_summary_files(rollout_root)
     for summary_path in summaries:
         rel = summary_path.relative_to(rollout_root)
         rollout_run_id = rel.parts[0] if rel.parts else ""
@@ -201,7 +256,8 @@ def build_catalog(args: argparse.Namespace) -> tuple[list[dict], list[dict]]:
             config_path = run_dir / "config.json"
             config = load_json(config_path) if config_path.exists() else {}
 
-            noise_profile = config.get("noise_profile")
+            noise_profile = resolve_noise_profile(config)
+            noise_protocol = resolve_noise_protocol(config, noise_profile)
             noise_reference = config.get("noise_reference") or config.get(
                 "noise_reference_model"
             )
@@ -241,8 +297,9 @@ def build_catalog(args: argparse.Namespace) -> tuple[list[dict], list[dict]]:
                     "dataset_id": config.get("dataset_id", ""),
                     "dataset_path": config.get("dataset_path", ""),
                     "dataset_description": config.get("dataset_description", ""),
-                    "train_type": derive_train_type(noise_profile),
-                    "noise_profile_train": noise_profile or "clean",
+                    "train_type": derive_train_type(noise_profile, noise_protocol),
+                    "noise_profile_train": noise_profile,
+                    "noise_protocol_train": noise_protocol,
                     "noise_reference": noise_reference or "",
                     "ocean_current": config.get("ocean_current", ""),
                     "device": config.get("device", ""),
@@ -318,6 +375,7 @@ def write_training_history_long(path: Path, run_rows: list[dict]) -> None:
         "run_uid",
         "train_type",
         "noise_profile_train",
+        "noise_protocol_train",
         "dataset_id",
         "epoch",
         "global_step",
@@ -370,6 +428,7 @@ def write_training_history_long(path: Path, run_rows: list[dict]) -> None:
                             "run_uid": run_row["run_uid"],
                             "train_type": run_row["train_type"],
                             "noise_profile_train": run_row["noise_profile_train"],
+                            "noise_protocol_train": run_row["noise_protocol_train"],
                             "dataset_id": run_row["dataset_id"],
                             "epoch": epoch,
                             "global_step": global_step,
@@ -441,6 +500,7 @@ def write_generic_eval_long(
         "run_uid",
         "train_type",
         "noise_profile_train",
+        "noise_protocol_train",
         "dataset_id",
         "eval_profile",
         "metric_path",
@@ -474,6 +534,7 @@ def write_generic_eval_long(
                             "run_uid": run_row["run_uid"],
                             "train_type": run_row["train_type"],
                             "noise_profile_train": run_row["noise_profile_train"],
+                            "noise_protocol_train": run_row["noise_protocol_train"],
                             "dataset_id": run_row["dataset_id"],
                             "eval_profile": eval_profile,
                             "metric_path": ".".join(key_path),
@@ -491,7 +552,7 @@ def rollout_summary_paths(run_dir: Path) -> list[tuple[Path, str, str]]:
         return []
 
     rows: list[tuple[Path, str, str]] = []
-    for summary_path in sorted(rollout_root.rglob("summary.json")):
+    for summary_path in iter_rollout_summary_files(rollout_root):
         rel = summary_path.relative_to(rollout_root)
         rollout_run_id = rel.parts[0] if rel.parts else ""
         if len(rel.parts) >= 3:
@@ -520,6 +581,7 @@ def write_rollout_summary_long(path: Path, run_rows: list[dict]) -> None:
         "run_uid",
         "train_type",
         "noise_profile_train",
+        "noise_protocol_train",
         "dataset_id",
         "rollout_run_id",
         "eval_profile",
@@ -579,6 +641,7 @@ def write_rollout_summary_long(path: Path, run_rows: list[dict]) -> None:
                                         "run_uid": run_row["run_uid"],
                                         "train_type": run_row["train_type"],
                                         "noise_profile_train": run_row["noise_profile_train"],
+                                        "noise_protocol_train": run_row["noise_protocol_train"],
                                         "dataset_id": run_row["dataset_id"],
                                         "rollout_run_id": rollout_run_id,
                                         "eval_profile": eval_profile,
@@ -611,6 +674,7 @@ def write_rollout_summary_long(path: Path, run_rows: list[dict]) -> None:
                                             "run_uid": run_row["run_uid"],
                                             "train_type": run_row["train_type"],
                                             "noise_profile_train": run_row["noise_profile_train"],
+                                            "noise_protocol_train": run_row["noise_protocol_train"],
                                             "dataset_id": run_row["dataset_id"],
                                             "rollout_run_id": rollout_run_id,
                                             "eval_profile": eval_profile,
@@ -640,6 +704,7 @@ def write_rollout_summary_long(path: Path, run_rows: list[dict]) -> None:
                                         "run_uid": run_row["run_uid"],
                                         "train_type": run_row["train_type"],
                                         "noise_profile_train": run_row["noise_profile_train"],
+                                        "noise_protocol_train": run_row["noise_protocol_train"],
                                         "dataset_id": run_row["dataset_id"],
                                         "rollout_run_id": rollout_run_id,
                                         "eval_profile": eval_profile,
@@ -668,6 +733,7 @@ def write_rollout_outcomes_long(path: Path, run_rows: list[dict]) -> None:
         "run_uid",
         "train_type",
         "noise_profile_train",
+        "noise_protocol_train",
         "dataset_id",
         "rollout_run_id",
         "eval_profile",
@@ -723,6 +789,7 @@ def write_rollout_outcomes_long(path: Path, run_rows: list[dict]) -> None:
                                             "run_uid": run_row["run_uid"],
                                             "train_type": run_row["train_type"],
                                             "noise_profile_train": run_row["noise_profile_train"],
+                                            "noise_protocol_train": run_row["noise_protocol_train"],
                                             "dataset_id": run_row["dataset_id"],
                                             "rollout_run_id": rollout_run_id,
                                             "eval_profile": eval_profile,
@@ -748,6 +815,7 @@ def write_rollout_outcomes_long(path: Path, run_rows: list[dict]) -> None:
                                         "run_uid": run_row["run_uid"],
                                         "train_type": run_row["train_type"],
                                         "noise_profile_train": run_row["noise_profile_train"],
+                                        "noise_protocol_train": run_row["noise_protocol_train"],
                                         "dataset_id": run_row["dataset_id"],
                                         "rollout_run_id": rollout_run_id,
                                         "eval_profile": eval_profile,
@@ -765,6 +833,10 @@ def write_rollout_outcomes_long(path: Path, run_rows: list[dict]) -> None:
 
 def derive_experiment_bucket(run_row: dict) -> str:
     suite_name = run_row["suite_name"]
+    suite_family = run_row["suite_family"]
+    group = run_row["group"]
+    if suite_family == "sweep_oc_smoke" or group == "smoke":
+        return "smoke"
     if suite_name == "sweep_oc_main_noise_seed42_smoke":
         return "smoke"
     if suite_name.startswith("sweep_oc_main_noise_nominal_train_remus100_dr_extra_"):

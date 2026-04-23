@@ -89,18 +89,20 @@ def get_dataset_training_defaults(
 class NoiseConfig:
     """Noise configuration aligned with the current IC-only training interface."""
 
+    protocol: str = "clean"    # clean / iid_noisy_ic / v4_lite
     profile: str = "clean"      # clean / nominal_train / nominal_eval / degraded_eval / heading_biased_eval / current_bias_eval
     reference: str = "remus100_dr"  # remus100_dr / remus100_ins
     scale: float = 1.0          # global magnitude multiplier
     warmup_epochs: int = 20     # fully clean warmup before noisy IC regularization
     ramp_epochs: int = 80       # linear ramp after warmup
     mix_ratio: float = 0.5      # fraction of training samples using noisy IC
+    trajectory_correlation: float = 0.85  # AR(1)-style correlation used by v4-lite
     linear_floor_std: float = 0.005   # legacy compatibility field, not used by v3 budgets
     angular_floor_std: float = 0.0015 # legacy compatibility field, not used by v3 budgets
 
     @property
     def is_active(self) -> bool:
-        return self.profile != "clean"
+        return self.protocol != "clean" and self.profile != "clean"
 
     def epoch_scale(self, epoch: int) -> float:
         if not self.is_active:
@@ -124,6 +126,12 @@ AVAILABLE_NOISE_REFERENCES = (
     "remus100_ins",
 )
 
+AVAILABLE_NOISE_PROTOCOLS = (
+    "clean",
+    "iid_noisy_ic",
+    "v4_lite",
+)
+
 
 def _base_noise_profile(profile: str) -> str:
     return {
@@ -140,7 +148,61 @@ def _resolve_noise_reference(reference: Optional[str]) -> str:
     return ref
 
 
-def noise_cfg_from_profile(profile_name: str, *, reference: str = "remus100_dr") -> Optional["NoiseConfig"]:
+def resolve_noise_protocol(
+    protocol: Optional[str],
+    *,
+    profile: str = "clean",
+) -> str:
+    profile_key = str(profile or "clean").strip().lower()
+    if profile_key == "clean":
+        return "clean"
+
+    alias_map = {
+        "": "iid_noisy_ic",
+        "auto": "iid_noisy_ic",
+        "default": "iid_noisy_ic",
+        "iid": "iid_noisy_ic",
+        "iid_noisy": "iid_noisy_ic",
+        "iid_noisy_ic": "iid_noisy_ic",
+        "block_iid": "iid_noisy_ic",
+        "v4_lite": "v4_lite",
+        "v4-lite": "v4_lite",
+        "traj_consistent": "v4_lite",
+        "trajectory_consistent": "v4_lite",
+    }
+    key = str(protocol or "").strip().lower()
+    resolved = alias_map.get(key, key)
+    if resolved not in AVAILABLE_NOISE_PROTOCOLS:
+        valid = ", ".join(["auto", *AVAILABLE_NOISE_PROTOCOLS])
+        raise ValueError(
+            f"Unsupported noise protocol {protocol!r}. Expected one of: {valid}"
+        )
+    if resolved == "clean":
+        raise ValueError(
+            "noise_protocol='clean' is only valid when the resolved noise profile is clean."
+        )
+    return resolved
+
+
+def _noise_sampling_contract(protocol: str) -> str:
+    return {
+        "clean": "clean_initial_condition",
+        "iid_noisy_ic": "block_iid_initial_condition",
+        "v4_lite": "trajectory_consistent_initial_condition",
+    }[protocol]
+
+
+def _noise_protocol_status(protocol: str) -> str:
+    return "implemented"
+
+
+def noise_cfg_from_profile(
+    profile_name: str,
+    *,
+    reference: str = "remus100_dr",
+    protocol: Optional[str] = None,
+    trajectory_correlation: float = 0.85,
+) -> Optional["NoiseConfig"]:
     if profile_name == "clean":
         return None
     valid_profiles = {"nominal_train", *AVAILABLE_NOISE_PROFILES[1:]}
@@ -148,10 +210,12 @@ def noise_cfg_from_profile(profile_name: str, *, reference: str = "remus100_dr")
         valid = ", ".join(["clean", *sorted(valid_profiles)])
         raise ValueError(f"Unsupported noise profile {profile_name!r}. Expected one of: {valid}")
     return NoiseConfig(
+        protocol=resolve_noise_protocol(protocol, profile=profile_name),
         profile=profile_name,
         reference=_resolve_noise_reference(reference),
         warmup_epochs=0,
         ramp_epochs=1,
+        trajectory_correlation=float(trajectory_correlation),
     )
 
 
@@ -272,6 +336,7 @@ class TrainConfig:
     # Training-time noise injection. ``noise_profile`` is the preferred
     # interface. The remaining noise_* fields are retained for backward
     # compatibility with older configs and scripts.
+    noise_protocol: Optional[str] = None
     noise_profile: Optional[str] = None
     noise_reference: str = "remus100_dr"
     noise_level: int = 0              # legacy alias: 0=clean 1=nominal_train 2=nominal_eval 3=degraded_eval
@@ -323,6 +388,8 @@ class TrainConfig:
         "observation_bias",
         "observation_noise",
         "observation_noise_scale",
+        "resolved_noise_profile",
+        "resolved_noise_protocol",
         "velocity_bias_std",
         "velocity_noise_std",
     }
@@ -353,8 +420,11 @@ class TrainConfig:
 
         tags = []
         profile = self.resolved_noise_profile()
+        protocol = self.resolved_noise_protocol()
         if profile != "clean":
             tags.append(f"noise-{profile}")
+            if protocol != "iid_noisy_ic":
+                tags.append(f"proto-{protocol.replace('_', '-')}")
         if self.ocean_current:
             tags.append("oc")
         tag_suffix = f"_{'-'.join(tags)}" if tags else ""
@@ -374,8 +444,11 @@ class TrainConfig:
         return asdict(self)
 
     def save(self, path: str):
+        payload = self.to_dict()
+        payload["resolved_noise_profile"] = self.resolved_noise_profile()
+        payload["resolved_noise_protocol"] = self.resolved_noise_protocol()
         with open(path, "w") as f:
-            json.dump(self.to_dict(), f, indent=2)
+            json.dump(payload, f, indent=2)
 
     @classmethod
     def load(cls, path: str) -> "TrainConfig":
@@ -399,12 +472,14 @@ class TrainConfig:
         """Extract a NoiseConfig from this TrainConfig's noise_* fields."""
         profile = self.resolved_noise_profile()
         return NoiseConfig(
+            protocol=self.resolved_noise_protocol(),
             profile=profile,
             reference=_resolve_noise_reference(self.noise_reference),
             scale=self.noise_scale,
             warmup_epochs=self.noise_warmup_epochs,
             ramp_epochs=self.noise_ramp_epochs,
             mix_ratio=self.noise_mix_ratio,
+            trajectory_correlation=self.noise_ar1_corr,
             linear_floor_std=self.noise_linear_floor_std,
             angular_floor_std=self.noise_angular_floor_std,
         )
@@ -419,6 +494,12 @@ class TrainConfig:
             3: "degraded_eval",
         }
         return legacy_map.get(int(self.noise_level), "clean")
+
+    def resolved_noise_protocol(self) -> str:
+        return resolve_noise_protocol(
+            self.noise_protocol,
+            profile=self.resolved_noise_profile(),
+        )
 
 
 @dataclass
@@ -926,6 +1007,107 @@ def _sample_scaled_noise(
     return out
 
 
+def _sample_trajectory_correlated_noise(
+    std: torch.Tensor,
+    traj_ids: torch.Tensor,
+    block_indices: torch.Tensor,
+    *,
+    device: torch.device,
+    dtype: torch.dtype,
+    base_seed: int,
+    epoch: int,
+    stream: int = 0,
+    correlation: float = 0.85,
+) -> torch.Tensor:
+    """Sample trajectory-consistent AR(1)-like noise at block start indices."""
+    traj_ids = torch.as_tensor(traj_ids, dtype=torch.long).view(-1).cpu()
+    block_indices = torch.as_tensor(block_indices, dtype=torch.long).view(-1).cpu()
+    batch_size = int(traj_ids.numel())
+    if block_indices.numel() != batch_size:
+        raise ValueError(
+            "traj_ids and block_indices must have the same length for v4-lite noise."
+        )
+    if batch_size == 0:
+        dim = int(std.shape[-1]) if std.ndim > 0 else 0
+        return torch.empty(0, dim, dtype=dtype, device=device)
+    if torch.any(block_indices < 0):
+        raise ValueError("block_indices must be non-negative for v4-lite noise.")
+
+    std = std.to(device=device, dtype=dtype)
+    if std.ndim == 1:
+        dim = int(std.numel())
+        std_rows = std.view(1, dim).expand(batch_size, dim)
+    elif std.ndim == 2:
+        if std.shape[0] != batch_size:
+            raise ValueError(
+                f"Per-sample std must have batch dimension {batch_size}, got {tuple(std.shape)}."
+            )
+        dim = int(std.shape[1])
+        std_rows = std
+    else:
+        raise ValueError(f"std must be 1D or 2D, got shape {tuple(std.shape)}.")
+
+    std_cpu = std_rows.detach().cpu().to(dtype=torch.float32)
+    out = torch.empty(batch_size, dim, dtype=dtype, device=device)
+    corr = float(np.clip(correlation, 0.0, 0.9999))
+    innovation_scale = float(max(1.0 - corr ** 2, 1e-6)) ** 0.5
+    unique_trajs = torch.unique(traj_ids, sorted=True)
+    for traj_id in unique_trajs.tolist():
+        mask = traj_ids == int(traj_id)
+        sample_positions = mask.nonzero(as_tuple=False).view(-1)
+        traj_blocks = block_indices[sample_positions]
+        max_block = int(traj_blocks.max().item())
+
+        gen = torch.Generator(device="cpu")
+        gen.manual_seed(
+            int(base_seed)
+            + 1000003 * int(epoch)
+            + 10007 * int(traj_id)
+            + 7919 * int(stream)
+        )
+        sequence = torch.empty(max_block + 1, dim, dtype=torch.float32)
+        sequence[0] = torch.randn(dim, generator=gen, dtype=torch.float32)
+        for step in range(1, max_block + 1):
+            innovation = torch.randn(dim, generator=gen, dtype=torch.float32)
+            sequence[step] = corr * sequence[step - 1] + innovation_scale * innovation
+
+        sampled = sequence[traj_blocks]
+        out[sample_positions.to(device=device)] = (
+            std_cpu[sample_positions] * sampled
+        ).to(device=device, dtype=dtype)
+    return out
+
+
+def _sample_trajectory_sign_pattern(
+    traj_ids: torch.Tensor,
+    dim: int,
+    *,
+    device: torch.device,
+    dtype: torch.dtype,
+    base_seed: int,
+    epoch: int,
+    stream: int = 0,
+) -> torch.Tensor:
+    """Sample one sign pattern per trajectory and share it across blocks."""
+    traj_ids = torch.as_tensor(traj_ids, dtype=torch.long).view(-1).cpu()
+    batch_size = int(traj_ids.numel())
+    out = torch.empty(batch_size, dim, dtype=dtype, device=device)
+    for traj_id in torch.unique(traj_ids, sorted=True).tolist():
+        mask = traj_ids == int(traj_id)
+        sample_positions = mask.nonzero(as_tuple=False).view(-1)
+        gen = torch.Generator(device="cpu")
+        gen.manual_seed(
+            int(base_seed)
+            + 1000003 * int(epoch)
+            + 10007 * int(traj_id)
+            + 7919 * int(stream)
+        )
+        draws = torch.randint(0, 2, (dim,), generator=gen, dtype=torch.int64)
+        sign = (draws * 2 - 1).to(dtype=torch.float32, device=device)
+        out[sample_positions.to(device=device)] = sign.to(dtype=dtype)
+    return out
+
+
 def summarize_noise_budget(
     cfg: Optional[NoiseConfig],
     normalizer: StateNormalizer,
@@ -937,9 +1119,11 @@ def summarize_noise_budget(
     device: str = "cpu",
 ) -> Dict:
     profile = "clean" if cfg is None else cfg.profile
+    protocol = "clean" if cfg is None else cfg.protocol
     base_profile = _base_noise_profile(profile)
     if cfg is None:
         cfg = NoiseConfig(
+            protocol="clean",
             profile="clean",
             reference="remus100_dr",
             scale=0.0,
@@ -1012,10 +1196,14 @@ def summarize_noise_budget(
     )
 
     return {
+        "protocol": protocol,
         "profile": profile,
         "base_profile": base_profile,
         "reference": reference,
         "is_active": bool(cfg.is_active),
+        "sampling_contract": _noise_sampling_contract(protocol),
+        "protocol_status": _noise_protocol_status(protocol),
+        "trajectory_correlation": float(cfg.trajectory_correlation),
         "epoch": report_epoch,
         "epoch_scale": epoch_scale,
         "global_scale": float(cfg.scale),
@@ -1052,7 +1240,11 @@ def summarize_noise_budget(
             if torch.any(rot_bias > 0) else None
         ),
         "rotation_bias_mode": (
-            "per-sample fixed-sign bias"
+            (
+                "per-trajectory fixed-sign bias"
+                if protocol == "v4_lite" else
+                "per-sample fixed-sign bias"
+            )
             if torch.any(rot_bias > 0) else None
         ),
         "v_c_bias_abs": (
@@ -1063,7 +1255,11 @@ def summarize_noise_budget(
             if current_bias is not None and torch.any(current_bias > 0) else None
         ),
         "v_c_bias_mode": (
-            "per-sample fixed-sign bias"
+            (
+                "per-trajectory fixed-sign bias"
+                if protocol == "v4_lite" else
+                "per-sample fixed-sign bias"
+            )
             if current_bias is not None and torch.any(current_bias > 0) else None
         ),
         "u_act_std": {
@@ -1112,12 +1308,20 @@ def format_noise_budget_summary(budget: Optional[Dict]) -> str:
         for name, value in current_bias.items()
         if abs(value) > 0.0
     )
+    protocol = budget.get("protocol", "clean")
+    protocol_status = budget.get("protocol_status")
     base_profile = budget.get("base_profile")
     reference = budget.get("reference")
+    corr_text = ""
+    if protocol == "v4_lite":
+        corr_text = f" | traj_corr={budget.get('trajectory_correlation', 0.0):.3f}"
     return (
-        f"profile={budget.get('profile', 'clean')}"
+        f"protocol={protocol}"
+        f"{' (planned)' if protocol_status == 'planned' else ''}"
+        f" | profile={budget.get('profile', 'clean')}"
         f"{f' (base={base_profile})' if base_profile and base_profile != budget.get('profile', 'clean') else ''}"
         f"{f' | ref={reference}' if reference else ''}"
+        f"{corr_text}"
         f" | epoch_scale={budget.get('epoch_scale', 0.0):.3f}"
         f" | mix_ratio={budget.get('mix_ratio', 0.0):.3f}"
         f" | nu_r_lin_floor[{nu_r_floor_text}]"
@@ -1129,7 +1333,7 @@ def format_noise_budget_summary(budget: Optional[Dict]) -> str:
     )
 
 
-def build_noisy_initial_condition(
+def _build_iid_noisy_initial_condition(
     clean_state: torch.Tensor,
     cfg: NoiseConfig,
     model: nn.Module,
@@ -1140,7 +1344,6 @@ def build_noisy_initial_condition(
     base_seed: Optional[int] = None,
     state_is_ode: bool = False,
 ) -> torch.Tensor:
-    """Perturb the clean initial state in ODE space using IC-consistent noise."""
     y0 = clean_state.clone() if state_is_ode else model.to_ode_state(clean_state).clone()
     scale = cfg.epoch_scale(epoch)
     if scale < 1e-8:
@@ -1265,6 +1468,201 @@ def build_noisy_initial_condition(
     return y0
 
 
+def _build_v4_lite_initial_condition(
+    clean_state: torch.Tensor,
+    cfg: NoiseConfig,
+    model: nn.Module,
+    normalizer: StateNormalizer,
+    epoch: int,
+    *,
+    traj_ids: torch.Tensor,
+    block_indices: torch.Tensor,
+    base_seed: int,
+    state_is_ode: bool = False,
+) -> torch.Tensor:
+    """Perturb the clean initial state using one correlated realization per trajectory."""
+    y0 = clean_state.clone() if state_is_ode else model.to_ode_state(clean_state).clone()
+    scale = cfg.epoch_scale(epoch)
+    if scale < 1e-8:
+        return y0
+
+    batch_size = int(y0.shape[0])
+    device = y0.device
+    dtype = y0.dtype
+    layout = model.layout
+    reference = _resolve_noise_reference(cfg.reference)
+    traj_ids = torch.as_tensor(traj_ids, dtype=torch.long, device=device).view(-1)
+    block_indices = torch.as_tensor(block_indices, dtype=torch.long, device=device).view(-1)
+    if traj_ids.numel() != batch_size or block_indices.numel() != batch_size:
+        raise ValueError(
+            "traj_ids and block_indices must match the batch size for noise_protocol='v4_lite'."
+        )
+
+    nu_r_clean = y0[:, layout.nu_r]
+    nu_r_std = scale * _profile_velocity_std_from_state(
+        nu_r_clean,
+        cfg.profile,
+        reference,
+    )
+    y0[:, layout.nu_r] = y0[:, layout.nu_r] + _sample_trajectory_correlated_noise(
+        nu_r_std,
+        traj_ids,
+        block_indices,
+        device=device,
+        dtype=dtype,
+        base_seed=base_seed,
+        epoch=epoch,
+        stream=11,
+        correlation=cfg.trajectory_correlation,
+    )
+
+    rot_std = scale * _profile_rotation_std_vector(
+        cfg.profile,
+        reference,
+        dtype=dtype,
+        device=device,
+    )
+    rot_bias = scale * _profile_rotation_bias_vector(
+        cfg.profile,
+        reference,
+        dtype=dtype,
+        device=device,
+    )
+    if torch.any(rot_std > 0) or torch.any(rot_bias > 0):
+        delta_theta = torch.zeros(batch_size, 3, dtype=dtype, device=device)
+        if torch.any(rot_std > 0):
+            delta_theta = delta_theta + _sample_trajectory_correlated_noise(
+                rot_std,
+                traj_ids,
+                block_indices,
+                device=device,
+                dtype=dtype,
+                base_seed=base_seed,
+                epoch=epoch,
+                stream=23,
+                correlation=cfg.trajectory_correlation,
+            )
+        if torch.any(rot_bias > 0):
+            bias_sign = _sample_trajectory_sign_pattern(
+                traj_ids,
+                dim=1,
+                device=device,
+                dtype=dtype,
+                base_seed=base_seed,
+                epoch=epoch,
+                stream=29,
+            )
+            delta_theta = delta_theta + bias_sign * rot_bias.view(1, 3)
+        R_clean = y0[:, 3:12].reshape(batch_size, 3, 3)
+        R_delta = _so3_exp_map(delta_theta)
+        y0[:, 3:12] = _project_to_so3(torch.matmul(R_delta, R_clean)).reshape(batch_size, 9)
+
+    u_act_dim = int(layout.u_act.stop - layout.u_act.start)
+    act_std = scale * _profile_actuator_std(
+        cfg.profile,
+        u_act_dim,
+        normalizer.std_act,
+        reference,
+        dtype=dtype,
+        device=device,
+    )
+    if torch.any(act_std > 0):
+        y0[:, layout.u_act] = y0[:, layout.u_act] + _sample_trajectory_correlated_noise(
+            act_std,
+            traj_ids,
+            block_indices,
+            device=device,
+            dtype=dtype,
+            base_seed=base_seed,
+            epoch=epoch,
+            stream=37,
+            correlation=cfg.trajectory_correlation,
+        )
+
+    if getattr(model, "ocean_current", False):
+        current_std = scale * _profile_current_std(
+            cfg.profile,
+            reference,
+            dtype=dtype,
+            device=device,
+        )
+        current_bias = scale * _profile_current_bias_vector(
+            cfg.profile,
+            reference,
+            dtype=dtype,
+            device=device,
+        )
+        if torch.any(current_std > 0):
+            y0[:, layout.v_c] = y0[:, layout.v_c] + _sample_trajectory_correlated_noise(
+                current_std,
+                traj_ids,
+                block_indices,
+                device=device,
+                dtype=dtype,
+                base_seed=base_seed,
+                epoch=epoch,
+                stream=53,
+                correlation=cfg.trajectory_correlation,
+            )
+        if torch.any(current_bias > 0):
+            current_bias_sign = _sample_trajectory_sign_pattern(
+                traj_ids,
+                dim=3,
+                device=device,
+                dtype=dtype,
+                base_seed=base_seed,
+                epoch=epoch,
+                stream=59,
+            )
+            y0[:, layout.v_c] = y0[:, layout.v_c] + current_bias_sign * current_bias.view(1, 3)
+
+    return y0
+
+
+def build_noisy_initial_condition(
+    clean_state: torch.Tensor,
+    cfg: NoiseConfig,
+    model: nn.Module,
+    normalizer: StateNormalizer,
+    epoch: int,
+    *,
+    sample_ids: Optional[torch.Tensor] = None,
+    traj_ids: Optional[torch.Tensor] = None,
+    block_indices: Optional[torch.Tensor] = None,
+    base_seed: Optional[int] = None,
+    state_is_ode: bool = False,
+) -> torch.Tensor:
+    """Perturb the clean initial state in ODE space using the selected protocol."""
+    if cfg.protocol == "v4_lite":
+        if base_seed is None:
+            raise ValueError("noise_protocol='v4_lite' requires a deterministic base_seed.")
+        if traj_ids is None or block_indices is None:
+            raise ValueError(
+                "noise_protocol='v4_lite' requires traj_ids and block_indices."
+            )
+        return _build_v4_lite_initial_condition(
+            clean_state,
+            cfg,
+            model,
+            normalizer,
+            epoch,
+            traj_ids=traj_ids,
+            block_indices=block_indices,
+            base_seed=base_seed,
+            state_is_ode=state_is_ode,
+        )
+    return _build_iid_noisy_initial_condition(
+        clean_state,
+        cfg,
+        model,
+        normalizer,
+        epoch,
+        sample_ids=sample_ids,
+        base_seed=base_seed,
+        state_is_ode=state_is_ode,
+    )
+
+
 class AUVDataset(Dataset):
     """PyTorch Dataset for AUV trajectory data."""
 
@@ -1275,12 +1673,19 @@ class AUVDataset(Dataset):
     ):
         validate_dataset_config(dataset_cfg)
         self.data = torch.tensor(data, dtype=torch.float32)
+        self.blocks_per_trajectory = int(dataset_cfg.get("blocks_per_trajectory", 1))
 
     def __len__(self):
         return len(self.data)
 
     def __getitem__(self, idx):
-        return self.data[idx]
+        idx = int(idx)
+        return {
+            "block": self.data[idx],
+            "flat_index": torch.tensor(idx, dtype=torch.long),
+            "traj_idx": torch.tensor(idx // self.blocks_per_trajectory, dtype=torch.long),
+            "block_idx": torch.tensor(idx % self.blocks_per_trajectory, dtype=torch.long),
+        }
 
 
 def create_dataloaders_from_dataset(
@@ -1573,6 +1978,8 @@ def _evaluate_block_batch_with_fallback(
     normalizer: Optional[StateNormalizer] = None,
     noise_seed: Optional[int] = None,
     sample_ids: Optional[np.ndarray] = None,
+    traj_ids: Optional[np.ndarray] = None,
+    block_indices: Optional[np.ndarray] = None,
 ) -> Tuple[Dict[int, torch.Tensor], Dict[int, str]]:
     """Evaluate a batch of independent blocks while isolating failing samples."""
     from torchdiffeq import odeint
@@ -1587,14 +1994,24 @@ def _evaluate_block_batch_with_fallback(
     if noise_cfg is not None and noise_cfg.is_active:
         if normalizer is None:
             raise ValueError("normalizer is required for noisy evaluation.")
+        noise_kwargs = {
+            "sample_ids": torch.tensor(sample_ids, dtype=torch.long) if sample_ids is not None else None,
+            "base_seed": noise_seed,
+        }
+        if noise_cfg.protocol == "v4_lite":
+            if traj_ids is None or block_indices is None:
+                raise ValueError(
+                    "noise_protocol='v4_lite' requires traj_ids and block_indices during evaluation."
+                )
+            noise_kwargs["traj_ids"] = torch.tensor(traj_ids, dtype=torch.long)
+            noise_kwargs["block_indices"] = torch.tensor(block_indices, dtype=torch.long)
         y0 = build_noisy_initial_condition(
             batch[:, 0],
             noise_cfg,
             model,
             normalizer,
             epoch=noise_cfg.warmup_epochs + noise_cfg.ramp_epochs,
-            sample_ids=torch.tensor(sample_ids, dtype=torch.long),
-            base_seed=noise_seed,
+            **noise_kwargs,
         )
     else:
         y0 = model.to_ode_state(batch[:, 0])
@@ -1615,6 +2032,8 @@ def _evaluate_block_batch_with_fallback(
             normalizer=normalizer,
             noise_seed=noise_seed,
             sample_ids=sample_ids[:split],
+            traj_ids=None if traj_ids is None else traj_ids[:split],
+            block_indices=None if block_indices is None else block_indices[:split],
         )
         right_pred, right_fail = _evaluate_block_batch_with_fallback(
             model,
@@ -1626,6 +2045,8 @@ def _evaluate_block_batch_with_fallback(
             normalizer=normalizer,
             noise_seed=noise_seed,
             sample_ids=sample_ids[split:],
+            traj_ids=None if traj_ids is None else traj_ids[split:],
+            block_indices=None if block_indices is None else block_indices[split:],
         )
         merged_pred = {idx: value for idx, value in left_pred.items()}
         merged_pred.update({split + idx: value for idx, value in right_pred.items()})
@@ -1648,6 +2069,8 @@ def _evaluate_block_batch_with_fallback(
             normalizer=normalizer,
             noise_seed=noise_seed,
             sample_ids=sample_ids[:split],
+            traj_ids=None if traj_ids is None else traj_ids[:split],
+            block_indices=None if block_indices is None else block_indices[:split],
         )
         right_pred, right_fail = _evaluate_block_batch_with_fallback(
             model,
@@ -1659,6 +2082,8 @@ def _evaluate_block_batch_with_fallback(
             normalizer=normalizer,
             noise_seed=noise_seed,
             sample_ids=sample_ids[split:],
+            traj_ids=None if traj_ids is None else traj_ids[split:],
+            block_indices=None if block_indices is None else block_indices[split:],
         )
         merged_pred = {idx: value for idx, value in left_pred.items()}
         merged_pred.update({split + idx: value for idx, value in right_pred.items()})
@@ -1716,6 +2141,8 @@ def evaluate_heldout_trajectories(
                 [traj_idx * 100000 + block_idx for block_idx in range(len(traj_blocks))],
                 dtype=np.int64,
             ),
+            traj_ids=np.full(len(traj_blocks), traj_idx, dtype=np.int64),
+            block_indices=np.arange(len(traj_blocks), dtype=np.int64),
         )
         successful_indices = sorted(pred_map)
         failed_indices = sorted(failure_map)
@@ -1893,8 +2320,22 @@ def evaluate_trajectory_prediction(
         if count >= n_samples:
             break
 
-        batch_np = batch.cpu().numpy()
-        sample_ids = np.arange(sample_offset, sample_offset + len(batch_np), dtype=np.int64)
+        if isinstance(batch, dict):
+            batch_tensor = batch["block"]
+            sample_ids = batch.get("flat_index")
+            traj_ids = batch.get("traj_idx")
+            block_indices = batch.get("block_idx")
+        else:
+            batch_tensor = batch
+            sample_ids = None
+            traj_ids = None
+            block_indices = None
+
+        batch_np = batch_tensor.cpu().numpy()
+        if sample_ids is None:
+            sample_ids = np.arange(sample_offset, sample_offset + len(batch_np), dtype=np.int64)
+        else:
+            sample_ids = sample_ids.cpu().numpy().astype(np.int64, copy=False)
         pred_map, failure_map = _evaluate_block_batch_with_fallback(
             model,
             batch_np,
@@ -1905,6 +2346,16 @@ def evaluate_trajectory_prediction(
             normalizer=normalizer,
             noise_seed=noise_seed,
             sample_ids=sample_ids,
+            traj_ids=(
+                None
+                if traj_ids is None else
+                traj_ids.cpu().numpy().astype(np.int64, copy=False)
+            ),
+            block_indices=(
+                None
+                if block_indices is None else
+                block_indices.cpu().numpy().astype(np.int64, copy=False)
+            ),
         )
         sample_offset += len(batch_np)
         solver_failed_batches += sum(reason == "solver_failure" for reason in failure_map.values())
@@ -1916,7 +2367,7 @@ def evaluate_trajectory_prediction(
             if count >= n_samples:
                 break
 
-            tgt = batch[sample_idx].to(device)
+            tgt = batch_tensor[sample_idx].to(device)
             prd = pred_map[sample_idx][0]
 
             pos_err.append(((tgt[:, :3] - prd[:, :3]) ** 2).mean().sqrt().item())

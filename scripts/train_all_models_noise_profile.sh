@@ -12,6 +12,7 @@ DEVICE=""
 DATASET=""
 SUITE_NAME=""
 NOISE_PROFILE="nominal_train"
+NOISE_PROTOCOL="auto"
 NOISE_REFERENCE="remus100_dr"
 NOISE_SCALE="1.0"
 NOISE_WARMUP_EPOCHS="20"
@@ -42,6 +43,8 @@ Options:
   --device DEVICE                   Forwarded to train_auv_hamnode.py
   --noise-profile PROFILE           One of clean nominal_train nominal_eval degraded_eval
                                     Default: nominal_train
+  --noise-protocol PROTO           auto | clean | iid_noisy_ic | v4_lite
+                                    Default: auto
   --noise-reference REF             One of remus100_dr remus100_ins
                                     Default: remus100_dr
   --noise-scale FLOAT               Global noise multiplier. Default: 1.0
@@ -127,6 +130,10 @@ while [[ $# -gt 0 ]]; do
       NOISE_PROFILE="$2"
       shift 2
       ;;
+    --noise-protocol)
+      NOISE_PROTOCOL="$2"
+      shift 2
+      ;;
     --noise-reference)
       NOISE_REFERENCE="$2"
       shift 2
@@ -196,6 +203,15 @@ case "${NOISE_PROFILE}" in
     ;;
 esac
 
+case "${NOISE_PROTOCOL}" in
+  auto|clean|iid_noisy_ic|v4_lite) ;;
+  *)
+    echo "Unsupported --noise-protocol: ${NOISE_PROTOCOL}." >&2
+    echo "Expected auto, clean, iid_noisy_ic, or v4_lite." >&2
+    exit 1
+    ;;
+esac
+
 case "${NOISE_REFERENCE}" in
   remus100_dr|remus100_ins) ;;
   *)
@@ -217,6 +233,9 @@ fi
 
 if [[ -z "${PREFIX}" ]]; then
   PREFIX="noise_${NOISE_PROFILE}_${NOISE_REFERENCE}"
+  if [[ "${NOISE_PROTOCOL}" != "auto" ]]; then
+    PREFIX="${PREFIX}_${NOISE_PROTOCOL}"
+  fi
 fi
 
 if [[ "${BLOCK_EVAL_NOISE_PROFILES}" == "auto" ]]; then
@@ -255,6 +274,14 @@ cmd=(
   --prefix "${PREFIX}"
   --extra-train-arg "--noise_profile"
   --extra-train-arg "${NOISE_PROFILE}"
+)
+if [[ "${NOISE_PROTOCOL}" != "auto" ]]; then
+  cmd+=(
+    --extra-train-arg "--noise_protocol"
+    --extra-train-arg "${NOISE_PROTOCOL}"
+  )
+fi
+cmd+=(
   --extra-train-arg "--noise_reference"
   --extra-train-arg "${NOISE_REFERENCE}"
   --extra-train-arg "--noise_scale"
@@ -296,7 +323,7 @@ if [[ -n "${MODELS}" ]]; then
   echo "Explicit models: ${MODELS}"
 fi
 echo "Seeds: ${SEEDS}"
-echo "Noise config: profile=${NOISE_PROFILE}, scale=${NOISE_SCALE}, warmup=${NOISE_WARMUP_EPOCHS}, ramp=${NOISE_RAMP}, mix_ratio=${NOISE_MIX_RATIO}"
+echo "Noise config: protocol=${NOISE_PROTOCOL}, profile=${NOISE_PROFILE}, scale=${NOISE_SCALE}, warmup=${NOISE_WARMUP_EPOCHS}, ramp=${NOISE_RAMP}, mix_ratio=${NOISE_MIX_RATIO}"
 echo "Auto-eval profiles: block=[${BLOCK_EVAL_NOISE_PROFILES}] heldout=[${HELDOUT_EVAL_NOISE_PROFILES}]"
 "${cmd[@]}"
 

@@ -40,6 +40,7 @@ from rollout_benchmark_reporting import (
 from train_utils import (
     noise_cfg_from_profile,
     resolve_noise_profiles,
+    resolve_noise_protocol,
     available_eval_noise_profiles,
     default_eval_noise_profiles,
     summarize_noise_budget,
@@ -300,6 +301,17 @@ def build_parser():
     )
     parser.add_argument("--seed", type=int, default=42, help="Base random seed")
     parser.add_argument(
+        "--noise_protocol",
+        type=str,
+        default=None,
+        choices=["auto", "clean", "iid_noisy_ic", "v4_lite"],
+        help=(
+            "Noise protocol contract used to build noisy initial states. "
+            "When omitted, use the checkpoint config if present; otherwise default to auto. "
+            "v4_lite uses trajectory-consistent noisy initial states."
+        ),
+    )
+    parser.add_argument(
         "--noise_profiles",
         type=str,
         nargs="+",
@@ -387,7 +399,16 @@ def run_single_benchmark(
     ground_truth_cache_dir,
 ):
     noise_reference = args.noise_reference or getattr(train_cfg, "noise_reference", "remus100_dr")
-    noise_cfg = noise_cfg_from_profile(noise_profile, reference=noise_reference)
+    noise_protocol = resolve_noise_protocol(
+        args.noise_protocol if args.noise_protocol is not None else getattr(train_cfg, "noise_protocol", None),
+        profile=noise_profile,
+    )
+    noise_cfg = noise_cfg_from_profile(
+        noise_profile,
+        reference=noise_reference,
+        protocol=noise_protocol,
+        trajectory_correlation=getattr(train_cfg, "noise_ar1_corr", 0.85),
+    )
     if noise_cfg is not None and normalizer is None:
         raise ValueError(
             "Requested noisy rollout benchmarking but the checkpoint does not contain "
@@ -418,6 +439,7 @@ def run_single_benchmark(
             f"Starting rollout benchmark | checkpoint={args.checkpoint} | device={device}"
             f" | mode={args.mode}"
             f" | noise_profile={noise_profile}"
+            f" | noise_protocol={noise_protocol}"
             f" | noise_budget={format_noise_budget_summary(noise_budget)}"
             f" | scenarios={','.join(s.name for s in scenarios)}"
             f" | trajectories={total_traj} | max_horizon={max_rollout_time:.1f}s"
@@ -529,6 +551,7 @@ def run_single_benchmark(
         "energy_semantics": getattr(model, "energy_semantics", "not_comparable"),
         "mode": args.mode,
         "noise_profile": noise_profile,
+        "noise_protocol": noise_protocol,
         "noise_seed": args.noise_seed,
         "noise_budget": noise_budget,
         "generation_config_source": generation_config_source,
