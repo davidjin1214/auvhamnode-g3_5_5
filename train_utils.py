@@ -1007,6 +1007,152 @@ def _sample_scaled_noise(
     return out
 
 
+class V4LiteNoiseSequenceCache:
+    """Epoch-level standard-noise cache for trajectory-consistent IC noise."""
+
+    def __init__(
+        self,
+        *,
+        num_trajectories: int,
+        blocks_per_trajectory: int,
+        base_seed: int,
+        epoch: int,
+        correlation: float,
+        device: torch.device,
+        dtype: torch.dtype = torch.float32,
+    ):
+        if base_seed is None:
+            raise ValueError("v4-lite noise cache requires a deterministic base_seed.")
+        self.num_trajectories = int(num_trajectories)
+        self.blocks_per_trajectory = int(blocks_per_trajectory)
+        if self.num_trajectories <= 0 or self.blocks_per_trajectory <= 0:
+            raise ValueError("v4-lite cache dimensions must be positive.")
+        self.base_seed = int(base_seed)
+        self.epoch = int(epoch)
+        self.correlation = float(np.clip(correlation, 0.0, 0.9999))
+        self.device = torch.device(device)
+        self.dtype = dtype
+        self._sequence_cache: Dict[Tuple[int, int], torch.Tensor] = {}
+        self._sign_cache: Dict[Tuple[int, int], torch.Tensor] = {}
+
+    def _seed(self, traj_id: int, stream: int) -> int:
+        return (
+            self.base_seed
+            + 1000003 * self.epoch
+            + 10007 * int(traj_id)
+            + 7919 * int(stream)
+        )
+
+    def _build_sequence(self, stream: int, dim: int) -> torch.Tensor:
+        key = (int(stream), int(dim))
+        cached = self._sequence_cache.get(key)
+        if cached is not None:
+            return cached
+
+        corr = self.correlation
+        innovation_scale = float(max(1.0 - corr ** 2, 1e-6)) ** 0.5
+        table = torch.empty(
+            self.num_trajectories,
+            self.blocks_per_trajectory,
+            dim,
+            dtype=torch.float32,
+        )
+        for traj_id in range(self.num_trajectories):
+            gen = torch.Generator(device="cpu")
+            gen.manual_seed(self._seed(traj_id, stream))
+            table[traj_id, 0] = torch.randn(dim, generator=gen, dtype=torch.float32)
+            for block_idx in range(1, self.blocks_per_trajectory):
+                innovation = torch.randn(dim, generator=gen, dtype=torch.float32)
+                table[traj_id, block_idx] = (
+                    corr * table[traj_id, block_idx - 1]
+                    + innovation_scale * innovation
+                )
+
+        table = table.to(device=self.device, dtype=self.dtype)
+        self._sequence_cache[key] = table
+        return table
+
+    def _build_signs(self, stream: int, dim: int) -> torch.Tensor:
+        key = (int(stream), int(dim))
+        cached = self._sign_cache.get(key)
+        if cached is not None:
+            return cached
+
+        table = torch.empty(self.num_trajectories, dim, dtype=torch.float32)
+        for traj_id in range(self.num_trajectories):
+            gen = torch.Generator(device="cpu")
+            gen.manual_seed(self._seed(traj_id, stream))
+            draws = torch.randint(0, 2, (dim,), generator=gen, dtype=torch.int64)
+            table[traj_id] = (draws * 2 - 1).to(dtype=torch.float32)
+
+        table = table.to(device=self.device, dtype=self.dtype)
+        self._sign_cache[key] = table
+        return table
+
+    def _normalize_indices(
+        self,
+        traj_ids: torch.Tensor,
+        block_indices: Optional[torch.Tensor] = None,
+    ) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
+        traj_ids = torch.as_tensor(
+            traj_ids,
+            dtype=torch.long,
+            device=self.device,
+        ).view(-1)
+        block_indices = (
+            None
+            if block_indices is None else
+            torch.as_tensor(
+                block_indices,
+                dtype=torch.long,
+                device=self.device,
+            ).view(-1)
+        )
+        if torch.any(traj_ids < 0) or torch.any(traj_ids >= self.num_trajectories):
+            raise ValueError("traj_ids are outside the v4-lite cache range.")
+        if block_indices is not None:
+            if block_indices.numel() != traj_ids.numel():
+                raise ValueError("traj_ids and block_indices must have the same length.")
+            if (
+                torch.any(block_indices < 0)
+                or torch.any(block_indices >= self.blocks_per_trajectory)
+            ):
+                raise ValueError("block_indices are outside the v4-lite cache range.")
+        return traj_ids, block_indices
+
+    def sample_correlated(
+        self,
+        std_rows: torch.Tensor,
+        traj_ids: torch.Tensor,
+        block_indices: torch.Tensor,
+        *,
+        stream: int,
+        dim: int,
+        device: torch.device,
+        dtype: torch.dtype,
+    ) -> torch.Tensor:
+        traj_ids, block_indices = self._normalize_indices(traj_ids, block_indices)
+        table = self._build_sequence(stream, dim)
+        samples = table[traj_ids, block_indices]
+        return (
+            samples.to(device=device, dtype=dtype)
+            * std_rows.to(device=device, dtype=dtype)
+        )
+
+    def sample_signs(
+        self,
+        traj_ids: torch.Tensor,
+        *,
+        stream: int,
+        dim: int,
+        device: torch.device,
+        dtype: torch.dtype,
+    ) -> torch.Tensor:
+        traj_ids, _ = self._normalize_indices(traj_ids)
+        table = self._build_signs(stream, dim)
+        return table[traj_ids].to(device=device, dtype=dtype)
+
+
 def _sample_trajectory_correlated_noise(
     std: torch.Tensor,
     traj_ids: torch.Tensor,
@@ -1018,6 +1164,7 @@ def _sample_trajectory_correlated_noise(
     epoch: int,
     stream: int = 0,
     correlation: float = 0.85,
+    noise_cache: Optional[V4LiteNoiseSequenceCache] = None,
 ) -> torch.Tensor:
     """Sample trajectory-consistent AR(1)-like noise at block start indices."""
     traj_ids = torch.as_tensor(traj_ids, dtype=torch.long).view(-1).cpu()
@@ -1046,6 +1193,17 @@ def _sample_trajectory_correlated_noise(
         std_rows = std
     else:
         raise ValueError(f"std must be 1D or 2D, got shape {tuple(std.shape)}.")
+
+    if noise_cache is not None:
+        return noise_cache.sample_correlated(
+            std_rows,
+            traj_ids,
+            block_indices,
+            stream=stream,
+            dim=dim,
+            device=device,
+            dtype=dtype,
+        )
 
     std_cpu = std_rows.detach().cpu().to(dtype=torch.float32)
     out = torch.empty(batch_size, dim, dtype=dtype, device=device)
@@ -1087,10 +1245,19 @@ def _sample_trajectory_sign_pattern(
     base_seed: int,
     epoch: int,
     stream: int = 0,
+    noise_cache: Optional[V4LiteNoiseSequenceCache] = None,
 ) -> torch.Tensor:
     """Sample one sign pattern per trajectory and share it across blocks."""
     traj_ids = torch.as_tensor(traj_ids, dtype=torch.long).view(-1).cpu()
     batch_size = int(traj_ids.numel())
+    if noise_cache is not None:
+        return noise_cache.sample_signs(
+            traj_ids,
+            stream=stream,
+            dim=dim,
+            device=device,
+            dtype=dtype,
+        )
     out = torch.empty(batch_size, dim, dtype=dtype, device=device)
     for traj_id in torch.unique(traj_ids, sorted=True).tolist():
         mask = traj_ids == int(traj_id)
@@ -1479,6 +1646,7 @@ def _build_v4_lite_initial_condition(
     block_indices: torch.Tensor,
     base_seed: int,
     state_is_ode: bool = False,
+    noise_cache: Optional[V4LiteNoiseSequenceCache] = None,
 ) -> torch.Tensor:
     """Perturb the clean initial state using one correlated realization per trajectory."""
     y0 = clean_state.clone() if state_is_ode else model.to_ode_state(clean_state).clone()
@@ -1514,6 +1682,7 @@ def _build_v4_lite_initial_condition(
         epoch=epoch,
         stream=11,
         correlation=cfg.trajectory_correlation,
+        noise_cache=noise_cache,
     )
 
     rot_std = scale * _profile_rotation_std_vector(
@@ -1541,6 +1710,7 @@ def _build_v4_lite_initial_condition(
                 epoch=epoch,
                 stream=23,
                 correlation=cfg.trajectory_correlation,
+                noise_cache=noise_cache,
             )
         if torch.any(rot_bias > 0):
             bias_sign = _sample_trajectory_sign_pattern(
@@ -1551,6 +1721,7 @@ def _build_v4_lite_initial_condition(
                 base_seed=base_seed,
                 epoch=epoch,
                 stream=29,
+                noise_cache=noise_cache,
             )
             delta_theta = delta_theta + bias_sign * rot_bias.view(1, 3)
         R_clean = y0[:, 3:12].reshape(batch_size, 3, 3)
@@ -1577,6 +1748,7 @@ def _build_v4_lite_initial_condition(
             epoch=epoch,
             stream=37,
             correlation=cfg.trajectory_correlation,
+            noise_cache=noise_cache,
         )
 
     if getattr(model, "ocean_current", False):
@@ -1603,6 +1775,7 @@ def _build_v4_lite_initial_condition(
                 epoch=epoch,
                 stream=53,
                 correlation=cfg.trajectory_correlation,
+                noise_cache=noise_cache,
             )
         if torch.any(current_bias > 0):
             current_bias_sign = _sample_trajectory_sign_pattern(
@@ -1613,6 +1786,7 @@ def _build_v4_lite_initial_condition(
                 base_seed=base_seed,
                 epoch=epoch,
                 stream=59,
+                noise_cache=noise_cache,
             )
             y0[:, layout.v_c] = y0[:, layout.v_c] + current_bias_sign * current_bias.view(1, 3)
 
@@ -1631,6 +1805,7 @@ def build_noisy_initial_condition(
     block_indices: Optional[torch.Tensor] = None,
     base_seed: Optional[int] = None,
     state_is_ode: bool = False,
+    noise_cache: Optional[V4LiteNoiseSequenceCache] = None,
 ) -> torch.Tensor:
     """Perturb the clean initial state in ODE space using the selected protocol."""
     if cfg.protocol == "v4_lite":
@@ -1650,6 +1825,7 @@ def build_noisy_initial_condition(
             block_indices=block_indices,
             base_seed=base_seed,
             state_is_ode=state_is_ode,
+            noise_cache=noise_cache,
         )
     return _build_iid_noisy_initial_condition(
         clean_state,
@@ -1660,6 +1836,31 @@ def build_noisy_initial_condition(
         sample_ids=sample_ids,
         base_seed=base_seed,
         state_is_ode=state_is_ode,
+    )
+
+
+def _build_v4_lite_eval_cache(
+    noise_cfg: Optional[NoiseConfig],
+    *,
+    num_trajectories: int,
+    blocks_per_trajectory: int,
+    noise_seed: Optional[int],
+    epoch: int,
+    device: torch.device,
+    dtype: torch.dtype = torch.float32,
+) -> Optional[V4LiteNoiseSequenceCache]:
+    if noise_cfg is None or not noise_cfg.is_active or noise_cfg.protocol != "v4_lite":
+        return None
+    if noise_seed is None:
+        raise ValueError("noise_protocol='v4_lite' requires a deterministic noise_seed.")
+    return V4LiteNoiseSequenceCache(
+        num_trajectories=num_trajectories,
+        blocks_per_trajectory=blocks_per_trajectory,
+        base_seed=noise_seed,
+        epoch=epoch,
+        correlation=noise_cfg.trajectory_correlation,
+        device=device,
+        dtype=dtype,
     )
 
 
@@ -1980,6 +2181,7 @@ def _evaluate_block_batch_with_fallback(
     sample_ids: Optional[np.ndarray] = None,
     traj_ids: Optional[np.ndarray] = None,
     block_indices: Optional[np.ndarray] = None,
+    noise_cache: Optional[V4LiteNoiseSequenceCache] = None,
 ) -> Tuple[Dict[int, torch.Tensor], Dict[int, str]]:
     """Evaluate a batch of independent blocks while isolating failing samples."""
     from torchdiffeq import odeint
@@ -2005,6 +2207,7 @@ def _evaluate_block_batch_with_fallback(
                 )
             noise_kwargs["traj_ids"] = torch.tensor(traj_ids, dtype=torch.long)
             noise_kwargs["block_indices"] = torch.tensor(block_indices, dtype=torch.long)
+            noise_kwargs["noise_cache"] = noise_cache
         y0 = build_noisy_initial_condition(
             batch[:, 0],
             noise_cfg,
@@ -2034,6 +2237,7 @@ def _evaluate_block_batch_with_fallback(
             sample_ids=sample_ids[:split],
             traj_ids=None if traj_ids is None else traj_ids[:split],
             block_indices=None if block_indices is None else block_indices[:split],
+            noise_cache=noise_cache,
         )
         right_pred, right_fail = _evaluate_block_batch_with_fallback(
             model,
@@ -2047,6 +2251,7 @@ def _evaluate_block_batch_with_fallback(
             sample_ids=sample_ids[split:],
             traj_ids=None if traj_ids is None else traj_ids[split:],
             block_indices=None if block_indices is None else block_indices[split:],
+            noise_cache=noise_cache,
         )
         merged_pred = {idx: value for idx, value in left_pred.items()}
         merged_pred.update({split + idx: value for idx, value in right_pred.items()})
@@ -2071,6 +2276,7 @@ def _evaluate_block_batch_with_fallback(
             sample_ids=sample_ids[:split],
             traj_ids=None if traj_ids is None else traj_ids[:split],
             block_indices=None if block_indices is None else block_indices[:split],
+            noise_cache=noise_cache,
         )
         right_pred, right_fail = _evaluate_block_batch_with_fallback(
             model,
@@ -2084,6 +2290,7 @@ def _evaluate_block_batch_with_fallback(
             sample_ids=sample_ids[split:],
             traj_ids=None if traj_ids is None else traj_ids[split:],
             block_indices=None if block_indices is None else block_indices[split:],
+            noise_cache=noise_cache,
         )
         merged_pred = {idx: value for idx, value in left_pred.items()}
         merged_pred.update({split + idx: value for idx, value in right_pred.items()})
@@ -2120,6 +2327,21 @@ def evaluate_heldout_trajectories(
         trajectories = trajectories[:max_trajectories]
         meta_list = meta_list[:max_trajectories]
 
+    eval_epoch = (
+        noise_cfg.warmup_epochs + noise_cfg.ramp_epochs
+        if noise_cfg is not None else
+        0
+    )
+    v4_noise_cache = _build_v4_lite_eval_cache(
+        noise_cfg,
+        num_trajectories=max(len(trajectories), 1),
+        blocks_per_trajectory=max((len(traj) for traj in trajectories), default=1),
+        noise_seed=noise_seed,
+        epoch=eval_epoch,
+        device=device,
+        dtype=torch.float32,
+    )
+
     trajectory_rows = []
     scenario_groups = defaultdict(list)
     trajectory_failures = defaultdict(int)
@@ -2143,6 +2365,7 @@ def evaluate_heldout_trajectories(
             ),
             traj_ids=np.full(len(traj_blocks), traj_idx, dtype=np.int64),
             block_indices=np.arange(len(traj_blocks), dtype=np.int64),
+            noise_cache=v4_noise_cache,
         )
         successful_indices = sorted(pred_map)
         failed_indices = sorted(failure_map)
@@ -2315,6 +2538,27 @@ def evaluate_trajectory_prediction(
     invalid_prediction_batches = 0
     count = 0
     sample_offset = 0
+    eval_epoch = (
+        noise_cfg.warmup_epochs + noise_cfg.ramp_epochs
+        if noise_cfg is not None else
+        0
+    )
+    dataset_obj = getattr(test_loader, "dataset", None)
+    blocks_per_trajectory = int(getattr(dataset_obj, "blocks_per_trajectory", 1))
+    num_trajectories = (
+        (len(dataset_obj) + blocks_per_trajectory - 1) // blocks_per_trajectory
+        if dataset_obj is not None else
+        1
+    )
+    v4_noise_cache = _build_v4_lite_eval_cache(
+        noise_cfg,
+        num_trajectories=max(num_trajectories, 1),
+        blocks_per_trajectory=max(blocks_per_trajectory, 1),
+        noise_seed=noise_seed,
+        epoch=eval_epoch,
+        device=device,
+        dtype=torch.float32,
+    )
 
     for batch in test_loader:
         if count >= n_samples:
@@ -2356,6 +2600,7 @@ def evaluate_trajectory_prediction(
                 if block_indices is None else
                 block_indices.cpu().numpy().astype(np.int64, copy=False)
             ),
+            noise_cache=v4_noise_cache,
         )
         sample_offset += len(batch_np)
         solver_failed_batches += sum(reason == "solver_failure" for reason in failure_map.values())

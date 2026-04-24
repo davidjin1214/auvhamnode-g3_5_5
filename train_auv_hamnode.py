@@ -44,6 +44,7 @@ from train_utils import (
     load_dataset, get_train_blocks, evaluate_heldout_trajectories,
     print_heldout_evaluation_results, save_heldout_evaluation_results,
     save_block_evaluation_results, build_noisy_initial_condition,
+    V4LiteNoiseSequenceCache,
     adapt_state_array_for_model,
     validate_depth_conditioning_support,
     create_dataloaders_from_dataset,
@@ -188,6 +189,8 @@ class AUVHamNODETrainer:
         self.best_selection_key = (float("inf"), float("inf"))
         self.best_epoch = None
         self.best_state = None
+        self._v4_lite_cache_key = None
+        self._v4_lite_cache = None
 
     def _build_scheduler(self) -> LambdaLR:
         """Step-based linear warmup followed by cosine decay."""
@@ -235,6 +238,40 @@ class AUVHamNODETrainer:
             )
         return batch.to(self.device), None, None
 
+    def _get_v4_lite_noise_cache(
+        self,
+        loader: DataLoader,
+        noise_cfg: NoiseConfig,
+        epoch: int,
+        dtype: torch.dtype,
+    ) -> V4LiteNoiseSequenceCache:
+        dataset = loader.dataset
+        blocks_per_trajectory = int(getattr(dataset, "blocks_per_trajectory", 1))
+        num_trajectories = (
+            len(dataset) + blocks_per_trajectory - 1
+        ) // blocks_per_trajectory
+        key = (
+            num_trajectories,
+            blocks_per_trajectory,
+            int(self.config.seed),
+            int(epoch),
+            float(noise_cfg.trajectory_correlation),
+            str(self.device),
+            dtype,
+        )
+        if self._v4_lite_cache_key != key:
+            self._v4_lite_cache = V4LiteNoiseSequenceCache(
+                num_trajectories=num_trajectories,
+                blocks_per_trajectory=blocks_per_trajectory,
+                base_seed=self.config.seed,
+                epoch=epoch,
+                correlation=noise_cfg.trajectory_correlation,
+                device=self.device,
+                dtype=dtype,
+            )
+            self._v4_lite_cache_key = key
+        return self._v4_lite_cache
+
     def _run_epoch(self, loader: DataLoader,
                    t_eval: torch.Tensor, train: bool = True,
                    epoch: int = 1,
@@ -267,22 +304,41 @@ class AUVHamNODETrainer:
             if train and noise_cfg.is_active and noise_cfg.epoch_scale(epoch) > 0.0:
                 noisy_mask = torch.rand(batch.shape[0], device=batch.device) < noise_cfg.mix_ratio
                 if torch.any(noisy_mask):
-                    noise_kwargs = {"state_is_ode": True}
                     if noise_cfg.protocol == "v4_lite":
-                        noise_kwargs.update(
-                            traj_ids=traj_ids,
-                            block_indices=block_indices,
-                            base_seed=self.config.seed,
+                        if traj_ids is None or block_indices is None:
+                            raise ValueError(
+                                "noise_protocol='v4_lite' requires trajectory metadata."
+                            )
+                        y0 = clean_y0.clone()
+                        noise_cache = self._get_v4_lite_noise_cache(
+                            loader,
+                            noise_cfg,
+                            epoch,
+                            dtype=clean_y0.dtype,
                         )
-                    noisy_y0 = build_noisy_initial_condition(
-                        clean_y0,
-                        noise_cfg,
-                        self.model,
-                        self.normalizer,
-                        epoch,
-                        **noise_kwargs,
-                    )
-                    y0 = torch.where(noisy_mask[:, None], noisy_y0, clean_y0)
+                        noisy_y0 = build_noisy_initial_condition(
+                            clean_y0[noisy_mask],
+                            noise_cfg,
+                            self.model,
+                            self.normalizer,
+                            epoch,
+                            traj_ids=traj_ids[noisy_mask],
+                            block_indices=block_indices[noisy_mask],
+                            base_seed=self.config.seed,
+                            state_is_ode=True,
+                            noise_cache=noise_cache,
+                        )
+                        y0[noisy_mask] = noisy_y0
+                    else:
+                        noisy_y0 = build_noisy_initial_condition(
+                            clean_y0,
+                            noise_cfg,
+                            self.model,
+                            self.normalizer,
+                            epoch,
+                            state_is_ode=True,
+                        )
+                        y0 = torch.where(noisy_mask[:, None], noisy_y0, clean_y0)
                     frame_weights = torch.ones(
                         batch.shape[0],
                         batch.shape[1],

@@ -15,6 +15,12 @@ fi
 
 MODE="${MODE:-}"
 RUN_TAG="${RUN_TAG:-phase1a_oc_v4lite_cleanrun_v1}"
+PHASE1A_LOG_DIR="${PHASE1A_LOG_DIR:-${CHECKPOINT_ROOT}/phase1a_logs/${RUN_TAG}}"
+PHASE1A_METADATA_DIR="${PHASE1A_METADATA_DIR:-${CHECKPOINT_ROOT}/phase1a_metadata_${RUN_TAG}}"
+mkdir -p "${PHASE1A_LOG_DIR}"
+PHASE1A_LOG_PATH="${PHASE1A_LOG_DIR}/${MODE:-help}_$(date +%Y%m%d_%H%M%S).log"
+exec > >(tee -a "${PHASE1A_LOG_PATH}") 2>&1
+
 DATASET="${DATASET:-${ROOT_DIR}/data/auv_oc_traj1000_blk150_s23_d0be9434.pkl}"
 if [[ "${DATASET}" != /* ]]; then
   DATASET="${ROOT_DIR}/${DATASET}"
@@ -40,6 +46,13 @@ V4_EVAL_PROFILES="${V4_EVAL_PROFILES:-nominal_eval}"
 STRICT_ZERO_NOISE_AUDIT="${STRICT_ZERO_NOISE_AUDIT:-1}"
 SOFT_MIN_EPOCH_SCALE="${SOFT_MIN_EPOCH_SCALE:-0.05}"
 
+export RUN_TAG DATASET DEVICE LOCAL_PROXY_ROOT PHASE1A_LOG_DIR PHASE1A_METADATA_DIR
+export NOISE_REFERENCE PHASE1A_MODELS SMOKE1_MODELS SMOKE_SEEDS DECISION_SEEDS
+export SMOKE_EVAL_NUM_TRAJ_PER_SCENARIO DECISION_EVAL_NUM_TRAJ_PER_SCENARIO
+export EVAL_TIMES EVAL_SCENARIOS EVAL_BASE_SEED EVAL_NOISE_SEED EVAL_PROGRESS_EVERY
+export EVAL_NUM_DIAGNOSTIC_PLOTS IID_EVAL_PROFILES V4_EVAL_PROFILES
+export STRICT_ZERO_NOISE_AUDIT SOFT_MIN_EPOCH_SCALE
+
 usage() {
   cat <<'EOF'
 Usage:
@@ -48,10 +61,13 @@ Usage:
 Modes:
   preflight
   smoke1_train
+  smoke1_train_v4lite_resume
   smoke1_eval
   smoke3_train
+  smoke3_train_v4lite_resume
   smoke3_eval
   decision_train
+  decision_train_v4lite_resume
   decision_eval
   decision_summarize
 
@@ -113,6 +129,8 @@ print_config() {
   echo "SMOKE_SEEDS=${SMOKE_SEEDS}"
   echo "DECISION_SEEDS=${DECISION_SEEDS}"
   echo "NOISE_REFERENCE=${NOISE_REFERENCE}"
+  echo "PHASE1A_LOG_DIR=${PHASE1A_LOG_DIR}"
+  echo "PHASE1A_METADATA_DIR=${PHASE1A_METADATA_DIR}"
 }
 
 train_suite() {
@@ -143,6 +161,33 @@ train_suite() {
   "${cmd[@]}"
 }
 
+resume_train_suite() {
+  local suite_name="$1"
+  local models="$2"
+  local seeds="$3"
+  local noise_profile="$4"
+  local noise_protocol="$5"
+  local -a cmd
+
+  cmd=(
+    bash "${ROOT_DIR}/scripts/train_all_models_noise_profile.sh"
+    --profile oc
+    --models "${models}"
+    --dataset "${DATASET}"
+    --seeds "${seeds}"
+    --suite-name "${suite_name}"
+    --noise-profile "${noise_profile}"
+    --noise-protocol "${noise_protocol}"
+    --noise-reference "${NOISE_REFERENCE}"
+  )
+  if [[ -n "${DEVICE}" ]]; then
+    cmd+=(--device "${DEVICE}")
+  fi
+
+  echo "[resume-train] suite=${suite_name} models=${models} seeds=${seeds} protocol=${noise_protocol}"
+  "${cmd[@]}"
+}
+
 train_protocol_triple() {
   local phase="$1"
   local models="$2"
@@ -151,6 +196,16 @@ train_protocol_triple() {
   train_suite "$(phase_suite "${phase}" clean)" "${models}" "${seeds}" clean auto
   train_suite "$(phase_suite "${phase}" iid)" "${models}" "${seeds}" nominal_train iid_noisy_ic
   train_suite "$(phase_suite "${phase}" v4lite)" "${models}" "${seeds}" nominal_train v4_lite
+}
+
+resume_v4lite_train() {
+  local phase="$1"
+  local models="$2"
+  local seeds="$3"
+
+  resume_train_suite "$(phase_suite "${phase}" v4lite)" "${models}" "${seeds}" nominal_train v4_lite
+  audit_triple "${phase}"
+  validate_v4 "${phase}"
 }
 
 audit_triple() {
@@ -256,6 +311,12 @@ register_proxy() {
   if [[ -n "${audit_path}" ]]; then
     cmd+=(--audit-path "${audit_path}")
   fi
+  if [[ -d "${PHASE1A_METADATA_DIR}" ]]; then
+    cmd+=(--metadata-dir "${PHASE1A_METADATA_DIR}")
+  fi
+  if [[ -d "${PHASE1A_LOG_DIR}" ]]; then
+    cmd+=(--log-dir "${PHASE1A_LOG_DIR}")
+  fi
   if [[ "${export_flag}" == "1" ]]; then
     cmd+=(--export)
   fi
@@ -267,11 +328,15 @@ print_config
 case "${MODE}" in
   preflight)
     utils_cmd preflight --run-tag "${RUN_TAG}"
+    utils_cmd write-metadata --run-tag "${RUN_TAG}" --output-dir "${PHASE1A_METADATA_DIR}"
     ;;
   smoke1_train)
     train_protocol_triple smoke1 "${SMOKE1_MODELS}" "${SMOKE_SEEDS}"
     audit_triple smoke1
     validate_v4 smoke1
+    ;;
+  smoke1_train_v4lite_resume)
+    resume_v4lite_train smoke1 "${SMOKE1_MODELS}" "${SMOKE_SEEDS}"
     ;;
   smoke1_eval)
     eval_protocol_triple smoke1 "${SMOKE_EVAL_NUM_TRAJ_PER_SCENARIO}" 2
@@ -282,6 +347,9 @@ case "${MODE}" in
     audit_triple smoke3
     validate_v4 smoke3
     ;;
+  smoke3_train_v4lite_resume)
+    resume_v4lite_train smoke3 "${PHASE1A_MODELS}" "${SMOKE_SEEDS}"
+    ;;
   smoke3_eval)
     eval_protocol_triple smoke3 "${SMOKE_EVAL_NUM_TRAJ_PER_SCENARIO}" 2
     register_proxy smoke3 0
@@ -290,6 +358,9 @@ case "${MODE}" in
     train_protocol_triple decision "${PHASE1A_MODELS}" "${DECISION_SEEDS}"
     audit_triple decision
     validate_v4 decision
+    ;;
+  decision_train_v4lite_resume)
+    resume_v4lite_train decision "${PHASE1A_MODELS}" "${DECISION_SEEDS}"
     ;;
   decision_eval)
     eval_protocol_triple decision "${DECISION_EVAL_NUM_TRAJ_PER_SCENARIO}" "${EVAL_NUM_DIAGNOSTIC_PLOTS}"

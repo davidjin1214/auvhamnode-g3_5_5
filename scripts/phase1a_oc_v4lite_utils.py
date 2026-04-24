@@ -7,9 +7,12 @@ import argparse
 import csv
 import hashlib
 import json
+import os
+import platform
 import shutil
 import subprocess
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pandas as pd
@@ -23,15 +26,52 @@ DEFAULT_LOCAL_PROXY_ROOT = Path("/content") / "_proxy_suites"
 PHASE_PREFIXES = ("smoke1", "smoke3", "decision")
 PROTOCOL_TAGS = ("clean", "iid", "v4lite")
 EXPORT_ARTIFACTS = (
+    "runs.tsv",
+    "suite_config.txt",
+    "sweep_summary.json",
+    "sweep_summary.txt",
+    "sweep_seed_metrics.csv",
+    "sweep_model_metrics.csv",
+    "experiment_report.md",
     "phase1a_matrix.json",
     "phase1a_summary.csv",
     "phase1a_by_seed.csv",
     "phase1a_by_scenario.csv",
     "phase1a_by_horizon.csv",
     "phase1a_degradation.csv",
+    "phase1a_protocol_delta.csv",
     "phase1a_train_audit.csv",
     "phase1a_v4_protocol_validation.json",
     "phase1a_decision_brief.md",
+    "phase1a_run_config.json",
+    "phase1a_environment.json",
+)
+
+WORKFLOW_ENV_KEYS = (
+    "RUN_TAG",
+    "DATASET",
+    "NOISE_REFERENCE",
+    "PHASE1A_MODELS",
+    "SMOKE1_MODELS",
+    "SMOKE_SEEDS",
+    "DECISION_SEEDS",
+    "SMOKE_EVAL_NUM_TRAJ_PER_SCENARIO",
+    "DECISION_EVAL_NUM_TRAJ_PER_SCENARIO",
+    "EVAL_TIMES",
+    "EVAL_SCENARIOS",
+    "EVAL_BASE_SEED",
+    "EVAL_NOISE_SEED",
+    "EVAL_PROGRESS_EVERY",
+    "EVAL_NUM_DIAGNOSTIC_PLOTS",
+    "IID_EVAL_PROFILES",
+    "V4_EVAL_PROFILES",
+    "STRICT_ZERO_NOISE_AUDIT",
+    "SOFT_MIN_EPOCH_SCALE",
+    "PYTHON_BIN",
+    "DEVICE",
+    "LOCAL_PROXY_ROOT",
+    "PHASE1A_LOG_DIR",
+    "PHASE1A_METADATA_DIR",
 )
 
 
@@ -48,11 +88,27 @@ def _run(cmd: list[str]) -> None:
     subprocess.run(cmd, cwd=REPO_ROOT, check=True)
 
 
+def _git_output(args: list[str]) -> str:
+    completed = subprocess.run(
+        ["git", *args],
+        cwd=REPO_ROOT,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+        check=False,
+    )
+    return completed.stdout.strip() if completed.returncode == 0 else ""
+
+
 def _read_runs(suite_dir: Path) -> pd.DataFrame:
     path = suite_dir / "runs.tsv"
     if not path.exists():
         raise FileNotFoundError(f"Missing suite manifest: {path}")
     return pd.read_csv(path, sep="\t")
+
+
+def _write_runs(suite_dir: Path, runs: pd.DataFrame) -> None:
+    runs.to_csv(suite_dir / "runs.tsv", sep="\t", index=False)
 
 
 def _resolve_run_dir(suite_dir: Path, value: str) -> Path:
@@ -168,6 +224,72 @@ def cmd_preflight(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_write_metadata(args: argparse.Namespace) -> int:
+    checkpoint_root = args.checkpoint_root.resolve()
+    local_proxy_root = args.local_proxy_root.resolve()
+    output_dir = args.output_dir.resolve()
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    workflow_env = {key: os.environ.get(key, "") for key in WORKFLOW_ENV_KEYS}
+    run_config = {
+        "run_tag": args.run_tag,
+        "written_at_utc": datetime.now(timezone.utc).isoformat(),
+        "repo_root": str(REPO_ROOT),
+        "checkpoint_root": str(checkpoint_root),
+        "local_proxy_root": str(local_proxy_root),
+        "phase_suites": {
+            prefix: {
+                protocol: str(checkpoint_root / _suite_name(prefix, protocol, args.run_tag))
+                for protocol in PROTOCOL_TAGS
+            }
+            for prefix in PHASE_PREFIXES
+        },
+        "proxy_suites": {
+            prefix: str(local_proxy_root / _proxy_name(prefix, args.run_tag))
+            for prefix in PHASE_PREFIXES
+        },
+        "exported_decision_proxy": str(checkpoint_root / _proxy_name("decision", args.run_tag)),
+        "workflow_env": workflow_env,
+    }
+
+    git_status = _git_output(["status", "--short"])
+    environment = {
+        "python": {
+            "executable": sys.executable,
+            "version": sys.version,
+        },
+        "platform": {
+            "platform": platform.platform(),
+            "machine": platform.machine(),
+            "processor": platform.processor(),
+        },
+        "torch": {
+            "version": getattr(torch, "__version__", ""),
+            "cuda_available": bool(torch.cuda.is_available()),
+            "cuda_version": getattr(torch.version, "cuda", None),
+            "cudnn_version": torch.backends.cudnn.version()
+            if torch.backends.cudnn.is_available() else None,
+        },
+        "git": {
+            "branch": _git_output(["rev-parse", "--abbrev-ref", "HEAD"]),
+            "commit": _git_output(["rev-parse", "HEAD"]),
+            "dirty": bool(git_status),
+            "status_short": git_status,
+        },
+    }
+
+    (output_dir / "phase1a_run_config.json").write_text(
+        json.dumps(run_config, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    (output_dir / "phase1a_environment.json").write_text(
+        json.dumps(environment, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    print(f"[metadata] {output_dir}")
+    return 0
+
+
 def cmd_audit(args: argparse.Namespace) -> int:
     frames = []
     for suite_name in args.suite_name:
@@ -265,6 +387,28 @@ def _copy_if_exists(src: Path, dst: Path, copied: list[str]) -> None:
     copied.append(dst.name)
 
 
+def _copy_metadata_files(metadata_dir: Path | None, suite_dir: Path) -> None:
+    if metadata_dir is None:
+        return
+    for name in ("phase1a_run_config.json", "phase1a_environment.json"):
+        _copy_if_exists(metadata_dir / name, suite_dir / name, [])
+
+
+def _copy_log_dir(log_dir: Path | None, suite_dir: Path) -> None:
+    if log_dir is None or not log_dir.exists():
+        return
+    shutil.copytree(log_dir, suite_dir / "phase1a_logs", dirs_exist_ok=True)
+
+
+def _rewrite_proxy_manifest_paths(suite_dir: Path) -> None:
+    runs = _read_runs(suite_dir)
+    for idx, row in runs.iterrows():
+        proxy_run_dir = suite_dir / str(row["run_name"])
+        runs.at[idx, "run_dir"] = str(proxy_run_dir)
+        runs.at[idx, "checkpoint"] = str(proxy_run_dir / "best_model.pt")
+    _write_runs(suite_dir, runs)
+
+
 def _validation_path_from_v4_suite(checkpoint_root: Path, suite_names: list[str]) -> Path | None:
     v4_suites = [name for name in suite_names if "v4lite" in name.lower()]
     if not v4_suites:
@@ -319,20 +463,32 @@ def cmd_register_proxy(args: argparse.Namespace) -> int:
         _copy_if_exists(args.audit_path, local_proxy_dir / "phase1a_train_audit.csv", [])
     if validation_path:
         _copy_if_exists(validation_path, local_proxy_dir / "phase1a_v4_protocol_validation.json", [])
+    _copy_metadata_files(args.metadata_dir, local_proxy_dir)
+    _copy_log_dir(args.log_dir, local_proxy_dir)
 
     if args.export:
-        export_dir.mkdir(parents=True, exist_ok=False)
-        copied: list[str] = []
-        for artifact in EXPORT_ARTIFACTS:
-            _copy_if_exists(local_proxy_dir / artifact, export_dir / artifact, copied)
+        shutil.copytree(local_proxy_dir, export_dir, symlinks=True)
+        _rewrite_proxy_manifest_paths(export_dir)
+        _run([args.python_bin, str(REPO_ROOT / "scripts" / "summarize_sweep.py"), "--suite-dir", str(export_dir)])
+        _run([args.python_bin, str(REPO_ROOT / "scripts" / "build_experiment_report.py"), "--suite-dir", str(export_dir)])
+        if args.audit_path:
+            _copy_if_exists(args.audit_path, export_dir / "phase1a_train_audit.csv", [])
+        if validation_path:
+            _copy_if_exists(validation_path, export_dir / "phase1a_v4_protocol_validation.json", [])
+        _copy_metadata_files(args.metadata_dir, export_dir)
+        _copy_log_dir(args.log_dir, export_dir)
+        exported_artifacts = [name for name in EXPORT_ARTIFACTS if (export_dir / name).exists()]
+        if (export_dir / "phase1a_logs").exists():
+            exported_artifacts.append("phase1a_logs/")
         lines = [
             f"Local proxy suite: {local_proxy_dir}",
+            f"Exported proxy suite: {export_dir}",
             "",
             "Source suites:",
             *[f"- {name}" for name in args.suite_name],
             "",
-            "Copied artifacts:",
-            *[f"- {name}" for name in copied],
+            "Exported artifacts:",
+            *[f"- {name}" for name in exported_artifacts],
         ]
         (export_dir / "phase1a_export_info.txt").write_text(
             "\n".join(lines).rstrip() + "\n",
@@ -357,6 +513,11 @@ def build_parser() -> argparse.ArgumentParser:
     preflight.add_argument("--run-tag", required=True)
     preflight.set_defaults(func=cmd_preflight)
 
+    metadata = subparsers.add_parser("write-metadata")
+    metadata.add_argument("--run-tag", required=True)
+    metadata.add_argument("--output-dir", required=True, type=Path)
+    metadata.set_defaults(func=cmd_write_metadata)
+
     audit = subparsers.add_parser("audit")
     audit.add_argument("--suite-name", action="append", required=True)
     audit.add_argument("--output", type=Path)
@@ -373,6 +534,8 @@ def build_parser() -> argparse.ArgumentParser:
     register.add_argument("--suite-name", action="append", required=True)
     register.add_argument("--audit-path", type=Path)
     register.add_argument("--validation-path", type=Path)
+    register.add_argument("--metadata-dir", type=Path)
+    register.add_argument("--log-dir", type=Path)
     register.add_argument("--export", action="store_true")
     register.set_defaults(func=cmd_register_proxy)
 

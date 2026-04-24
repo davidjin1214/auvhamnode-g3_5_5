@@ -112,6 +112,68 @@ echo "Suite directory: ${SUITE_DIR}"
 echo "Manifest: ${MANIFEST_PATH}"
 echo "Mode: ${MODE}"
 
+EVAL_RUN_NAME="${MODE}_traj${NUM_TRAJ_PER_SCENARIO}_seed${BASE_SEED}"
+EXPECTED_NOISE_PROFILES=()
+for ((idx = 0; idx < ${#EXTRA_EVAL_ARGS[@]}; idx++)); do
+  case "${EXTRA_EVAL_ARGS[$idx]}" in
+    --run_name)
+      if (( idx + 1 < ${#EXTRA_EVAL_ARGS[@]} )); then
+        EVAL_RUN_NAME="${EXTRA_EVAL_ARGS[$((idx + 1))]}"
+      fi
+      ;;
+    --noise_profiles)
+      profile_idx=$((idx + 1))
+      while (( profile_idx < ${#EXTRA_EVAL_ARGS[@]} )); do
+        profile="${EXTRA_EVAL_ARGS[$profile_idx]}"
+        if [[ "${profile}" == --* ]]; then
+          break
+        fi
+        EXPECTED_NOISE_PROFILES+=("${profile}")
+        profile_idx=$((profile_idx + 1))
+      done
+      ;;
+  esac
+done
+
+already_evaluated() {
+  local eval_root="$1"
+  local eval_name="$2"
+  shift 2
+  local profiles=("$@")
+  local candidate
+  local profile
+  local complete
+
+  for candidate in "${eval_root}/${eval_name}_"*; do
+    [[ -d "${candidate}" ]] || continue
+    if (( ${#profiles[@]} == 0 )); then
+      if [[ -f "${candidate}/summary.json" ]] || compgen -G "${candidate}/*/summary.json" > /dev/null; then
+        return 0
+      fi
+      continue
+    fi
+
+    complete=1
+    for profile in "${profiles[@]}"; do
+      if [[ "${profile}" == "auto" ]]; then
+        if [[ ! -f "${candidate}/summary.json" ]] && ! compgen -G "${candidate}/*/summary.json" > /dev/null; then
+          complete=0
+        fi
+      elif (( ${#profiles[@]} > 1 )); then
+        if [[ ! -f "${candidate}/${profile}/summary.json" ]]; then
+          complete=0
+        fi
+      elif [[ ! -f "${candidate}/summary.json" && ! -f "${candidate}/${profile}/summary.json" ]]; then
+        complete=0
+      fi
+    done
+    if (( complete == 1 )); then
+      return 0
+    fi
+  done
+  return 1
+}
+
 tail -n +2 "${MANIFEST_PATH}" | while IFS=$'\t' read -r model_group model_type seed run_name run_dir checkpoint_path; do
   if [[ -z "${checkpoint_path}" ]]; then
     continue
@@ -134,9 +196,8 @@ tail -n +2 "${MANIFEST_PATH}" | while IFS=$'\t' read -r model_group model_type s
 
   eval_root="${local_run_dir}/rollout_benchmark"
   mkdir -p "${eval_root}"
-  eval_name="${MODE}_traj${NUM_TRAJ_PER_SCENARIO}_seed${BASE_SEED}"
-  summary_pattern="${eval_root}/${eval_name}_*/summary.txt"
-  if compgen -G "${summary_pattern}" > /dev/null; then
+  eval_name="${EVAL_RUN_NAME}"
+  if already_evaluated "${eval_root}" "${eval_name}" "${EXPECTED_NOISE_PROFILES[@]}"; then
     echo "[skip] ${run_name} already evaluated under ${eval_root}"
     continue
   fi

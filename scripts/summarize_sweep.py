@@ -973,6 +973,185 @@ def build_phase1a_degradation_rows(by_seed_rows: List[Dict]) -> List[Dict]:
     return rows
 
 
+def _protocol_delta_entry(value: float, baseline_value: float, *, higher_is_better: bool) -> Dict:
+    entry = _comparison_entry(
+        value,
+        baseline_value,
+        higher_is_better=higher_is_better,
+    )
+    degradation = entry["degradation_pct"]
+    return {
+        "value": entry["value"],
+        "baseline_value": entry["clean_value"],
+        "absolute_delta": entry["absolute_delta"],
+        "ratio_to_baseline": entry["ratio_to_clean"],
+        "degradation_pct": degradation,
+        "improvement_pct": -degradation if _is_finite(degradation) else float("nan"),
+    }
+
+
+def _protocol_delta_common(row: Dict, baseline: Dict, *, comparison_kind: str, table_scope: str) -> Dict:
+    return {
+        "comparison_kind": comparison_kind,
+        "table_scope": table_scope,
+        "suite_name": row["suite_name"],
+        "group": row["group"],
+        "model_type": row["model_type"],
+        "seed": row["seed"],
+        "run_name": row["run_name"],
+        "baseline_run_name": baseline["run_name"],
+        "run_dir": row["run_dir"],
+        "baseline_run_dir": baseline["run_dir"],
+        "dataset_path": row["dataset_path"],
+        "dataset_id": row["dataset_id"],
+        "source": row["source"],
+        "scenario": row.get("scenario", ""),
+        "horizon_s": row["horizon_s"],
+        "train_protocol_label": row["train_protocol_label"],
+        "baseline_train_protocol_label": baseline["train_protocol_label"],
+        "eval_profile": row["eval_profile"],
+        "eval_protocol_label": row["eval_protocol_label"],
+        "baseline_eval_protocol_label": baseline["eval_protocol_label"],
+        "summary_path": row["summary_path"],
+        "baseline_summary_path": baseline["summary_path"],
+    }
+
+
+def _append_protocol_delta_rows(
+    output_rows: List[Dict],
+    *,
+    row: Dict,
+    baseline: Dict,
+    comparison_kind: str,
+    table_scope: str,
+) -> None:
+    for metric_name, higher_is_better in METRIC_SPECS_BY_SOURCE[row["source"]].items():
+        entry = _protocol_delta_entry(
+            row[metric_name],
+            baseline[metric_name],
+            higher_is_better=higher_is_better,
+        )
+        delta_row = _protocol_delta_common(
+            row,
+            baseline,
+            comparison_kind=comparison_kind,
+            table_scope=table_scope,
+        )
+        delta_row.update({"metric_name": metric_name, **entry})
+        output_rows.append(delta_row)
+
+
+def build_phase1a_protocol_delta_rows(
+    *,
+    by_seed_rows: List[Dict],
+    by_scenario_rows: List[Dict],
+) -> List[Dict]:
+    rows: List[Dict] = []
+
+    for table_scope, source_rows in (
+        ("by_seed", by_seed_rows),
+        ("by_scenario", by_scenario_rows),
+    ):
+        iid_train_lookup = {
+            (
+                row["group"],
+                row["model_type"],
+                row["seed"],
+                row["dataset_path"],
+                row["source"],
+                row.get("scenario", ""),
+                row["eval_profile"],
+                row["eval_protocol_label"],
+                _horizon_group_key(row["horizon_s"]),
+            ): row
+            for row in source_rows
+            if row["train_protocol_label"] == "iid_noisy_ic"
+        }
+        for row in source_rows:
+            if row["train_protocol_label"] != "v4_lite":
+                continue
+            baseline = iid_train_lookup.get(
+                (
+                    row["group"],
+                    row["model_type"],
+                    row["seed"],
+                    row["dataset_path"],
+                    row["source"],
+                    row.get("scenario", ""),
+                    row["eval_profile"],
+                    row["eval_protocol_label"],
+                    _horizon_group_key(row["horizon_s"]),
+                )
+            )
+            if baseline is None:
+                continue
+            _append_protocol_delta_rows(
+                rows,
+                row=row,
+                baseline=baseline,
+                comparison_kind="train_protocol_v4_lite_vs_iid_noisy_ic",
+                table_scope=table_scope,
+            )
+
+        iid_eval_lookup = {
+            (
+                row["group"],
+                row["model_type"],
+                row["seed"],
+                row["dataset_path"],
+                row["source"],
+                row.get("scenario", ""),
+                row["train_protocol_label"],
+                row["eval_profile"],
+                _horizon_group_key(row["horizon_s"]),
+            ): row
+            for row in source_rows
+            if row["eval_protocol_label"] == "iid_noisy_ic"
+        }
+        for row in source_rows:
+            if row["eval_protocol_label"] != "v4_lite":
+                continue
+            baseline = iid_eval_lookup.get(
+                (
+                    row["group"],
+                    row["model_type"],
+                    row["seed"],
+                    row["dataset_path"],
+                    row["source"],
+                    row.get("scenario", ""),
+                    row["train_protocol_label"],
+                    row["eval_profile"],
+                    _horizon_group_key(row["horizon_s"]),
+                )
+            )
+            if baseline is None:
+                continue
+            _append_protocol_delta_rows(
+                rows,
+                row=row,
+                baseline=baseline,
+                comparison_kind="eval_protocol_v4_lite_vs_iid_noisy_ic",
+                table_scope=table_scope,
+            )
+
+    rows.sort(
+        key=lambda row: (
+            row["comparison_kind"],
+            row["table_scope"],
+            row["group"],
+            row["model_type"],
+            row["train_protocol_label"],
+            row["seed"],
+            row["source"],
+            row["scenario"],
+            row["metric_name"],
+            math.inf if not _is_finite(row["horizon_s"]) else row["horizon_s"],
+            row["eval_profile"],
+        )
+    )
+    return rows
+
+
 def build_phase1a_bundle(
     *,
     suite_dir: Path,
@@ -996,12 +1175,17 @@ def build_phase1a_bundle(
     model_rows = aggregate_phase1a_model_rows(by_seed_rows)
     by_scenario_rows = build_phase1a_by_scenario_rows(artifacts, horizons=horizons)
     degradation_rows = build_phase1a_degradation_rows(by_seed_rows)
+    protocol_delta_rows = build_phase1a_protocol_delta_rows(
+        by_seed_rows=by_seed_rows,
+        by_scenario_rows=by_scenario_rows,
+    )
     return {
         "artifacts": artifacts,
         "by_seed_rows": by_seed_rows,
         "model_rows": model_rows,
         "by_scenario_rows": by_scenario_rows,
         "degradation_rows": degradation_rows,
+        "protocol_delta_rows": protocol_delta_rows,
     }
 
 
@@ -1326,6 +1510,7 @@ def main():
     _write_csv(suite_dir / "phase1a_by_scenario.csv", bundle["by_scenario_rows"])
     _write_csv(suite_dir / "phase1a_by_horizon.csv", phase1a_by_horizon_rows)
     _write_csv(suite_dir / "phase1a_degradation.csv", bundle["degradation_rows"])
+    _write_csv(suite_dir / "phase1a_protocol_delta.csv", bundle["protocol_delta_rows"])
 
     summary_json = {
         "suite_dir": str(suite_dir),
@@ -1341,6 +1526,7 @@ def main():
             "by_scenario": "phase1a_by_scenario.csv",
             "by_horizon": "phase1a_by_horizon.csv",
             "degradation": "phase1a_degradation.csv",
+            "protocol_delta": "phase1a_protocol_delta.csv",
         },
     }
     with open(suite_dir / "sweep_summary.json", "w") as handle:
