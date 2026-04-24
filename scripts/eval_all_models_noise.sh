@@ -171,4 +171,4 @@ echo
 echo "Noise sweep evaluation complete."
 echo "Suite directory: ${SUITE_DIR}"
 echo "Summary CSV: ${SUITE_DIR}/sweep_model_metrics.csv"
-echo "Report: ${SUITE_DIR}/experiment_report.md"
+echo "Decision brief: ${SUITE_DIR}/phase1a_decision_brief.md"

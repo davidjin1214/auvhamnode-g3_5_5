@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build a Markdown report for a sweep directory using the Phase-1 summary contract."""
+"""Build a Markdown decision brief for a sweep directory using the Phase-1A contract."""
 
 from __future__ import annotations
 
@@ -13,12 +13,12 @@ from typing import Dict, Iterable, List
 from summarize_sweep import (
     DEFAULT_HORIZONS,
     DEFAULT_PROFILE_PREFERENCE,
-    build_phase1_bundle,
+    build_phase1a_bundle,
     load_runs,
     _protocol_label,
 )
 
-FROZEN_PHASE1_SEEDS = {42, 43, 44, 45, 46, 47}
+PHASE1A_DECISION_SEEDS = {42, 43, 44, 45, 46}
 
 
 def _is_finite(value) -> bool:
@@ -79,27 +79,27 @@ def _build_scope_notes(artifacts: List[Dict], dataset_paths: List[str]) -> List[
     has_noc = "auv_noc" in path_text or "/noc" in path_text
     if has_oc and not has_noc:
         notes.append(
-            "Scope: this report covers the OC known-current surrogate tier only; "
-            "the frozen Phase-1 matrix also includes the NOC tier, which is not part of this run."
+            "Scope: this Phase-1A decision brief covers the OC known-current surrogate tier only, "
+            "which is the intended Phase-1A data layer."
         )
     elif has_noc and not has_oc:
         notes.append(
-            "Scope: this report covers the NOC tier only; the OC known-current surrogate tier is not part of this run."
+            "Scope: this report covers the NOC tier only; this is outside the default Phase-1A decision layer."
         )
 
     seeds = sorted({int(artifact["seed"]) for artifact in artifacts})
     seed_set = set(seeds)
-    if seed_set != FROZEN_PHASE1_SEEDS:
-        missing = sorted(FROZEN_PHASE1_SEEDS - seed_set)
-        extra = sorted(seed_set - FROZEN_PHASE1_SEEDS)
+    if seed_set != PHASE1A_DECISION_SEEDS:
+        missing = sorted(PHASE1A_DECISION_SEEDS - seed_set)
+        extra = sorted(seed_set - PHASE1A_DECISION_SEEDS)
         detail = [f"actual seeds={','.join(str(seed) for seed in seeds)}"]
         if missing:
-            detail.append(f"missing frozen seeds={','.join(str(seed) for seed in missing)}")
+            detail.append(f"missing Phase-1A decision seeds={','.join(str(seed) for seed in missing)}")
         if extra:
             detail.append(f"extra seeds={','.join(str(seed) for seed in extra)}")
         notes.append(
-            "Seed scope: this is a reduced or non-standard matched-seed tranche "
-            f"({'; '.join(detail)}), not the full six-seed frozen matrix."
+            "Seed scope: this run does not exactly match the Phase-1A decision seed set "
+            f"({'; '.join(detail)})."
         )
     return notes
 
@@ -493,7 +493,7 @@ def build_report_text(
         )
 
     lines = [
-        "# Experiment Report",
+        "# Phase-1A Decision Brief",
         "",
         f"- Suite: `{suite_dir}`",
         f"- Generated: `{generated_at}`",
@@ -705,11 +705,12 @@ def build_report_text(
             "",
             "## Notes",
             "",
-            "- `Train` uses `clean` or `protocol/profile` so Phase-1 can distinguish clean, iid noisy-IC, and `v4-lite` training runs.",
+            "- `Train` uses `clean` or `protocol/profile` so Phase-1A can distinguish clean, iid noisy-IC, and `v4-lite` training runs.",
             "- `Eval` distinguishes iid noisy-state and `v4-lite` noisy-state rollout rows when both are present for the same profile.",
             "- Rollout sections use the selected primary eval profile for headline tables and keep `10s/30s/60s` in the horizon table.",
             "- `Clean To ... Degradation` compares noisy eval against the same run's clean eval.",
             "- `Clean Replay Cost` compares a noisy-trained run's clean eval against the matched clean-trained baseline with the same model and seed when available.",
+            "- Phase-1A is a protocol-sensitivity check; it does not by itself establish full family-level robustness against black-box baselines.",
         ]
     )
 
@@ -729,13 +730,13 @@ def main():
         "--heldout-profile",
         type=str,
         default=None,
-        help="Preferred heldout profile for headline tables. Defaults to the best available Phase-1 profile.",
+        help="Preferred heldout profile for headline tables. Defaults to the best available Phase-1A profile.",
     )
     parser.add_argument(
         "--rollout-profile",
         type=str,
         default=None,
-        help="Preferred rollout profile for headline tables. Defaults to the best available Phase-1 profile.",
+        help="Preferred rollout profile for headline tables. Defaults to the best available Phase-1A profile.",
     )
     parser.add_argument(
         "--horizon",
@@ -753,7 +754,7 @@ def main():
     parser.add_argument(
         "--output",
         type=str,
-        default="experiment_report.md",
+        default="phase1a_decision_brief.md",
         help="Output Markdown file name relative to suite dir",
     )
     args = parser.parse_args()
@@ -761,7 +762,7 @@ def main():
     suite_dir = Path(args.suite_dir).resolve()
     runs = load_runs(suite_dir)
     horizons = sorted({float(args.horizon), *(float(horizon) for horizon in args.horizons)})
-    bundle = build_phase1_bundle(
+    bundle = build_phase1a_bundle(
         suite_dir=suite_dir,
         runs=runs,
         horizons=horizons,

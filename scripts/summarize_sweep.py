@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Summarize a training/evaluation sweep into legacy and Phase-1 reporting tables."""
+"""Summarize a training/evaluation sweep into legacy and Phase-1A reporting tables."""
 
 from __future__ import annotations
 
@@ -40,7 +40,7 @@ LEGACY_METRIC_KEYS = (
     "rollout_final_total_linear_velocity_error_median",
 )
 
-PHASE1_NUMERIC_FIELDS = (
+PHASE1A_NUMERIC_FIELDS = (
     *LEGACY_METRIC_KEYS,
     "horizon_s",
 )
@@ -530,7 +530,7 @@ def _rollout_protocol_from_summary(profile: str, payload: Dict) -> str:
     return resolve_noise_protocol_for_profile(None, profile=profile)
 
 
-def build_phase1_by_seed_rows(
+def build_phase1a_by_seed_rows(
     artifacts: List[Dict],
     *,
     horizons: List[float],
@@ -651,7 +651,7 @@ def build_phase1_by_seed_rows(
     return rows
 
 
-def aggregate_phase1_model_rows(by_seed_rows: List[Dict]) -> List[Dict]:
+def aggregate_phase1a_model_rows(by_seed_rows: List[Dict]) -> List[Dict]:
     grouped: Dict[tuple, List[Dict]] = defaultdict(list)
     for row in by_seed_rows:
         grouped[
@@ -708,7 +708,7 @@ def aggregate_phase1_model_rows(by_seed_rows: List[Dict]) -> List[Dict]:
     return model_rows
 
 
-def build_phase1_by_scenario_rows(
+def build_phase1a_by_scenario_rows(
     artifacts: List[Dict],
     *,
     horizons: List[float],
@@ -843,7 +843,7 @@ def _comparison_entry(value: float, clean_value: float, *, higher_is_better: boo
     }
 
 
-def build_phase1_degradation_rows(by_seed_rows: List[Dict]) -> List[Dict]:
+def build_phase1a_degradation_rows(by_seed_rows: List[Dict]) -> List[Dict]:
     rows: List[Dict] = []
 
     by_run_eval = {
@@ -973,7 +973,7 @@ def build_phase1_degradation_rows(by_seed_rows: List[Dict]) -> List[Dict]:
     return rows
 
 
-def build_phase1_bundle(
+def build_phase1a_bundle(
     *,
     suite_dir: Path,
     runs: List[Dict],
@@ -992,10 +992,10 @@ def build_phase1_bundle(
         )
         for run in runs
     ]
-    by_seed_rows = build_phase1_by_seed_rows(artifacts, horizons=horizons)
-    model_rows = aggregate_phase1_model_rows(by_seed_rows)
-    by_scenario_rows = build_phase1_by_scenario_rows(artifacts, horizons=horizons)
-    degradation_rows = build_phase1_degradation_rows(by_seed_rows)
+    by_seed_rows = build_phase1a_by_seed_rows(artifacts, horizons=horizons)
+    model_rows = aggregate_phase1a_model_rows(by_seed_rows)
+    by_scenario_rows = build_phase1a_by_scenario_rows(artifacts, horizons=horizons)
+    degradation_rows = build_phase1a_degradation_rows(by_seed_rows)
     return {
         "artifacts": artifacts,
         "by_seed_rows": by_seed_rows,
@@ -1205,7 +1205,7 @@ def write_text_summary(
         handle.write("\n".join(lines).rstrip() + "\n")
 
 
-def _phase1_matrix_payload(
+def _phase1a_matrix_payload(
     *,
     suite_dir: Path,
     horizons: List[float],
@@ -1285,14 +1285,14 @@ def main():
         type=float,
         nargs="+",
         default=list(DEFAULT_HORIZONS),
-        help="Phase-1 rollout horizons to export. Default: 10 30 60",
+        help="Phase-1A rollout horizons to export. Default: 10 30 60",
     )
     args = parser.parse_args()
 
     suite_dir = Path(args.suite_dir).resolve()
     runs = load_runs(suite_dir)
     horizons = [float(horizon) for horizon in args.horizons]
-    bundle = build_phase1_bundle(
+    bundle = build_phase1a_bundle(
         suite_dir=suite_dir,
         runs=runs,
         horizons=horizons,
@@ -1316,31 +1316,38 @@ def main():
 
     _write_csv(suite_dir / "sweep_seed_metrics.csv", legacy_seed_rows)
     _write_csv(suite_dir / "sweep_model_metrics.csv", legacy_model_rows)
-    _write_csv(suite_dir / "phase1_by_seed.csv", bundle["by_seed_rows"])
-    _write_csv(suite_dir / "phase1_summary.csv", bundle["model_rows"])
-    _write_csv(suite_dir / "phase1_by_scenario.csv", bundle["by_scenario_rows"])
-    _write_csv(suite_dir / "phase1_degradation.csv", bundle["degradation_rows"])
+    phase1a_by_horizon_rows = [
+        row for row in bundle["model_rows"]
+        if row.get("source") == "rollout"
+    ]
+
+    _write_csv(suite_dir / "phase1a_by_seed.csv", bundle["by_seed_rows"])
+    _write_csv(suite_dir / "phase1a_summary.csv", bundle["model_rows"])
+    _write_csv(suite_dir / "phase1a_by_scenario.csv", bundle["by_scenario_rows"])
+    _write_csv(suite_dir / "phase1a_by_horizon.csv", phase1a_by_horizon_rows)
+    _write_csv(suite_dir / "phase1a_degradation.csv", bundle["degradation_rows"])
 
     summary_json = {
         "suite_dir": str(suite_dir),
         "legacy_horizon_s": float(args.horizon),
-        "phase1_horizons_s": horizons,
+        "phase1a_horizons_s": horizons,
         "n_runs": len(legacy_seed_rows),
         "seed_rows": legacy_seed_rows,
         "model_rows": legacy_model_rows,
-        "phase1_files": {
-            "matrix": "phase1_matrix.json",
-            "summary": "phase1_summary.csv",
-            "by_seed": "phase1_by_seed.csv",
-            "by_scenario": "phase1_by_scenario.csv",
-            "degradation": "phase1_degradation.csv",
+        "phase1a_files": {
+            "matrix": "phase1a_matrix.json",
+            "summary": "phase1a_summary.csv",
+            "by_seed": "phase1a_by_seed.csv",
+            "by_scenario": "phase1a_by_scenario.csv",
+            "by_horizon": "phase1a_by_horizon.csv",
+            "degradation": "phase1a_degradation.csv",
         },
     }
     with open(suite_dir / "sweep_summary.json", "w") as handle:
         json.dump(summary_json, handle, indent=2)
-    with open(suite_dir / "phase1_matrix.json", "w") as handle:
+    with open(suite_dir / "phase1a_matrix.json", "w") as handle:
         json.dump(
-            _phase1_matrix_payload(
+            _phase1a_matrix_payload(
                 suite_dir=suite_dir,
                 horizons=horizons,
                 artifacts=bundle["artifacts"],
