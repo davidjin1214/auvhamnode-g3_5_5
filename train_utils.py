@@ -1035,13 +1035,14 @@ class V4LiteNoiseSequenceCache:
         self._sequence_cache: Dict[Tuple[int, int], torch.Tensor] = {}
         self._sign_cache: Dict[Tuple[int, int], torch.Tensor] = {}
 
-    def _seed(self, traj_id: int, stream: int) -> int:
-        return (
-            self.base_seed
-            + 1000003 * self.epoch
-            + 10007 * int(traj_id)
-            + 7919 * int(stream)
-        )
+    def _stream_seed(self, stream: int) -> int:
+        return self.base_seed + 1000003 * self.epoch + 7919 * int(stream)
+
+    def _random_generator(self, stream: int) -> Tuple[torch.Generator, torch.device]:
+        random_device = self.device if self.device.type == "cuda" else torch.device("cpu")
+        gen = torch.Generator(device=random_device)
+        gen.manual_seed(self._stream_seed(stream))
+        return gen, random_device
 
     def _build_sequence(self, stream: int, dim: int) -> torch.Tensor:
         key = (int(stream), int(dim))
@@ -1051,22 +1052,24 @@ class V4LiteNoiseSequenceCache:
 
         corr = self.correlation
         innovation_scale = float(max(1.0 - corr ** 2, 1e-6)) ** 0.5
-        table = torch.empty(
-            self.num_trajectories,
-            self.blocks_per_trajectory,
-            dim,
+        gen, random_device = self._random_generator(stream)
+        innovations = torch.randn(
+            (
+                self.num_trajectories,
+                self.blocks_per_trajectory,
+                dim,
+            ),
+            generator=gen,
+            device=random_device,
             dtype=torch.float32,
         )
-        for traj_id in range(self.num_trajectories):
-            gen = torch.Generator(device="cpu")
-            gen.manual_seed(self._seed(traj_id, stream))
-            table[traj_id, 0] = torch.randn(dim, generator=gen, dtype=torch.float32)
-            for block_idx in range(1, self.blocks_per_trajectory):
-                innovation = torch.randn(dim, generator=gen, dtype=torch.float32)
-                table[traj_id, block_idx] = (
-                    corr * table[traj_id, block_idx - 1]
-                    + innovation_scale * innovation
-                )
+        table = torch.empty_like(innovations)
+        table[:, 0] = innovations[:, 0]
+        for block_idx in range(1, self.blocks_per_trajectory):
+            table[:, block_idx] = (
+                corr * table[:, block_idx - 1]
+                + innovation_scale * innovations[:, block_idx]
+            )
 
         table = table.to(device=self.device, dtype=self.dtype)
         self._sequence_cache[key] = table
@@ -1078,12 +1081,16 @@ class V4LiteNoiseSequenceCache:
         if cached is not None:
             return cached
 
-        table = torch.empty(self.num_trajectories, dim, dtype=torch.float32)
-        for traj_id in range(self.num_trajectories):
-            gen = torch.Generator(device="cpu")
-            gen.manual_seed(self._seed(traj_id, stream))
-            draws = torch.randint(0, 2, (dim,), generator=gen, dtype=torch.int64)
-            table[traj_id] = (draws * 2 - 1).to(dtype=torch.float32)
+        gen, random_device = self._random_generator(stream)
+        draws = torch.randint(
+            0,
+            2,
+            (self.num_trajectories, dim),
+            generator=gen,
+            device=random_device,
+            dtype=torch.int64,
+        )
+        table = (draws * 2 - 1).to(dtype=torch.float32)
 
         table = table.to(device=self.device, dtype=self.dtype)
         self._sign_cache[key] = table
