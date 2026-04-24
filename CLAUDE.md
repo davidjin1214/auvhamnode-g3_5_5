@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Research codebase for AUV (Autonomous Underwater Vehicle) dynamics modeling using structured port-Hamiltonian Neural ODEs on SE(3). The main focus is comparing `phnode_full` against ablations and black-box baselines, evaluated by long-horizon rollout accuracy under clean and noisy initial conditions, with ocean current (`oc`) as the primary environment.
 
-> See `AGENTS.md` for the full orientation checklist, workflow preferences, coding conventions, and commit guidelines.
+> See `AGENTS.md` for the full orientation checklist, workflow preferences, coding conventions, and commit guidelines. See `docs/repo_structure_audit.md` before using old checkpoints, smoke/probe outputs, deprecated scripts, or delete-candidate directories.
 
 ## Environment
 
@@ -45,6 +45,8 @@ python evaluate_rollout_benchmark.py --checkpoint ./checkpoints/<run>/best_model
 bash scripts/train_all_models_noise_profile.sh --profile oc --group core --noise-profile nominal_train
 bash scripts/eval_all_models_noise_profile.sh --suite-dir ./checkpoints/<suite>
 ```
+
+The older `scripts/train_all_models_noise.sh`, `scripts/eval_all_models_noise.sh`, and `--noise_level` interface are deprecated compatibility paths.
 
 **Analysis:**
 ```bash
@@ -105,5 +107,6 @@ See `docs/oc_data_catalog_dictionary.md` for field definitions and `docs/oc_resu
 
 ## Reference Material
 
-- `original/bf3n/` — reference only, not the active implementation
-- `checkpoints/unused/` — inactive experiments, ignore by default
+- `original/bf3n/` — delete-candidate legacy reference material, not the active implementation
+- `checkpoints/unused/` — inactive experiments from an older incorrect noise design, invalid for current evidence
+- smoke/probe checkpoint directories — flow-validation-only, not current evidence for model ranking or paper conclusions

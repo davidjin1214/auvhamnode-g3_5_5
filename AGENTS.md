@@ -14,6 +14,10 @@ The repo already contains substantial experiment artifacts and a structured resu
 Before diving into random files, start from these:
 
 - `README.md`
+- `docs/repo_structure_audit.md`
+- `docs/phnode_realistic_validation_plan.md`
+- `docs/phnode_realistic_validation_execution_plan.md`
+- `docs/phase1_realistic_validation_plan.md`
 - `docs/noise_model_design.md`
 - `docs/oc_experiments_comprehensive_report.md`
 - `docs/oc_followup_results_p1_p2.md`
@@ -48,7 +52,7 @@ Important directories:
 - `data/`: generated datasets
 - `checkpoints/`: trained runs and sweep suites
 - `analysis/oc_data_catalog/`: normalized experiment tables and canonical views
-- `original/bf3n/`: reference material only, not the active implementation
+- `original/bf3n/`: delete-candidate legacy reference material, not the active implementation
 
 ## Preferred Commands
 Run all local commands in the Conda environment `mytorch1`.
@@ -92,10 +96,12 @@ python scripts/oc_catalog_templates.py ...
 For new work:
 
 - Prefer `scripts/train_all_models_noise_profile.sh` and `scripts/eval_all_models_noise_profile.sh` for noisy `oc` experiments.
+- Treat `scripts/train_all_models_noise.sh`, `scripts/eval_all_models_noise.sh`, and `--noise_level` as deprecated compatibility paths.
 - Prefer `training_history.pkl` over `training.log` for training curves.
 - Prefer `canonical_rollout_summary_long.csv` and `canonical_rollout_outcomes_long.csv` for default plotting and reporting.
 - Use raw rollout tables only when you intentionally need all rollout variants.
-- Treat `checkpoints/unused/` as non-active unless explicitly needed.
+- Treat `checkpoints/unused/` as non-active and invalid for current evidence because it used an older incorrect noise design.
+- Treat smoke/probe checkpoint directories as flow-validation-only, not as current evidence for model ranking or paper conclusions.
 
 ## Coding Style & Naming Conventions
 Follow current Python style:

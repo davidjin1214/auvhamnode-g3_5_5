@@ -27,6 +27,14 @@ The current repo state already includes:
 
 If you are new to the repo, the most useful current documents are:
 
+- [docs/repo_structure_audit.md](/Users/xiangjin/Library/CloudStorage/OneDrive-Personal/我的/Code/auv_se3node/g3_5_5/docs/repo_structure_audit.md)
+  Current map of active, generated, deprecated, smoke/probe, and delete-candidate files
+- [docs/phnode_realistic_validation_plan.md](/Users/xiangjin/Library/CloudStorage/OneDrive-Personal/我的/Code/auv_se3node/g3_5_5/docs/phnode_realistic_validation_plan.md)
+  Current realism-oriented research plan
+- [docs/phnode_realistic_validation_execution_plan.md](/Users/xiangjin/Library/CloudStorage/OneDrive-Personal/我的/Code/auv_se3node/g3_5_5/docs/phnode_realistic_validation_execution_plan.md)
+  Current execution plan for realistic validation
+- [docs/phase1_realistic_validation_plan.md](/Users/xiangjin/Library/CloudStorage/OneDrive-Personal/我的/Code/auv_se3node/g3_5_5/docs/phase1_realistic_validation_plan.md)
+  Current Phase-1 validation plan
 - [docs/noise_model_design.md](/Users/xiangjin/Library/CloudStorage/OneDrive-Personal/我的/Code/auv_se3node/g3_5_5/docs/noise_model_design.md)
   Current noisy-IC design background
 - [docs/oc_experiments_comprehensive_report.md](/Users/xiangjin/Library/CloudStorage/OneDrive-Personal/我的/Code/auv_se3node/g3_5_5/docs/oc_experiments_comprehensive_report.md)
@@ -192,7 +200,11 @@ Important directories:
 - `analysis/oc_data_catalog/`
   Cataloged experiment tables and canonical views
 - `original/bf3n/`
-  Reference material only, not the active implementation
+  Delete-candidate legacy reference material; not the active implementation
+
+For the current keep/deprecate/delete-candidate boundary, see:
+
+- [docs/repo_structure_audit.md](/Users/xiangjin/Library/CloudStorage/OneDrive-Personal/我的/Code/auv_se3node/g3_5_5/docs/repo_structure_audit.md)
 
 ## Main Experimental Axes
 
@@ -339,18 +351,23 @@ See:
 If you only want a fast orientation, read in this order:
 
 1. `README.md`
-2. [docs/noise_model_design.md](/Users/xiangjin/Library/CloudStorage/OneDrive-Personal/我的/Code/auv_se3node/g3_5_5/docs/noise_model_design.md)
-3. [docs/oc_experiments_comprehensive_report.md](/Users/xiangjin/Library/CloudStorage/OneDrive-Personal/我的/Code/auv_se3node/g3_5_5/docs/oc_experiments_comprehensive_report.md)
-4. [docs/oc_followup_results_p1_p2.md](/Users/xiangjin/Library/CloudStorage/OneDrive-Personal/我的/Code/auv_se3node/g3_5_5/docs/oc_followup_results_p1_p2.md)
-5. [docs/oc_data_catalog_dictionary.md](/Users/xiangjin/Library/CloudStorage/OneDrive-Personal/我的/Code/auv_se3node/g3_5_5/docs/oc_data_catalog_dictionary.md)
+2. [docs/repo_structure_audit.md](/Users/xiangjin/Library/CloudStorage/OneDrive-Personal/我的/Code/auv_se3node/g3_5_5/docs/repo_structure_audit.md)
+3. [docs/phnode_realistic_validation_plan.md](/Users/xiangjin/Library/CloudStorage/OneDrive-Personal/我的/Code/auv_se3node/g3_5_5/docs/phnode_realistic_validation_plan.md)
+4. [docs/phnode_realistic_validation_execution_plan.md](/Users/xiangjin/Library/CloudStorage/OneDrive-Personal/我的/Code/auv_se3node/g3_5_5/docs/phnode_realistic_validation_execution_plan.md)
+5. [docs/phase1_realistic_validation_plan.md](/Users/xiangjin/Library/CloudStorage/OneDrive-Personal/我的/Code/auv_se3node/g3_5_5/docs/phase1_realistic_validation_plan.md)
+6. [docs/noise_model_design.md](/Users/xiangjin/Library/CloudStorage/OneDrive-Personal/我的/Code/auv_se3node/g3_5_5/docs/noise_model_design.md)
+7. [docs/oc_data_catalog_dictionary.md](/Users/xiangjin/Library/CloudStorage/OneDrive-Personal/我的/Code/auv_se3node/g3_5_5/docs/oc_data_catalog_dictionary.md)
+8. [docs/oc_result_selection_policy.md](/Users/xiangjin/Library/CloudStorage/OneDrive-Personal/我的/Code/auv_se3node/g3_5_5/docs/oc_result_selection_policy.md)
 
 ## Practical Notes
 
 - Keep `oc` or `noc` in dataset filenames. The code uses it to infer defaults.
 - Prefer `scripts/train_all_models_noise_profile.sh` and `scripts/eval_all_models_noise_profile.sh` for new noisy experiments.
+- Treat `scripts/train_all_models_noise.sh`, `scripts/eval_all_models_noise.sh`, and the `--noise_level` interface as deprecated compatibility paths.
 - Prefer `training_history.pkl` over `training.log` for plotting.
 - Prefer canonical rollout tables over raw rollout tables when making default figures.
-- `checkpoints/unused/` should not be treated as active experiment results.
+- `checkpoints/unused/` should not be treated as active experiment results; it used an older incorrect noise design.
+- Smoke/probe checkpoint directories are flow-validation-only and should not be used for headline conclusions.
 
 ## Validation and Testing
 
