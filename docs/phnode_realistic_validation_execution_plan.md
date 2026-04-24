@@ -1,337 +1,351 @@
 # ph-NODE 现实导向验证执行方案
 
-本文档是
-[phnode_realistic_validation_plan.md](phnode_realistic_validation_plan.md)
-的配套执行方案。
+本文档是 [phnode_realistic_validation_plan.md](phnode_realistic_validation_plan.md) 的配套执行方案。
 
-前者回答“研究要证明什么”；本文回答“下一步按什么顺序推进，做到什么算完成”。
+研究计划回答“要证明什么”；本文回答“按什么顺序推进，做到什么算完成”。
 
-本文档仍然不是逐命令 runbook。它的作用是：
+本文档的根本目标不是证明某个 noise protocol 更好，也不是构建完整 AUV 真实系统，而是验证：
 
-- 把研究计划翻译成阶段、依赖与里程碑
-- 约束每一阶段的范围，避免一次性铺开过多 realism 轴
-- 明确每个阶段的输入、输出、判定规则与停机条件
+```text
+在给定相同状态来源、未来控制和扰动表示的离线条件下，
+PHNODE / structured dynamics 是否能作为真实 AUV 运动建模与轨迹预报系统的 dynamics core。
+```
+
+因此，`v4-lite` 在本文中只是协议敏感性检查工具：它用于判断 PHNODE 的现实导向结论是否依赖 block-iid noisy IC 这一简化假设，而不是新的研究主角。
 
 ---
 
 ## 1. 执行原则
 
-本项目的执行顺序必须遵守以下三条原则。
+### 1.1 先验证模型命题，再决定协议扩展
 
-### 1.1 先证明可归因的差异，再增加 realism
+当前最大风险不是“实验不够多”，而是过早展开过大的现实化矩阵，导致研究重心从动力学模型本体滑向协议、observer 或系统级 benchmark。
 
-推进顺序应是：
+因此 Phase-1 不再默认执行完整矩阵，而是拆成：
 
-1. 先建立 matched-information 的基线比较
-2. 再引入 realistic noisy-state
-3. 再引入更强的 mismatch / OOD
-4. 最后才考虑真实日志 replay
+- `Phase-1A`：轻量协议敏感性检查，判断 PHNODE 结论是否依赖 iid noisy-IC 简化
+- `Phase-1B`：条件扩展，只有在 `Phase-1A` 显示结论改变或仍需澄清时才执行
 
-不得一开始就把所有 realism 轴混在一起。
+### 1.2 先证明可归因差异，再增加 realism
 
-### 1.2 先实现协议，再做大规模 sweep
+推进顺序仍然遵守：
 
-像 `v4-lite` 这类协议，必须先完成：
+1. matched-information dynamics comparison
+2. trajectory-consistent noisy-state protocol sensitivity check
+3. 必要的 heading bias / degraded eval 状态误差扩展
+4. 模型本体优先的 OOD / current-representation / parameter-regime 扩展
+5. 真实日志 replay
 
-- 协议定义
-- 最小实现
-- smoke validation
-- 单模型 sanity check
+不得一开始把多个 realism 轴混在同一组主结果里。
 
-之后才能扩到多模型、多 seed sweep。
+### 1.3 all-seed 是主证据，by-seed 是判读底线
 
-### 1.3 all-seed 是主证据，诊断性结果不能替代主结果
-
-后续所有执行阶段都要保留：
+所有关键结论都必须保留：
 
 - matched-seed all-seed aggregate
 - per-seed delta
 - by-scenario breakdown
+- clean replay cost
 
-如果某阶段的主要收益只来自修复个别坏 seed，应在该阶段结束时直接写明，不得等到论文写作时再补。
+如果某个收益主要来自修复单个 catastrophic seed，应在阶段结论中直接写明。
 
 ---
 
 ## 2. 总体阶段划分
 
-本执行方案建议分成五个阶段。
+新版执行路线如下。
 
 | 阶段 | 目标 | 产出 |
 |---|---|---|
-| `P0` | 冻结比较对象与主证据口径 | frozen comparison matrix |
-| `P1` | 跑通 Level A 基线与 Phase-1 主实验外壳 | clean baseline package |
-| `P2` | 实现并验证 `v4-lite`，完成 Level B1 | realistic noisy-state package |
-| `P3` | 扩展 Level B2：mismatch / OOD | robustness extension package |
+| `P0` | 冻结轻量 Phase-1 方案与判断规则 | Phase-1A/1B plan |
+| `P1` | 用 `v4-lite` 检查模型结论对 noisy-state 协议的敏感性 | model-evidence decision brief |
+| `P2` | 条件执行 Phase-1B，补强 family-level 对照 | extended matched comparison |
+| `P3` | 扩展模型本体相关 realism 轴 | model-centric robustness package |
 | `P4` | 视资源补真实日志 replay | offline real-log package |
 
-其中：
-
-- `P0-P2` 是当前主线
-- `P3` 是增强证据
-- `P4` 是外部证据增强，不是当前硬前提
+当前主线是 `P0-P1`。`P2` 不是默认必做项，而是由 `P1` 的结果触发。
 
 ---
 
-## 3. 阶段 `P0`：冻结研究比较框架
+## 3. 阶段 `P0`：冻结轻量 Phase-1 方案
 
 ### 3.1 目标
 
-在写代码前先冻结：
+`P0` 的目标是把 Phase-1 从旧版完整矩阵改为轻量决策流程，并冻结以下内容：
 
-- 主模型集
-- 主数据层
-- 主 seed 集
-- 主指标
-- 主结论口径
+- `Phase-1A` 的数据层、模型集、seed 策略和评估协议
+- `Phase-1B` 的触发条件
+- `v4-lite` 是否改变模型结论的判断规则
+- Phase-1 的输出合同
 
-### 3.2 必须冻结的对象
+### 3.2 权威文档
 
-#### 模型集
+`P0` 的权威文档是：
 
-第一阶段主模型集建议固定为：
+- [phase1_realistic_validation_plan.md](phase1_realistic_validation_plan.md)
 
-- `phnode_full`
-- `phnode_qforce`
-- `ablate_no_mass_prior`
-- `se3_momentum_blackbox`
-- `se3_accel_blackbox`
+以下旧文档已归档到 `docs/unused/`，不再作为当前入口：
 
-如资源允许，可补：
+- [unused/phase1_comparison_matrix_legacy.md](unused/phase1_comparison_matrix_legacy.md)
+- [unused/phase1_implementation_checklist_legacy.md](unused/phase1_implementation_checklist_legacy.md)
 
-- `ablate_no_lift`
-- `blackbox_fullstate`
+### 3.3 Phase-1A 冻结对象
 
 #### 数据层
 
-Phase-1 只覆盖：
+`Phase-1A` 只做：
 
-- `noc`
 - `oc + known-current surrogate`
 
-不在这个阶段把 `current-estimation stress` 混进主结果。
+`noc` 只允许作为代码 sanity check，不进入 `Phase-1A` 主决策表。
+
+#### 模型集
+
+`Phase-1A` 固定三个模型：
+
+- `phnode_full`
+- `ablate_no_mass_prior`
+- `ablate_no_lift`
+
+选择逻辑：
+
+- `phnode_full`：主模型与 seed-fragility 诊断对象
+- `ablate_no_mass_prior`：当前 noisy training 下最稳定受益的结构模型
+- `ablate_no_lift`：clean 下强且稳、noisy 下出现新异常的关键对照
 
 #### seed 集
 
-主实验固定使用：
+先做 smoke：
 
 ```text
-42, 43, 44, 45, 46, 47
+42, 44, 46
 ```
 
-#### 主训练组
+再做决策：
 
-Phase-1 只比较：
+```text
+42, 43, 44, 45, 46
+```
 
-- `clean`
-- `iid noisy-IC`
-- `v4-lite`
+#### 训练组
 
-#### 主评估组
-
-Phase-1 只比较：
+`Phase-1A` 比较：
 
 - `clean`
-- `iid noisy-state eval`
-- `v4-lite noisy-state eval`
-- `heading bias`
+- `iid_noisy_ic`
+- `v4_lite`
 
-### 3.3 交付物
+原则是复用现有 clean / iid noisy-IC checkpoints，新增计算集中在 `v4_lite`。
 
-`P0` 结束时应至少产出一份 frozen matrix 文档，建议固定为
-[phase1_comparison_matrix.md](phase1_comparison_matrix.md)，明确：
+#### 评估组
 
-- 哪些模型属于主结果
-- 哪些模型只是补充结果
-- 哪些 realism 轴纳入 Phase-1
-- 哪些 realism 轴延后到 `P3`
+`Phase-1A` 必做：
+
+- `clean eval`
+- `iid noisy eval`
+- `v4-lite noisy eval`
+
+`heading bias` 与 `degraded_eval` 不再是 `Phase-1A` 的硬前提。
 
 ### 3.4 停机条件
 
-如果这一步还无法就“Phase-1 比较矩阵”达成统一，就不应进入实现阶段。
+如果仍无法接受轻量 Phase-1 的范围，就不应进入实现。否则很容易重新滑回“先跑完整矩阵再解释”的低效路径。
 
 ---
 
-## 4. 阶段 `P1`：Level A 与 Phase-1 外壳
+## 4. 阶段 `P1`：`v4-lite` 实现与 Phase-1A 协议敏感性检查
 
 ### 4.1 目标
 
-`P1` 的目标不是做新协议，而是建立一个稳定、可重复的比较外壳，为 `v4-lite` 留出干净插槽。
-
-### 4.2 工作内容
-
-1. 复核当前 `clean` 与 `iid noisy-IC` 的 baseline 路径
-2. 明确 `noc` 与 `oc + known-current surrogate` 的默认比较配置
-3. 明确 Phase-1 的输出目录、结果文件与 summary 格式
-4. 补齐 Phase-1 所需的 summary / reporting contract
-
-### 4.3 关键问题
-
-这一步要回答：
+`P1` 是当前最重要的执行阶段。它要回答：
 
 ```text
-如果未来引入 `v4-lite`，
-我们将用哪一套完全相同的矩阵去和当前 iid noisy-IC 做 matched comparison？
+在不改变模型 backbone、target 与 rollout 任务的前提下，
+把 noisy IC 从 block-iid 改为 trajectory-consistent，
+是否实质改变 PHNODE / structured dynamics 的建模结论？
 ```
 
-### 4.4 交付物
+换句话说，`P1` 不以 `v4-lite` 本身为研究对象。它只检查当前关于 PHNODE 真实场景建模能力的证据，是否对 noisy-state 协议选择敏感。
 
-`P1` 结束时应有：
+### 4.2 不做什么
 
-- frozen Phase-1 matrix
-- 可重复的 clean / iid noisy-IC baseline runs
-- Phase-1 summary 模板
-- 主结果表的字段定义
+`P1` 不做：
 
-### 4.5 进入下一阶段的条件
-
-只有在以下条件同时满足时，才进入 `P2`：
-
-1. clean baseline 路径可重复
-2. 当前 iid noisy-IC 路径的结果口径已冻结
-3. summary / report 输出能支持 by-seed 和 by-scenario 对比
-
----
-
-## 5. 阶段 `P2`：实现并验证 `v4-lite`
-
-### 5.1 目标
-
-`P2` 是当前执行方案的核心阶段。
-
-它要回答的不是“`v4-lite` 最终是否赢”，而是更基本的问题：
-
-```text
-能否以最小、可控、可解释的方式，
-把 trajectory-consistent noisy-state 协议接入当前 pure dynamics 主线？
-```
-
-### 5.2 这一阶段只做什么
-
-`P2` 只覆盖 Level B1：
-
-- realistic noisy-state protocol
-- heading bias
-- clean-to-noisy degradation analysis
-
-`P2` 不做：
-
-- current mismatch 主结论
-- actuator mismatch 主结论
+- history encoder
+- observer-augmented dynamics
+- multi-block state recovery
+- current-representation uncertainty
+- actuator mismatch
 - mass / damping mismatch
-- OOD maneuver 扩展
+- OOD maneuver 主结论
 - 真实日志 replay
 
-### 5.3 `P2` 的工作包
+### 4.3 工作包
 
 #### WP1. 协议实现
 
-实现 `v4-lite` 的训练与评估协议。
+实现 `v4-lite` 训练与评估路径。要求：
+
+- 同一 trajectory 内 block 使用同一 noisy observation realization
+- `v4-lite` 与 iid noisy-IC 只在 noise source 上不同
+- target 始终为 clean truth
+- `AUVHamNODE.py` 与 baseline backbone 不因 `v4-lite` 增加新结构路径
 
 #### WP2. 协议验证
 
-验证以下事实：
+至少验证：
 
-- 同一 trajectory 内 block 使用同一 noisy observation realization
-- `v4-lite` 与 iid noisy-IC 的区别只在 noise source，不在 target 与 backbone
-- 同一 seed、同一 profile 下结果可重复
+- 固定 seed、epoch、trajectory id 和 profile 时 noisy observation 可复现
+- 同一 epoch 内同一 trajectory 不重复采样互不相关的 realization
+- 不同 trajectory 的 realization 相互独立
+- clean / iid noisy-IC 路径没有被破坏
 
-#### WP3. 单模型 smoke
+#### WP3. Smoke
 
-先用 `phnode_full` 跑通：
+先用 `phnode_full` 和 smoke seeds 跑通：
 
-- clean
-- iid noisy-IC
-- `v4-lite`
+- `clean`
+- `iid_noisy_ic`
+- `v4_lite`
 
-并完成协议级 sanity check。
+然后扩到三模型 smoke：
 
-#### WP4. 小规模 matched comparison
+- `phnode_full`
+- `ablate_no_mass_prior`
+- `ablate_no_lift`
 
-对 `phnode_full` 与一个强结构对照完成 matched-seed comparison。
+Smoke 只检查协议、训练、评估和 summary，不写研究结论。
 
-#### WP5. 扩展到主模型集
+#### WP4. 五 seed 决策实验
 
-在 smoke 和小规模 comparison 稳定后，再扩到 Phase-1 主模型集。
+对三模型完成五 seed matched comparison：
 
-### 5.4 `P2` 的必答问题
+```text
+42, 43, 44, 45, 46
+```
 
-`P2` 完成后，必须能够回答：
+不再默认纳入 `47`。`42/44/46` 覆盖已知诊断 seed，`43/45` 提供普通稳定簇参照；若这五个 seeds 无法支撑判断，额外普通 seed 也不太可能改变结论。
 
-1. `v4-lite` 是否相对 iid noisy-IC 改变了结果排序
-2. 这种变化是否稳定出现在多 seed / 多 scenario 上
-3. 观察到的改善是 family-level 现象，还是只在修复单个 catastrophic seed
-4. `v4-lite` 的 clean replay 代价是否可接受
+主输出：
 
-### 5.5 `P2` 的交付物
+- all-seed aggregate
+- by-seed delta
+- by-scenario breakdown
+- by-horizon summary
+- clean replay cost
+- clean-to-noisy degradation
 
-至少应包括：
+#### WP5. 决策简报
 
-- `v4-lite` 协议实现
-- 协议验证报告
-- Phase-1 matched comparison 表
-- by-seed / by-scenario / by-horizon 汇总
-- 结论级简报：`v4-lite` 值不值得进入主线
+`P1` 结束时必须写出简短结论，判断 noisy-state protocol 变化对模型结论的影响属于以下哪类：
 
-### 5.6 退出判断
+1. 不改变 PHNODE 结论，说明当前 iid noisy-IC 证据已足够稳健
+2. 改变模型排序或退化规律，说明 PHNODE 现实导向结论对 noisy-state protocol 敏感
+3. 主要修复个别坏 seed，应表述为 seed-stabilization，而不是普适 realism 优势
+4. clean replay cost 或整体退化过大，应暂停协议扩展并检查 noise budget / schedule
 
-`P2` 结束时，只允许出现以下三种结论之一：
+### 4.4 进入 `P2` 的条件
 
-#### 结论 A：`v4-lite` 明显优于 iid noisy-IC
+只有满足以下任一条件，才进入 `P2`：
 
-说明：
+1. `v4-lite` 显著改变模型排序或 clean-to-noisy 退化规律
+2. `v4-lite` 暴露出与 iid noisy-IC 不同的 seed failure / stabilization 模式
+3. 结果存在必须用额外 baseline 或 bias profile 澄清的模型归因歧义
 
-- 现实导向的 noise protocol 本身有研究价值
-- 后续主线可转向 `v4-lite`
-
-#### 结论 B：`v4-lite` 与 iid noisy-IC 接近
-
-说明：
-
-- 协议 realism 提升没有带来实质区别
-- 后续可保留为补充协议，不必升级成主线
-
-#### 结论 C：`v4-lite` 只修复个别坏 seed
-
-说明：
-
-- 它更像训练稳定化工具
-- 后续叙事应从“普适鲁棒优势”收紧为“修复特定 failure mode”
+如果 `v4-lite` 与 iid noisy-IC 接近，且没有改变结论，则不进入 `P2`。
 
 ---
 
-## 6. 阶段 `P3`：扩展 Level B2
+## 5. 阶段 `P2`：Phase-1B 条件扩展
+
+### 5.1 目标
+
+`P2` 只在 `P1` 触发后执行。它的目标不是重新打开完整旧矩阵，也不是继续追求更复杂协议，而是对 `P1` 中影响模型结论的关键发现做最小扩展验证。
+
+### 5.2 可扩展模型
+
+按优先级加入：
+
+1. `phnode_qforce`
+2. `se3_accel_blackbox`
+3. `se3_momentum_blackbox`
+
+解释：
+
+- `phnode_qforce` 用于检查 clean winner 是否仍压制 `v4-lite` 下的 full/ablation 结构
+- `se3_accel_blackbox` 用于补足非结构化神经动力学 baseline
+- `se3_momentum_blackbox` 用于区分几何/动量语义与完整 PH 结构
+
+`blackbox_fullstate` 默认不进入 `P2` 主表，除非论文需要展示纯黑箱失稳上界。
+
+### 5.3 可扩展评估
+
+按优先级加入：
+
+1. `heading bias`
+2. `degraded_eval`
+
+仍然不加入：
+
+- current-representation uncertainty
+- actuator mismatch
+- parameter mismatch
+- OOD maneuver
+
+这些留给 `P3`。
+
+### 5.4 可扩展数据层
+
+`noc` 只有在以下情况下加入：
+
+- 需要验证 `v4-lite` 接口不依赖 ocean-current 状态
+- 论文叙事需要无海流 sanity baseline
+
+否则 `P2` 仍以 `oc + known-current surrogate` 为主。
+
+### 5.5 `P2` 退出条件
+
+`P2` 完成后，应能回答：
+
+1. `v4-lite` 的收益是否仍存在于新增模型或新增评估 profile
+2. structured family 结论是否可以从三模型诊断扩展到更广模型集
+3. `phnode_full` 是否仍不能作为当前最佳实现
+4. 后续是否值得进入模型本体相关的 Level B2 扩展
+
+---
+
+## 6. 阶段 `P3`：模型本体相关 Level B2 扩展
 
 ### 6.1 目标
 
-在 `P2` 已经跑通的前提下，逐项扩展更强的 realism 轴。
+`P3` 只在 Phase-1 已经形成清晰结论后执行。它研究更强 realism 轴，但仍必须优先服务于动力学模型本体的验证，而不是转向完整系统建模。
 
 ### 6.2 建议顺序
 
-不建议并行展开全部 Level B2。推荐顺序：
+推荐顺序：
 
-1. `current-estimation stress`
-2. `actuator mismatch`
-3. `vehicle-parameter mismatch`
-4. `OOD maneuver / OOD disturbance`
+1. `control / maneuver OOD`
+2. `current-representation uncertainty`
+3. `vehicle-parameter regime shift`
+4. `actuator mismatch`
 
-### 6.3 原因
+这个顺序的理由是：
 
-这个顺序与当前研究主线更一致：
+- control / maneuver OOD 最直接检验动力学泛化，仍属于模型本体问题
+- current uncertainty 应写成 current representation 的误差，而不是完整 current estimator 问题
+- vehicle-parameter shift 检验物理结构先验是否带来跨参数泛化
+- actuator mismatch 容易引入执行器/输入通道建模问题，应放在后面
 
-- `oc` 问题最自然会先碰到 current uncertainty
-- actuator 与 parameter mismatch 会更强地引入系统级解释变量
-- OOD 定义若不够清楚，最容易变成“描述性压力测试”
+### 6.3 每个轴的进入要求
 
-### 6.4 `P3` 的要求
+每增加一个 realism 轴，都必须先写清：
 
-每增加一个 realism 轴，都必须单独回答：
-
-- 它的科学问题是什么
-- 它与前一层 realism 的差别是什么
-- 它的主指标是什么
+- 它要回答的模型本体问题是什么
+- 与前一层 realism 的差别是什么
+- 主指标是什么
 - 若结果为正/负，各自意味着什么
 
-如果做不到这一点，就不应把该 realism 轴并入主结果。
+如果做不到，就不应把该轴并入主结果。
 
 ---
 
@@ -339,19 +353,19 @@ Phase-1 只比较：
 
 ### 7.1 目标
 
-为“更适合作为真实 dynamics core”提供外部证据。
+为“更适合作为真实 dynamics core”提供外部证据。它仍然是离线 dynamics replay，不是完整系统部署验证。
 
 ### 7.2 进入条件
 
-只有在以下条件满足时才值得推进：
+只有在以下条件同时满足时才值得推进：
 
-1. Level A 与 Phase-1 主线已经形成清晰结论
-2. Level B 至少有一个 realism 轴已经表现出稳定规律
+1. Phase-1 已形成清晰结论
+2. Level B 至少一个 realism 轴表现出稳定规律
 3. 可获得一致的离线状态与未来控制日志
 
 ### 7.3 输出目标
 
-这一步的价值不是重新做一套完整 benchmark，而是验证：
+真实日志 replay 的价值不是重新做完整 benchmark，而是验证：
 
 ```text
 前面在仿真和现实导向离线条件下观察到的相对优势，
@@ -362,44 +376,46 @@ Phase-1 只比较：
 
 ## 8. 文档依赖关系
 
-本执行方案依赖以下文档：
+当前文档关系如下：
 
 - [phnode_realistic_validation_plan.md](phnode_realistic_validation_plan.md)
-- [phase1_comparison_matrix.md](phase1_comparison_matrix.md)
+  定义研究问题、证据层级和结论强度
+- [phase1_realistic_validation_plan.md](phase1_realistic_validation_plan.md)
+  定义新版轻量 Phase-1 的矩阵、实施工作包和决策规则
 - [v4_lite_protocol_spec.md](v4_lite_protocol_spec.md)
-- [phase1_implementation_checklist.md](phase1_implementation_checklist.md)
+  定义 `v4-lite` 的协议合同、边界和验收标准
 - [noise_design_v4_lite_traj_consistent_ic.md](noise_design_v4_lite_traj_consistent_ic.md)
+  定义 trajectory-consistent noisy IC 的研究动机和噪声语义
 
-它们之间的关系是：
+旧版归档：
 
-- 研究计划定义“为何做”
-- frozen matrix 定义“Phase-1 具体比较什么”
-- 本文档定义“何时做、先做什么”
-- `v4_lite_protocol_spec` 定义“协议必须长什么样”
-- `phase1_implementation_checklist` 定义“代码层面具体怎么拆任务”
+- [unused/phase1_comparison_matrix_legacy.md](unused/phase1_comparison_matrix_legacy.md)
+- [unused/phase1_implementation_checklist_legacy.md](unused/phase1_implementation_checklist_legacy.md)
 
 ---
 
-## 9. 当前建议的立即下一步
+## 9. 当前立即下一步
 
-在文档准备阶段结束后，建议立即进入以下顺序：
+建议下一步按以下顺序执行：
 
-1. 冻结 Phase-1 comparison matrix
-2. 完成 `v4-lite` 协议规格评审
-3. 按 checklist 拆实现任务
-4. 先做 protocol-level smoke，再做多模型 sweep
+1. 按 [phase1_realistic_validation_plan.md](phase1_realistic_validation_plan.md) 固化 `Phase-1A`
+2. 完成 `v4-lite` 协议规格复核
+3. 实现 protocol label、trajectory-consistent noise builder 和最小 reporting contract
+4. 先跑 `phnode_full` smoke
+5. 再跑三模型 smoke
+6. 最后跑三模型五 seed decision run
 
-不要跳过 smoke 直接全量跑。
+不要跳过 smoke 直接进入多模型全量 sweep。
 
 ---
 
 ## 10. 一句话执行摘要
 
-当前最合理的推进路线不是“直接做完整现实 benchmark”，而是：
+新版执行路线是：
 
 ```text
-先冻结 Phase-1 比较矩阵，
-再用最小、可解释的方式把 `v4-lite` 接入当前 pure dynamics 主线，
-先完成 Level A + Level B1 的稳定比较，
-之后再决定是否值得扩展到更强的 mismatch、OOD 与真实日志 replay。
+先用 OC-only、三模型、关键 seed 到五 seed 的轻量 Phase-1A，
+检查 PHNODE 结论是否对 noisy-state protocol 敏感；
+只有当模型结论被改变或归因仍不清楚时，才进入 Phase-1B，
+之后再考虑模型本体相关 OOD、current representation、参数漂移与真实日志 replay。
 ```

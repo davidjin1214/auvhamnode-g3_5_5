@@ -9,7 +9,7 @@
 3. 研究对象到底是 `phnode_full` 本身，还是更广义的 structured dynamics family
 4. 后续执行文档需要把哪些“计划中的协议”落成可运行实验
 
-因此，本文档**不默认任何尚未实现的协议已经存在**。像 `v4-lite`、更强的 mismatch benchmark、某些 OOD 评估等，在这里都被视为**拟实施的研究协议**，而不是现成事实。
+因此，本文档**不默认任何尚未实现的协议已经存在**。像 `v4-lite`、更强的模型本体相关 realism benchmark、某些 OOD 评估等，在这里都被视为**拟实施的研究协议**，而不是现成事实。
 
 ---
 
@@ -350,16 +350,16 @@ Level B 的目标不是“加更大的噪声”，而是引入更接近部署误
 
 它仍然属于“pure dynamics under imperfect state input”的范畴。
 
-#### Level B2：更强的 mismatch 与分布漂移
+#### Level B2：模型本体相关分布漂移
 
 这一层研究：
 
+- control / maneuver OOD
+- current-representation uncertainty
+- vehicle-parameter regime shift
 - actuator mismatch
-- current mismatch
-- 参数失配
-- OOD maneuver / OOD disturbance
 
-它更接近部署，但同时也更容易引入额外解释变量。因此它是重要证据，但不应被混同为唯一主线。
+它更接近部署，但仍必须优先服务于动力学模型本体的验证。凡是会把问题推向 observer、actuator subsystem 或完整系统联调的轴，都只能作为后续补充，而不能混同为主线。
 
 ### 10.3 Level C：真实日志离线 replay
 
@@ -458,13 +458,13 @@ known-current surrogate
 
 而不是把它写成完整现实 DR。
 
-### 12.3 Tier 3：current-estimation stress
+### 12.3 Tier 3：current-representation uncertainty
 
 这一层才研究：
 
-- `current mismatch`
-- `current bias`
-- current 可观测性不足带来的额外压力
+- current 表示误差
+- current bias
+- current statistics 或 current 可用性变化
 
 它和 Tier 2 不是同一个问题。
 
@@ -477,7 +477,7 @@ known-current surrogate
 不能自动推出：
 
 ```text
-模型对 current estimation error 也鲁棒。
+模型对 current representation uncertainty 也鲁棒。
 ```
 
 ### 12.4 Tier 4：真实日志离线 replay
@@ -504,9 +504,9 @@ known-current surrogate
 
 - noisy-state
 - bias-type errors
-- current-estimation errors
+- current-representation errors
 - actuator mismatch
-- vehicle-parameter mismatch
+- vehicle-parameter regime shift
 - OOD maneuvers
 
 如果这些轴被混在同一个“强压力测试”里，后面就很难解释：
@@ -521,15 +521,15 @@ known-current surrogate
 
 - 它仍属于 pure dynamics 主线
 - 它比 block-iid noisy IC 更接近 trajectory-consistent 的 navigation-like input
-- 它有助于分离“协议更真实”与“模型本身更强”这两个因素
+- 它有助于检查 PHNODE / structured dynamics 的结论是否依赖 block-iid noisy IC 这一简化假设
 
 但在本研究计划中，`v4-lite` 被视为：
 
 ```text
-拟实施的主协议候选
+拟实施的协议敏感性检查工具
 ```
 
-而不是当前已经存在的默认事实。
+而不是新的模型、observer 路线，或必须升级成主线的默认协议。
 
 这点必须与后续执行文档保持一致。
 
@@ -539,7 +539,7 @@ known-current surrogate
 
 `OOD maneuver / OOD disturbance` 是本计划的重要组成部分，但这里必须先给出研究定义，而不是只保留一个笼统标签。
 
-本计划接受以下几类 OOD：
+本计划接受以下几类模型本体相关 OOD：
 
 1. `control-family OOD`
    训练未见过的控制波形家族
@@ -554,7 +554,7 @@ known-current surrogate
 
 更合适的策略是：
 
-- 第一篇研究只选 1 到 2 个最有解释力的 OOD 轴
+- 第一篇研究只选 1 到 2 个最有解释力、最容易归因到动力学模型本体的 OOD 轴
 - 后续执行方案再给出其明确的数据划分与协议
 
 否则“OOD 更强”会退化成一个不可验证的笼统说法。
@@ -754,7 +754,7 @@ full PHNODE 可能比部分弱黑箱更强。
 解释：
 
 - 只能说明模型在 surrogate 条件下更好
-- 不能自动推出对 current-estimation uncertainty 也更鲁棒
+- 不能自动推出对 current-representation uncertainty 也更鲁棒
 
 ### 情况 F：Level C 也成立
 
@@ -807,12 +807,12 @@ full PHNODE 可能比部分弱黑箱更强。
 
 - [phnode_realistic_validation_execution_plan.md](phnode_realistic_validation_execution_plan.md)
   负责阶段划分、依赖关系、推进顺序与里程碑
-- [phase1_comparison_matrix.md](phase1_comparison_matrix.md)
-  负责冻结 Phase-1 的正式比较矩阵，避免实现阶段临时漂移
+- [phase1_realistic_validation_plan.md](phase1_realistic_validation_plan.md)
+  负责新版轻量 Phase-1 的决策矩阵、实施工作包、输出合同与进入扩展阶段的判断规则
 - [v4_lite_protocol_spec.md](v4_lite_protocol_spec.md)
   负责 `v4-lite` 的正式协议合同、实现边界与验收标准
-- [phase1_implementation_checklist.md](phase1_implementation_checklist.md)
-  负责当前主线 Phase-1 的具体任务拆分与完成标准
+- [unused/phase1_comparison_matrix_legacy.md](unused/phase1_comparison_matrix_legacy.md) 与 [unused/phase1_implementation_checklist_legacy.md](unused/phase1_implementation_checklist_legacy.md)
+  作为旧版 Phase-1 文档归档说明保留，当前方案不再引用其旧矩阵
 
 对于每个 planned protocol，执行文档至少应补全：
 
@@ -830,7 +830,7 @@ full PHNODE 可能比部分弱黑箱更强。
 
 - 它与当前 iid noisy-IC 的唯一区别是什么
 - 哪些变量必须 trajectory-consistent
-- 它要回答的科学问题是什么
+- 它要回答的协议敏感性问题是什么
 - 若结果为正/负，各自意味着什么
 
 只有做到这一步，研究计划才真正变成可运行的实验计划。

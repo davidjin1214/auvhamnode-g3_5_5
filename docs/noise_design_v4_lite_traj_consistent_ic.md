@@ -318,10 +318,10 @@ current_block_clean[0:T]
 - trajectory-consistent 噪声语义没有显著改变结论
 - 现阶段没有必要引入 `v4-B`
 
-如果 `v4-lite` 明显优于 `v3 / v4-A`，说明：
+如果 `v4-lite` 明显改变 `v3 / v4-A` 下的模型排序或退化规律，说明：
 
 - 噪声生成协议本身很重要
-- 当前主线应从 iid IC noise 升级为 trajectory-consistent IC noise
+- 当前 PHNODE 现实导向结论对 noisy-state protocol 敏感
 - 但仍然不等于必须进入 history-aware observer
 
 ---
@@ -374,11 +374,13 @@ current_block_clean[0:T]
 
 1. `phnode_full`
 2. `ablate_no_mass_prior`
+3. `ablate_no_lift`
 
 原因：
 
 - `phnode_full` 是主模型，必须保留
 - `ablate_no_mass_prior` 在现有 noisy 结果里更像稳定受益者
+- `ablate_no_lift` 在 clean 下强且稳，但 noisy 下出现新的异常 seed，可检验 `v4-lite` 是否伤害已有强结构
 - 只看 `phnode_full` 容易把结构效应误判成噪声协议效应
 
 若资源有限，不建议一开始扩到全部 baseline。
@@ -390,7 +392,7 @@ current_block_clean[0:T]
 对于当前 `oc` 主线，建议优先使用：
 
 ```text
-42, 43, 44, 45, 46, 47
+42, 43, 44, 45, 46
 ```
 
 原因：
@@ -398,6 +400,7 @@ current_block_clean[0:T]
 - 它们已经是当前结论讨论最充分的一组
 - 能直接对照现有 clean/noisy follow-up 结果
 - 更容易识别“是否只是修复单个 catastrophic seed”
+- `47` 的诊断边际低于 `42/44/46`，不再作为第一轮 `v4-lite` 决策 seed
 
 ## 9.5 推荐的最小实验表
 
@@ -411,6 +414,9 @@ current_block_clean[0:T]
 | `ablate_no_mass_prior` | clean | clean / iid noisy / traj-consistent noisy | 对照结构 |
 | `ablate_no_mass_prior` | iid noisy-IC | clean / iid noisy / traj-consistent noisy | 当前对照 |
 | `ablate_no_mass_prior` | v4-lite | clean / iid noisy / traj-consistent noisy | 稳定性对照 |
+| `ablate_no_lift` | clean | clean / iid noisy / traj-consistent noisy | clean 强结构对照 |
+| `ablate_no_lift` | iid noisy-IC | clean / iid noisy / traj-consistent noisy | 检查 noisy schedule 是否继续伤害该结构 |
+| `ablate_no_lift` | v4-lite | clean / iid noisy / traj-consistent noisy | 检查 trajectory consistency 是否缓解或放大 `seed44` 异常 |
 
 ---
 
@@ -449,16 +455,16 @@ current_block_clean[0:T]
 
 解释：
 
-- trajectory-consistent 噪声协议没有显著改变主结论
-- 当前 `v3 / v4-A` 已足够作为主线
+- trajectory-consistent 噪声协议没有显著改变 PHNODE / structured dynamics 主结论
+- 当前 `v3 / v4-A` 已足够支持第一轮模型本体判断
 - 不建议继续推进 `v4-B`
 
-#### B. `v4-lite` 稳定优于 `v3 / v4-A`
+#### B. `v4-lite` 改变 `v3 / v4-A` 结论
 
 解释：
 
-- 噪声生成协议本身对 robustness 结论有实质影响
-- 后续主线应采用 `v4-lite`
+- 噪声生成协议本身对模型排序或 robustness 结论有实质影响
+- 后续报告应把 `v4-lite` 作为主评估协议之一
 - 但这仍然属于纯 dynamics 主线，不应夸大为新模型
 
 #### C. `v4-lite` 只修复单个 catastrophic seed
@@ -479,7 +485,7 @@ current_block_clean[0:T]
 
 ## 11. 何时才值得进入 `v4-B`
 
-只有同时满足以下条件时，才建议把主线从 `v4-lite` 推进到 `v4-B`：
+只有同时满足以下条件时，才建议把研究问题从 pure dynamics 推进到 `v4-B`：
 
 1. `v4-lite` 已经实现并稳定评估
 2. `v4-lite` 相比 `v3 / v4-A` 仍然不能充分解释部署噪声下的误差模式
@@ -555,6 +561,6 @@ current_block_clean[0:T]
 升级为“trajectory-consistent posterior-like noisy IC”。
 ```
 
-它是当前项目最合适的下一步主线。
+它是当前项目最合适的下一步协议敏感性检查。
 
 在完成并验证这一步之前，不建议把 `v4-B` 作为主方案推进。
