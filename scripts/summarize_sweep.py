@@ -242,37 +242,63 @@ def _collect_rollout_profile_summaries(
     )
     roots.append(rollout_root)
 
+    profile_summaries: Dict[str, Dict] = {}
+
     for root in roots:
-        profile_summaries: Dict[str, Dict] = {}
         summary_path = root / "summary.json"
         if summary_path.exists():
-            label = selected_profile or "clean"
-            profile_summaries[label] = {
-                "summary_path": str(summary_path),
-                "summary": _read_json(summary_path),
-            }
+            summary = _read_json(summary_path)
+            profile = _rollout_profile_from_summary(selected_profile or "clean", summary)
+            if selected_profile and profile != selected_profile:
+                continue
+            protocol = _rollout_protocol_from_summary_payload(profile, summary)
+            key = _rollout_summary_key(profile, protocol)
+            profile_summaries.setdefault(
+                key,
+                {
+                    "summary_path": str(summary_path),
+                    "summary": summary,
+                    "eval_profile": profile,
+                    "eval_protocol": protocol,
+                },
+            )
         for child in sorted(root.iterdir()) if root.exists() else []:
             if not child.is_dir():
                 continue
             child_summary = child / "summary.json"
             if not child_summary.exists():
                 continue
-            if selected_profile and child.name != selected_profile:
+            summary = _read_json(child_summary)
+            profile = _rollout_profile_from_summary(child.name, summary)
+            if selected_profile and profile != selected_profile:
                 continue
-            profile_summaries[child.name] = {
-                "summary_path": str(child_summary),
-                "summary": _read_json(child_summary),
-            }
-        if selected_profile:
-            if selected_profile in profile_summaries:
-                return {selected_profile: profile_summaries[selected_profile]}
-            continue
-        if profile_summaries:
-            return {
-                profile: profile_summaries[profile]
-                for profile in _sorted_profiles(profile_summaries.keys())
-            }
-    return {}
+            protocol = _rollout_protocol_from_summary_payload(profile, summary)
+            key = _rollout_summary_key(profile, protocol)
+            profile_summaries.setdefault(
+                key,
+                {
+                    "summary_path": str(child_summary),
+                    "summary": summary,
+                    "eval_profile": profile,
+                    "eval_protocol": protocol,
+                },
+            )
+
+    profile_order = {name: idx for idx, name in enumerate(DEFAULT_PROFILE_PREFERENCE)}
+    return {
+        key: profile_summaries[key]
+        for key in sorted(
+            profile_summaries,
+            key=lambda item: (
+                profile_order.get(
+                    profile_summaries[item]["eval_profile"],
+                    len(profile_order),
+                ),
+                profile_summaries[item]["eval_profile"],
+                profile_summaries[item]["eval_protocol"],
+            ),
+        )
+    }
 
 
 def _resolve_local_run_dir(suite_dir: Path, run_dir: str) -> Path:
@@ -461,13 +487,42 @@ def _common_row_fields(artifact: Dict) -> Dict:
 
 
 def _profile_protocol_from_payload(profile: str, payload: Dict) -> str:
+    if isinstance(payload, dict) and payload.get("eval_protocol"):
+        return str(payload["eval_protocol"])
     noise_budget = payload.get("noise_budget") if isinstance(payload, dict) else None
     if isinstance(noise_budget, dict) and noise_budget.get("protocol"):
         return str(noise_budget["protocol"])
     return resolve_noise_protocol_for_profile(None, profile=profile)
 
 
+def _rollout_profile_from_summary(fallback_profile: str, summary: Dict) -> str:
+    profile = _safe_get(summary, "config", "noise_profile", default=None)
+    return str(profile or fallback_profile)
+
+
+def _rollout_protocol_from_summary_payload(profile: str, summary: Dict) -> str:
+    protocol = _safe_get(summary, "config", "noise_protocol", default=None)
+    if isinstance(protocol, str) and protocol:
+        return protocol
+    return resolve_noise_protocol_for_profile(None, profile=profile)
+
+
+def _rollout_summary_key(profile: str, protocol: str) -> str:
+    label = _protocol_label(protocol, profile)
+    return "clean" if label == "clean" else f"{label}:{profile}"
+
+
+def _eval_profile_from_payload(profile: str, payload: Dict) -> str:
+    if isinstance(payload, dict) and payload.get("eval_profile"):
+        return str(payload["eval_profile"])
+    if ":" in str(profile):
+        return str(profile).split(":", 1)[1]
+    return str(profile)
+
+
 def _rollout_protocol_from_summary(profile: str, payload: Dict) -> str:
+    if isinstance(payload, dict) and payload.get("eval_protocol"):
+        return str(payload["eval_protocol"])
     summary = payload.get("summary", {})
     protocol = _safe_get(summary, "config", "noise_protocol", default=None)
     if isinstance(protocol, str) and protocol:
@@ -537,8 +592,9 @@ def build_phase1_by_seed_rows(
             )
             rows.append(row)
 
-        for profile, payload in artifact["rollout_profiles"].items():
+        for profile_key, payload in artifact["rollout_profiles"].items():
             summary = payload["summary"]
+            profile = _eval_profile_from_payload(profile_key, payload)
             protocol = _rollout_protocol_from_summary(profile, payload)
             for horizon, horizon_key in zip(horizons, horizon_keys):
                 overall = _safe_get(summary, "overall", horizon_key, default={})
@@ -692,8 +748,9 @@ def build_phase1_by_scenario_rows(
                 )
                 rows.append(row)
 
-        for profile, payload in artifact["rollout_profiles"].items():
+        for profile_key, payload in artifact["rollout_profiles"].items():
             summary = payload["summary"]
+            profile = _eval_profile_from_payload(profile_key, payload)
             protocol = _rollout_protocol_from_summary(profile, payload)
             by_scenario = summary.get("by_scenario", {})
             for scenario, scenario_payload in sorted(by_scenario.items()):
@@ -1184,9 +1241,13 @@ def _phase1_matrix_payload(
                 for profile in artifact["heldout_profiles"].keys()
             ),
             "rollout": _sorted_profiles(
-                profile
+                (
+                    profile
+                    if profile == "clean" else
+                    f"{payload.get('eval_protocol', 'unknown')}:{payload.get('eval_profile', profile)}"
+                )
                 for artifact in artifacts
-                for profile in artifact["rollout_profiles"].keys()
+                for profile, payload in artifact["rollout_profiles"].items()
             ),
         },
     }

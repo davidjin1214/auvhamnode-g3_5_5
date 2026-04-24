@@ -15,7 +15,10 @@ from summarize_sweep import (
     DEFAULT_PROFILE_PREFERENCE,
     build_phase1_bundle,
     load_runs,
+    _protocol_label,
 )
+
+FROZEN_PHASE1_SEEDS = {42, 43, 44, 45, 46, 47}
 
 
 def _is_finite(value) -> bool:
@@ -69,6 +72,38 @@ def _sort_profiles(profiles: Iterable[str]) -> List[str]:
     return sorted(unique, key=lambda name: (order.get(name, len(order)), name))
 
 
+def _build_scope_notes(artifacts: List[Dict], dataset_paths: List[str]) -> List[str]:
+    notes = []
+    path_text = " ".join(dataset_paths).lower()
+    has_oc = "auv_oc" in path_text or "/oc" in path_text
+    has_noc = "auv_noc" in path_text or "/noc" in path_text
+    if has_oc and not has_noc:
+        notes.append(
+            "Scope: this report covers the OC known-current surrogate tier only; "
+            "the frozen Phase-1 matrix also includes the NOC tier, which is not part of this run."
+        )
+    elif has_noc and not has_oc:
+        notes.append(
+            "Scope: this report covers the NOC tier only; the OC known-current surrogate tier is not part of this run."
+        )
+
+    seeds = sorted({int(artifact["seed"]) for artifact in artifacts})
+    seed_set = set(seeds)
+    if seed_set != FROZEN_PHASE1_SEEDS:
+        missing = sorted(FROZEN_PHASE1_SEEDS - seed_set)
+        extra = sorted(seed_set - FROZEN_PHASE1_SEEDS)
+        detail = [f"actual seeds={','.join(str(seed) for seed in seeds)}"]
+        if missing:
+            detail.append(f"missing frozen seeds={','.join(str(seed) for seed in missing)}")
+        if extra:
+            detail.append(f"extra seeds={','.join(str(seed) for seed in extra)}")
+        notes.append(
+            "Seed scope: this is a reduced or non-standard matched-seed tranche "
+            f"({'; '.join(detail)}), not the full six-seed frozen matrix."
+        )
+    return notes
+
+
 def _pick_primary_profile(rows: List[Dict], *, source: str, requested: str | None) -> str | None:
     candidates = _sort_profiles(row["eval_profile"] for row in rows if row["source"] == source)
     if requested and requested in candidates:
@@ -95,6 +130,9 @@ def _aggregate_scenario_rows(rows: List[Dict]) -> List[Dict]:
                 row["train_noise_profile"],
                 row["train_noise_protocol"],
                 row["train_protocol_label"],
+                row["eval_profile"],
+                row["eval_protocol"],
+                row["eval_protocol_label"],
                 row["scenario"],
             )
         ].append(row)
@@ -107,6 +145,9 @@ def _aggregate_scenario_rows(rows: List[Dict]) -> List[Dict]:
             train_noise_profile,
             train_noise_protocol,
             train_protocol_label,
+            eval_profile,
+            eval_protocol,
+            eval_protocol_label,
             scenario,
         ) = key
         aggregates.append(
@@ -116,6 +157,9 @@ def _aggregate_scenario_rows(rows: List[Dict]) -> List[Dict]:
                 "train_noise_profile": train_noise_profile,
                 "train_noise_protocol": train_noise_protocol,
                 "train_protocol_label": train_protocol_label,
+                "eval_profile": eval_profile,
+                "eval_protocol": eval_protocol,
+                "eval_protocol_label": eval_protocol_label,
                 "scenario": scenario,
                 "rollout_completion_rate": _mean(item["rollout_completion_rate"] for item in items),
                 "rollout_model_failed_rate": _mean(item["rollout_model_failed_rate"] for item in items),
@@ -146,6 +190,8 @@ def _aggregate_degradation_rows(rows: List[Dict]) -> List[Dict]:
                 row["train_protocol_label"],
                 row["source"],
                 row["eval_profile"],
+                row["eval_protocol"],
+                row["baseline_eval_protocol"],
                 row["metric_name"],
                 _horizon_group_key(row["horizon_s"]),
             )
@@ -162,6 +208,8 @@ def _aggregate_degradation_rows(rows: List[Dict]) -> List[Dict]:
             train_protocol_label,
             source,
             eval_profile,
+            eval_protocol,
+            baseline_eval_protocol,
             metric_name,
             horizon_key,
         ) = key
@@ -175,6 +223,9 @@ def _aggregate_degradation_rows(rows: List[Dict]) -> List[Dict]:
                 "train_protocol_label": train_protocol_label,
                 "source": source,
                 "eval_profile": eval_profile,
+                "eval_protocol": eval_protocol,
+                "eval_protocol_label": _protocol_label(eval_protocol, eval_profile),
+                "baseline_eval_protocol": baseline_eval_protocol,
                 "metric_name": metric_name,
                 "horizon_s": float("nan") if horizon_key is None else horizon_key,
                 "ratio_to_clean_mean": _mean(item["ratio_to_clean"] for item in items),
@@ -194,6 +245,10 @@ def _metric_lookup(rows: List[Dict]) -> Dict[tuple, Dict]:
             row["metric_name"],
             row["source"],
             row["eval_profile"],
+            row.get(
+                "eval_protocol_label",
+                _protocol_label(row.get("eval_protocol", ""), row["eval_profile"]),
+            ),
             _horizon_group_key(row["horizon_s"]),
         ): row
         for row in rows
@@ -217,6 +272,7 @@ def build_report_text(
     degradation_rows = bundle["degradation_rows"]
 
     dataset_paths = sorted({artifact["dataset_path"] for artifact in artifacts if artifact["dataset_path"]})
+    scope_notes = _build_scope_notes(artifacts, dataset_paths)
     rollout_model_rows = [
         row
         for row in model_rows
@@ -288,6 +344,7 @@ def build_report_text(
                     and candidate["train_protocol_label"] == row["train_protocol_label"]
                     and candidate["source"] == "rollout"
                     and candidate["eval_profile"] == primary_rollout_profile
+                    and candidate["eval_protocol_label"] == row["eval_protocol_label"]
                     and _same_horizon(candidate["horizon_s"], horizon)
                 ),
                 None,
@@ -297,6 +354,7 @@ def build_report_text(
         horizon_row = [
             f"{row['group']}/{row['model_type']}",
             _train_display(row),
+            row["eval_protocol_label"],
         ]
         for horizon in horizons:
             candidate = horizon_lookup[horizon]
@@ -323,6 +381,7 @@ def build_report_text(
         [
             f"{row['group']}/{row['model_type']}",
             _train_display(row),
+            row["eval_protocol_label"],
             row["scenario"],
             _fmt_pct(row["rollout_completion_rate"]),
             _fmt_pct(row["rollout_model_failed_rate"]),
@@ -345,6 +404,7 @@ def build_report_text(
             "rollout_final_position_error_median",
             "rollout",
             primary_rollout_profile,
+            row["eval_protocol_label"],
             primary_horizon,
         )
         completion_key = (
@@ -354,6 +414,7 @@ def build_report_text(
             "rollout_completion_rate",
             "rollout",
             primary_rollout_profile,
+            row["eval_protocol_label"],
             primary_horizon,
         )
         pos_entry = degradation_lookup.get(pos_key)
@@ -364,6 +425,7 @@ def build_report_text(
             [
                 f"{row['group']}/{row['model_type']}",
                 _train_display(row),
+                row["eval_protocol_label"],
                 _fmt(pos_entry["ratio_to_clean_mean"] if pos_entry else float("nan"), 3),
                 _fmt_pct(
                     (completion_entry["degradation_pct_mean"] / 100.0)
@@ -386,13 +448,19 @@ def build_report_text(
     ]
     clean_replay_lookup = _metric_lookup(clean_replay_candidates)
     nonclean_rollout_rows = [row for row in rollout_model_rows if row["train_protocol_label"] != "clean"]
+    clean_replay_seen = set()
     for row in nonclean_rollout_rows:
+        replay_key = (row["group"], row["model_type"], row["train_protocol_label"])
+        if replay_key in clean_replay_seen:
+            continue
+        clean_replay_seen.add(replay_key)
         heldout_key = (
             row["group"],
             row["model_type"],
             row["train_protocol_label"],
             "heldout_position_rmse_mean",
             "heldout",
+            "clean",
             "clean",
             None,
         )
@@ -402,6 +470,7 @@ def build_report_text(
             row["train_protocol_label"],
             "rollout_final_position_error_median",
             "rollout",
+            "clean",
             "clean",
             _horizon_group_key(primary_horizon),
         )
@@ -442,7 +511,8 @@ def build_report_text(
         lines.append(
             f"- Best rollout aggregate at `{primary_horizon:.0f}s` / `{primary_rollout_profile}` is "
             f"`{best_model['group']}/{best_model['model_type']}` under train protocol "
-            f"`{_train_display(best_model)}`, with "
+            f"`{_train_display(best_model)}` and eval protocol "
+            f"`{best_model['eval_protocol_label']}`, with "
             f"`pos median={_fmt(best_model['rollout_final_position_error_median_mean'], 4)} m` and "
             f"`completion={_fmt_pct(best_model['rollout_completion_rate_mean'])}`."
         )
@@ -469,6 +539,7 @@ def build_report_text(
         [
             f"{row['group']}/{row['model_type']}",
             _train_display(row),
+            row["eval_protocol_label"],
             row["seeds"],
             _fmt(row["rollout_final_position_error_median_mean"], 4),
             _fmt(row["rollout_final_position_error_p95_mean"], 4),
@@ -495,6 +566,7 @@ def build_report_text(
             row["run_name"],
             f"{row['group']}/{row['model_type']}",
             _train_display(row),
+            row["eval_protocol_label"],
             str(row["seed"]),
             _fmt(row["rollout_final_position_error_median"], 4),
             _fmt(row["rollout_final_position_error_p95"], 4),
@@ -504,7 +576,17 @@ def build_report_text(
         for row in rollout_seed_rows
     ]
 
-    horizon_headers = ["Model", "Train", *[f"Pos @{h:.0f}s" for h in horizons], f"Completion @{primary_horizon:.0f}s"]
+    horizon_headers = [
+        "Model",
+        "Train",
+        "Eval",
+        *[f"Pos @{h:.0f}s" for h in horizons],
+        f"Completion @{primary_horizon:.0f}s",
+    ]
+
+    if scope_notes:
+        lines.extend(["", "## Scope", ""])
+        lines.extend(f"- {note}" for note in scope_notes)
 
     lines.extend(
         [
@@ -515,6 +597,7 @@ def build_report_text(
                 [
                     "Model",
                     "Train",
+                    "Eval",
                     "Seeds",
                     "Pos Median",
                     "Pos P95",
@@ -548,6 +631,7 @@ def build_report_text(
                 [
                     "Model",
                     "Train",
+                    "Eval",
                     "Scenario",
                     "Completion",
                     "Model Fail",
@@ -565,6 +649,7 @@ def build_report_text(
                     "Run",
                     "Model",
                     "Train",
+                    "Eval",
                     "Seed",
                     "Pos Median",
                     "Pos P95",
@@ -586,6 +671,7 @@ def build_report_text(
                     [
                         "Model",
                         "Train",
+                        "Eval",
                         "Pos/Clean Ratio",
                         "Completion Drop",
                         "Pos Degradation",
@@ -620,6 +706,7 @@ def build_report_text(
             "## Notes",
             "",
             "- `Train` uses `clean` or `protocol/profile` so Phase-1 can distinguish clean, iid noisy-IC, and `v4-lite` training runs.",
+            "- `Eval` distinguishes iid noisy-state and `v4-lite` noisy-state rollout rows when both are present for the same profile.",
             "- Rollout sections use the selected primary eval profile for headline tables and keep `10s/30s/60s` in the horizon table.",
             "- `Clean To ... Degradation` compares noisy eval against the same run's clean eval.",
             "- `Clean Replay Cost` compares a noisy-trained run's clean eval against the matched clean-trained baseline with the same model and seed when available.",
