@@ -442,3 +442,43 @@ canonical 视图也是按这个键从原始 rollout 长表中过滤得到。
 1. run 级 join 一律优先使用 `run_uid`
 2. rollout 级 join 一律优先使用 `(run_uid, rollout_run_id, eval_profile)`
 3. 默认图表优先从 canonical 表读取，而不是在脚本里临时重写选择规则
+
+---
+
+## 6. 计划增补字段（2026-05-13 起，受 phnode_full clean provenance audit 驱动）
+
+详细背景见 [docs/provenance_audit_phnode_full_clean.md](provenance_audit_phnode_full_clean.md)。
+
+`run_inventory.csv`（以及继承自它的 `canonical_run_inventory.csv`）当前缺少**代码 provenance** 与**环境 provenance** 两类字段，导致同一 dataset/seed 在不同云端镜像或不同 PyTorch/CUDA 版本下跑出的 run 无法被识别为「来自不同环境」。下表给出推荐增补字段：
+
+| 新字段 | 含义 | 来源 / 落盘约定 |
+| --- | --- | --- |
+| `code_revision` | 训练时本地 g3_5_5 仓库 `git rev-parse HEAD` 输出。云端镜像（auvhamnode/g3_5_5、auvhamnode/g3_5_7 等）不是 git 仓库时，由本地人工写入对应同步 commit hash | 训练 wrapper 在 `<run_dir>/_audit_meta/code_revision.txt` 写入；catalog build 时读取并写入 `run_inventory.csv` |
+| `code_dirty_diff_hash` | 训练时 `git diff HEAD` 的 sha256（若 working tree 干净则为 `clean`） | 同上 |
+| `environment_fingerprint` | `python_version / torch_version / cuda_version / cudnn_version / gpu_name` 的拼接字符串 | 训练 wrapper 在 `<run_dir>/_audit_meta/environment.txt` 写入；catalog build 时拼接为单字段 |
+| `cloud_mirror` | 训练时云端工作目录的尾段（如 `auvhamnode/g3_5_5` / `auvhamnode/g3_5_7`）；本地训练为 `local` | 从 `config.json` 的 `dataset_path` 或 training.log 第一行抓取 |
+| `evidence_status` | `current` / `stale_environment_drift` / `stale_code_drift` / `superseded_by_<run_uid>` | 人工标记，可选；存放于 sidecar 文件 `evidence_status_overrides.csv`（schema: `run_uid, evidence_status, reason, set_at`），catalog build 时 left-join 到 `run_inventory.csv` |
+
+### 6.1 落地路径
+
+1. `notebook/phase3_provenance_audit_seed46_replay.ipynb` 已示范 `_audit_meta/code_revision.txt` 与 `_audit_meta/environment.txt` 的写入约定（参见 Cell 10、Cell 20）
+2. 修改 `scripts/train_all_models_noise_profile.sh` 在每个 run 启动前写入相同两个文件
+3. 修改 `scripts/build_oc_data_catalog.py`，扫描 `<run_dir>/_audit_meta/` 并在 `run_inventory.csv` 增补新字段；若 `_audit_meta/` 缺失，新字段填 `unknown`（不留空，便于筛选历史 run）
+4. 增设 sidecar `analysis/oc_data_catalog/evidence_status_overrides.csv`，初始内容应至少标记两条本次 audit 影响的 run（详见下文）
+
+### 6.2 本次 audit 已知 evidence_status overrides
+
+以下 catalog run_uid 在下次 catalog 重建时应标 `evidence_status = stale_environment_drift`：
+
+| run_uid | reason |
+| --- | --- |
+| `sweep_oc_core_default_auv_oc_traj1000_blk150_s23_d0be9434_s42-43-44_20260404_115414/main_phnode_full_seed42` | catalog g3_5_5 mirror 环境耦合训练动态偶然（best_loss=2.10e-02, 远高于 cleanrun v1 的 4.02e-03） |
+| `sweep_oc_phnode_focus_extra3_auv_oc_traj1000_blk150_s23_d0be9434_s45-46-47/main_phnode_full_seed46` | catalog g3_5_5 mirror 环境耦合训练发散（epoch 21 后崩溃，275 行 "no successful training batches"） |
+
+如需补全：catalog `ablate_no_lift seed43 clean` 也存在类似异常（best_epoch=19, best_loss=0.22, 60s ≈ 44 m），同时期同环境，可一并标 `stale_environment_drift`，但 Phase 3 audit 未独立验证该 run，建议在 WP-Frag 重训后再正式标记。
+
+### 6.3 增补字段对现有引用的兼容性
+
+- 现有脚本读 `run_inventory.csv` 时按字段名读取，新增列**不影响**旧字段位置或类型
+- canonical 视图（`canonical_run_inventory.csv`）以同样方式继承新字段
+- 报告中若直接引用 catalog 表里的某条 run，建议同时引用 `code_revision` / `cloud_mirror` / `evidence_status`，以免再次发生本次 audit 这种"看似同一个实验但实际环境不同"的 provenance 混淆

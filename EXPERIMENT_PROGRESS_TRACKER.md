@@ -269,16 +269,36 @@ REMUS100 simulation
 
 ## 7. 当前正式可引用结论
 
-1. 在 `oc` clean setting 下，`baseline/phnode_qforce` 是当前 all-seed 最强整体模型。
-2. 在 PHNODE family 内，clean all-seed 下 `ablation/ablate_no_lift` 当前最稳。
-3. `main/phnode_full` 有强 stable cluster，但存在真实 bad-outlier seeds：`42` 与 `46`。
-4. noisy training 不是普适增强；它与模型结构强耦合。
-5. noisy training 对 `phnode_full` 的主要收益是修复 `seed46`，不是普遍降低全部 seed 的误差。
-6. `ablate_no_mass_prior` 是当前最稳定受益于 noisy training 的结构模型。
-7. `ablate_bu_only` 的退化是结构性的，actuation-conditioning 相关结构应保留。
-8. coupled damping 有明确价值。
-9. 当前 mass prior 尚未显示出不可替代性。
-10. `v4-lite` 目前只能写成已实现并通过 smoke/probe 的协议方向，不能写成已完成正式决策实验。
+> **2026-05-13 修订说明**：2026-05-12 完成的 provenance audit（详见
+> [docs/provenance_audit_phnode_full_clean.md](docs/provenance_audit_phnode_full_clean.md)）确认 catalog 时代
+> `main/phnode_full clean seed42/46` 灾难性训练发散是**与云端环境非确定性耦合的偶然事件**，不是模型/代码缺陷。
+> 在当前 main HEAD（`7643dc9`, g3_5_7 镜像环境）下，seed46 重跑收敛到 best_loss=4.05e-03 / 60s rollout
+> pos_err_median=0.4558 m，与 cleanrun v1 C46 浮点 bit-identical，fragility 不复现。
+> 受影响结论按下表标注：
+
+| 状态标签 | 说明 |
+| --- | --- |
+| **current** | 不受 fragility audit 影响，继续有效 |
+| **stale_environment_drift** | 直接依赖 catalog 时代 seed42/46 fragility 的结论，证据链断裂，不再可引用 |
+| **needs_recheck** | 部分依赖 fragility，但有独立证据支持，需在 cleanrun v1 ≡ current main 基线下重新背书 |
+
+1. 在 `oc` clean setting 下，`baseline/phnode_qforce` 是当前 all-seed 最强整体模型。 **[current]**
+2. 在 PHNODE family 内，clean all-seed 下 `ablation/ablate_no_lift` 当前最稳。 **[needs_recheck]** — catalog `ablate_no_lift seed43 clean` 也存在异常（best_epoch=19, best_loss=0.22, 60s ≈ 44 m），与 seed46 fragility 同环境，应在 cleanrun v1 ≡ current main 重训后重新判断。
+3. ~~`main/phnode_full` 有强 stable cluster，但存在真实 bad-outlier seeds：`42` 与 `46`。~~ **[stale_environment_drift]** — seed42/46 outlier 是 catalog 时代云端 g3_5_5 镜像环境（PyTorch/CUDA/cuDNN 版本未记录）下的偶然训练发散；在 cleanrun v1（g3_5_7 镜像）与 Phase 3 audit（current main on g3_5_7）下两 seed 均收敛正常，不应继续作为模型脆弱性论据。
+4. noisy training 不是普适增强；它与模型结构强耦合。 **[needs_recheck]** — 该结论原本依赖 §7.5 「noisy training 修复 seed46」，§7.5 stale 后需以 ablate_no_lift seed44 / ablate_no_mass_prior 收益等独立证据重新背书。
+5. ~~noisy training 对 `phnode_full` 的主要收益是修复 `seed46`，不是普遍降低全部 seed 的误差。~~ **[stale_environment_drift]** — 「待修复的 seed46 脆弱性」本身已被 audit 推翻；该因果链不再成立。
+6. `ablate_no_mass_prior` 是当前最稳定受益于 noisy training 的结构模型。 **[current]** — 独立证据，不依赖 phnode_full clean fragility。
+7. `ablate_bu_only` 的退化是结构性的，actuation-conditioning 相关结构应保留。 **[current]**
+8. coupled damping 有明确价值。 **[current]**
+9. 当前 mass prior 尚未显示出不可替代性。 **[current]**
+10. `v4-lite` 目前只能写成已实现并通过 smoke/probe 的协议方向，不能写成已完成正式决策实验。 **[current]**
+
+### 7.A 修订后的 fragility 表述
+
+- catalog `phnode_full clean seed42/46` 60s rollout 11 m 5-seed mean **不应作为模型脆弱性证据**。
+- 同口径锁定（clean+clean, 60s, 5-seed mean of pos_err_median）下，正确基线是 cleanrun v1 ≡ current main = **0.6767 m**。
+- 若需引用 catalog 时代该数据，必须同时引用 [docs/provenance_audit_phnode_full_clean.md](docs/provenance_audit_phnode_full_clean.md) 作为环境耦合说明。
+- WP-Frag（在新基线下重训 catalog §12 矩阵）作为可选工单留待用户决策启动；不启动也不影响调查闭环。
 
 ## 8. 长期跟踪办法
 
@@ -311,3 +331,4 @@ REMUS100 simulation
 |---|---|
 | 2026-04-25 11:44:54 CST (+0800) | 创建初版，完成 README、docs、catalog、checkpoint report 状态梳理。 |
 | 2026-04-25 11:50:10 CST (+0800) | 新增机器可读进展表 `analysis/experiment_progress_log.csv`，并将长期跟踪方案落地为 Markdown + CSV 双层结构。 |
+| 2026-05-13 CST (+0800) | 完成 phnode_full clean provenance audit（详见 [docs/provenance_audit_phnode_full_clean.md](docs/provenance_audit_phnode_full_clean.md)）。§7 受影响结论按 stale_environment_drift / needs_recheck / current 三档标注。catalog 时代 seed42/46 fragility 不再可作为模型脆弱性引用，新基线为 cleanrun v1 ≡ current main = 0.6767 m。 |

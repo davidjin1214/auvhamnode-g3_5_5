@@ -74,3 +74,10 @@ wandb/
 analysis/*
 !analysis/experiment_progress_log.csv
 !analysis/provenance_audit/
+!analysis/oc_data_catalog/
+analysis/oc_data_catalog/*
+!analysis/oc_data_catalog/evidence_status_overrides.csv
+# Phase 3 audit retrain run products (training.log / best_model.pt / tarball) are too large for git
+# Keep only the markdown findings + scripts; the raw run lives on Drive and can be re-downloaded.
+analysis/provenance_audit/phase3_retrain/audit_phase3_seed46_clean_*/
+analysis/provenance_audit/phase3_retrain/*.tar.gz

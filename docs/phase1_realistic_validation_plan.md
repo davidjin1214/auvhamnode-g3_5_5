@@ -65,6 +65,21 @@ Phase-1 分成两个层级。
 
 这一区分很重要：`Phase-1A` 的结果只用于判断当前模型结论是否被协议选择影响；`Phase-1B` 才开始接近论文主结果矩阵。
 
+### 3.1 Phase-1A 决策的环境-provenance 前提
+
+**`Phase-1A` 决策的有效性依赖一个底层前提：seed 之间的差异反映模型 / 协议差异，而非环境-训练动态的偶然耦合**。
+
+2026-05-12 完成的 provenance audit（详见 [docs/provenance_audit_phnode_full_clean.md](provenance_audit_phnode_full_clean.md)）确认：catalog 时代 `main/phnode_full clean seed42/46` 的训练发散（best_loss 卡在 0.27 / epoch 21，275 行 "no successful training batches"）实际上是**云端 g3_5_5 镜像 cuDNN 算法选择 + epoch 24 极端 batch 的偶然耦合事件**，与模型架构、git 代码、dataset、显式超参全部无关。同一份代码 + 同一份 dataset + 同一个 seed 在 g3_5_7 镜像（PyTorch 2.10 / CUDA 12.8 / cuDNN 91002 / L4 GPU）下重跑收敛到 best_loss=4.05e-03，与 cleanrun v1 浮点 bit-identical。
+
+这对 Phase-1A 的影响：
+
+1. **5-seed 协议矩阵中任意 seed 的灾难性 outlier，必须先以 environment provenance 验证再作为协议决策证据**。「同 dataset / 同 seed / 同代码但显著不同结果」是云端环境差异的红旗，不是协议比较的有效信号
+2. **Phase-1A 启动前必须把 catalog 时代受影响的 run 标 `evidence_status = stale_environment_drift`**（已 sidecar 落盘于 `analysis/oc_data_catalog/evidence_status_overrides.csv`），并以 cleanrun v1 ≡ current main 为新基线
+3. **Phase-1A 的每个 run 都必须落盘 `_audit_meta/code_revision.txt` 和 `_audit_meta/environment.txt`**（参见 `notebook/phase3_provenance_audit_seed46_replay.ipynb` 的示范），catalog build 时合并到 `run_inventory.csv` 的新 schema 字段中
+4. **若 Phase-1A 任一 seed 仍出现训练发散，必须先排查是否为云端环境偶然（不同 GPU、不同 PyTorch 版本、cuDNN benchmark 算法切换），再做协议归因**。重训一次（在 different GPU 或 different PyTorch build 下）可以快速判定
+
+由于 catalog 时代的 phnode_full clean seed42/46 fragility 已确认为环境偶然、不复现于 current main，**§7.3 / §7.5 (EXPERIMENT_PROGRESS_TRACKER) 不再可作为 Phase-1A 决策的「待解释 fragility」**。Phase-1A 决策矩阵应以 cleanrun v1 5-seed 收敛基线（5-seed mean of 60s clean pos_err_median = 0.6767 m）为出发点。
+
 ---
 
 ## 4. Phase-1A：最小决策矩阵

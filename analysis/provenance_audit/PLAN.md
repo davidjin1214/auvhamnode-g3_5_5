@@ -33,6 +33,32 @@
 → 如果当前 main 仍发散 → Phase 3 Setup B git bisect 找出 cleanrun v1 时代修复发散的具体 commit
 → 如果当前 main 已收敛 → Phase 3 简化为 cfg/dataset/code path 单变量 swap 找出哪个变更解释了"自愈"
 
+## Phase 3 结果（2026-05-12 已完成 — Setup A 缩小版）
+
+完整结论见 `phase3_retrain/findings.md`。Run dir: `phase3_retrain/audit_phase3_seed46_clean_20260512_095957/`。
+
+- 云端 Colab L4 / PyTorch 2.10 / CUDA 12.8 上重跑 `phnode_full clean seed46`，本地 git commit = `7643dc9`
+- **判读 = Signal B（fragility 已完全自愈）**：best_epoch=250 / best_test_loss=4.0471e-03 / 60s clean pos_err_median=0.4558 m，"no successful training batches" 行数=0
+- **额外强信号**：与 cleanrun v1 C46 在 60s clean rollout 的 mean / median / p90 / p95 / max **浮点完全相同**（IEEE 754 bit-identical），best_epoch / best_test_loss 也一致 → 当前 main 与 cleanrun v1 时代代码在 clean 训练路径上**数值等价**
+- 与 catalog A46 (best_epoch=21 / loss=0.27 / 60s 47 m) 的 gap 维持在 103× — 修复 commit 必在 2026-04-04 ↔ 2026-04-26 之间，且至今保留在 main 中
+
+→ Phase 3 已确凿回答 "fragility 在当前 main 上是否复现" = **不复现**。
+→ Phase 3 Setup B (git bisect) 转为可选：bisect 只为确定**修复 commit 的身份**，不影响 Phase 4 主结论。
+→ Phase 4 立即可启动；可选并行做 g3_5_5 git log 在 `[2026-04-04, 2026-04-26]` 区间对 `AUVHamNODE.py / train_utils.py / auv_baselines.py` 的 diff 审阅，定位修复 commit。
+
+## Phase 3 选项 2 结果（2026-05-12 已完成 — git log 区间 diff）
+
+完整证据见 `phase3_retrain/code_fix_search.md`。
+
+- 区间内 28 个 commit，触及训练代码的 11 个；`AUVHamNODE.py` / `auv_baselines.py` **完全无 diff**；`train_utils.py` (+1641) / `train_auv_hamnode.py` (+296) 改动**全部围绕 noise v1→v2 重构与 v4_lite 协议**，对 clean 训练路径数学等价 / no-op
+- `_run_epoch / train / se3_trajectory_loss / StateNormalizer.from_dataset / DataLoader+RNG 初始化` 在 a2ca101 (catalog era) vs 41fd824 (cleanrun v1 era) **逐行等价**
+- **Smoking-gun**：catalog A46 与 Phase 3 audit（current main, 7643dc9）在 **Epoch 1+2 完全 bit-identical**（Train 4.3572e+00 / Test 5.0488e+00 等位等数），Epoch 3 开始数值漂移
+- Phase 3 audit 在 Epoch 13 也曾遭遇 train_loss=31.17（接近 catalog epoch 24 的 23.78），但**侥幸恢复**；catalog A46 epoch 24 → 25 直接爆炸到 4.68e+25 → inf
+- catalog A46 dataset 路径写明 `auvhamnode/g3_5_5`，cleanrun v1 / Phase 3 audit 路径写明 `auvhamnode/g3_5_7` — **两份独立云端镜像，环境版本未记录**
+
+→ **结论：fragility 来源不是任何 git commit，而是「特定环境（云端 g3_5_5 镜像 PyTorch/CUDA/cuDNN 版本）+ 特定 seed46 cuDNN 算法选择 + epoch 24 极端 batch」三者耦合的 stochastic 偶然事件**。
+→ catalog A42/A46 行应标 `evidence_status = stale`（受未记录环境因素影响）；防再发生 → `run_inventory.csv` 必须增补 `code_revision` + `environment` 字段。
+
 ## Phase 1 — 静态 provenance 对齐（不消耗算力）
 
 ### 1.1 锁定要比对的具体 run
