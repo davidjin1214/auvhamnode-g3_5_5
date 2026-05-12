@@ -368,14 +368,23 @@ def cmd_validate(args: argparse.Namespace) -> int:
     return 0
 
 
+def _phase1a_protocol_tag_from_suite_name(suite_name: str) -> str | None:
+    name = Path(suite_name).name.lower()
+    for phase_prefix in PHASE_PREFIXES:
+        marker = f"sweep_oc_phase1a_{phase_prefix}_"
+        if not name.startswith(marker):
+            continue
+        protocol_tag = name[len(marker):].split("_", 1)[0]
+        if protocol_tag in PROTOCOL_TAGS:
+            return protocol_tag
+    return None
+
+
 def _proxy_prefix(suite_name: str) -> str:
-    lowered = suite_name.lower()
-    if "v4lite" in lowered:
-        return "v4lite"
-    if "iid" in lowered:
-        return "iid"
-    if "clean" in lowered:
-        return "clean"
+    protocol_tag = _phase1a_protocol_tag_from_suite_name(suite_name)
+    if protocol_tag:
+        return protocol_tag
+    lowered = Path(suite_name).name.lower()
     return lowered.replace("sweep_oc_", "").replace("/", "_")
 
 
@@ -410,7 +419,10 @@ def _rewrite_proxy_manifest_paths(suite_dir: Path) -> None:
 
 
 def _validation_path_from_v4_suite(checkpoint_root: Path, suite_names: list[str]) -> Path | None:
-    v4_suites = [name for name in suite_names if "v4lite" in name.lower()]
+    v4_suites = [
+        name for name in suite_names
+        if _phase1a_protocol_tag_from_suite_name(name) == "v4lite"
+    ]
     if not v4_suites:
         return None
     run_dir = _first_run_dir(checkpoint_root / v4_suites[0])
