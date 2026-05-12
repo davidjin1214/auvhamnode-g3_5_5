@@ -71,5 +71,5 @@ data/
 *.pth
 *.pt
 wandb/
-analysis/
-
+analysis/*
+!analysis/experiment_progress_log.csv
