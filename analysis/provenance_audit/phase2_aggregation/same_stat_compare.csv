@@ -1,0 +1,11 @@
+source,seed,per_seed_value_60s_pos_err_median,note
+catalog,42,4.49,4-rollout per-seed mean of median
+catalog,43,0.58,4-rollout per-seed mean of median
+catalog,44,0.45,4-rollout per-seed mean of median
+catalog,45,0.80,4-rollout per-seed mean of median
+catalog,46,46.89,4-rollout per-seed mean of median (catastrophic divergence)
+cleanrun_v1,42,0.6110,single rollout pos_err_median
+cleanrun_v1,43,0.6793,single rollout pos_err_median
+cleanrun_v1,44,1.2059,single rollout pos_err_median
+cleanrun_v1,45,0.4316,single rollout pos_err_median
+cleanrun_v1,46,0.4558,single rollout pos_err_median (convergence ok)

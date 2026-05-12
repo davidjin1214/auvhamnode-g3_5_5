@@ -21,6 +21,18 @@
   5. catalog `run_inventory.csv` 仍缺 `code_revision`，无法直接 commit-level diff
 - Phase 3 Setup A 可缩小为只重跑 seed46 clean 一个 run（< 1 min）做立即判定
 
+## Phase 2 结果（2026-05-12 已完成）
+
+- 见 `phase2_aggregation/aggregation_diff.md` 与 `phase2_aggregation/same_stat_compare.csv`
+- 报告 §12 的 11 m vs 0.96 m 包含三层口径不一致：clean vs nominal_eval、mean vs median、4-rollout-per-seed vs 1-rollout-per-seed
+- 同口径对齐 (clean+clean, 60s, 5-seed mean of pos_err_median)：catalog **10.64 m** vs cleanrun v1 **0.6767 m**，gap = **15.7×**
+- per-seed ratio：seed46 **103×**, seed42 **7.3×**, seed43/44/45 持平或 cleanrun v1 反而更差 → gap **完全由 catalog 时代 seed46+seed42 训练异常驱动**
+- cleanrun v1 seed46 60s pos_err_median = **0.4558 m**（catalog 时代是 46.89 m） → fragility 在 cleanrun v1 一侧已确凿消失
+
+→ Phase 3 行动收敛：在当前 main 重跑 seed46 clean 一个 run，验证 fragility 在当前代码上是否仍可复现。
+→ 如果当前 main 仍发散 → Phase 3 Setup B git bisect 找出 cleanrun v1 时代修复发散的具体 commit
+→ 如果当前 main 已收敛 → Phase 3 简化为 cfg/dataset/code path 单变量 swap 找出哪个变更解释了"自愈"
+
 ## Phase 1 — 静态 provenance 对齐（不消耗算力）
 
 ### 1.1 锁定要比对的具体 run
