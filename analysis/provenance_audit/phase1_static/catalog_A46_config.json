@@ -1,0 +1,170 @@
+{
+  "model_type": "phnode_full",
+  "hidden_dim": 128,
+  "coupled_damping": true,
+  "include_depth_in_potential": false,
+  "batch_size": 4096,
+  "num_epochs": 300,
+  "learning_rate": 0.006,
+  "min_learning_rate": 0.0001,
+  "warmup_steps": 400,
+  "total_steps": 5000,
+  "weight_decay": 0.0001,
+  "ode_solver": "rk4",
+  "so3_regularization_weight": 0.001,
+  "actuator_loss_weight": 0.2,
+  "log_interval": 1,
+  "save_interval": 50,
+  "save_dir": "/content/drive/MyDrive/Colab Notebooks/auvhamnode/g3_5_5/checkpoints/sweep_oc_phnode_focus_extra3_auv_oc_traj1000_blk150_s23_d0be9434_s45-46-47",
+  "run_name": "main_phnode_full_seed46",
+  "device": "cuda:0",
+  "seed": 46,
+  "init_state_noise": false,
+  "init_rot_std": 0.005,
+  "velocity_noise_std": [
+    0.02,
+    0.01,
+    0.01,
+    0.005,
+    0.005,
+    0.005
+  ],
+  "actuator_noise_std": [
+    0.001,
+    0.001,
+    5.0
+  ],
+  "observation_noise": false,
+  "observation_noise_scale": 0.5,
+  "observation_bias": false,
+  "noise_ramp_epochs": 100,
+  "velocity_bias_std": [
+    0.005,
+    0.003,
+    0.003,
+    0.001,
+    0.001,
+    0.001
+  ],
+  "current_noise_std": 0.05,
+  "ocean_current": true,
+  "absolute_depth_context": false,
+  "u_dim": 3,
+  "dj_current_feature": "current_body",
+  "actuation_current_feature": "current_body",
+  "mass_init": "remus",
+  "mass_init_path": null,
+  "t_actuator_init": [
+    0.1,
+    0.1,
+    1.0
+  ],
+  "u_act_scale": [
+    1.0,
+    1.0,
+    0.001
+  ],
+  "dataset_path": "/content/drive/MyDrive/Colab Notebooks/auvhamnode/g3_5_5/data/auv_oc_traj1000_blk150_s23_d0be9434.pkl",
+  "dataset_id": "d0be9434",
+  "dataset_velocity_convention": "body_total",
+  "dataset_description": "State: [Dpos(3), R(9), nu_b(6), u_actual(3), u_cmd(3), v_c^n(3)]",
+  "dataset_state_dim": 27,
+  "dataset_generation_config": {
+    "num_trajectories": 1000,
+    "blocks_per_trajectory": 150,
+    "train_ratio": 0.8,
+    "dt_sim": 0.01,
+    "dt_state": 0.05,
+    "dt_ctrl": 0.2,
+    "warmup_time": 3.0,
+    "scenario_weights": {
+      "PRBS": 0.4,
+      "CHIRP": 0.35,
+      "OU": 0.25
+    },
+    "init_depth": [
+      5.0,
+      40.0
+    ],
+    "init_surge": [
+      0.8,
+      2.5
+    ],
+    "init_sway_std": 0.25,
+    "init_heave_std": 0.15,
+    "init_angular_std": 0.15,
+    "delta_max": 0.2617993877991494,
+    "rpm_range": [
+      400.0,
+      1400.0
+    ],
+    "prbs_min_hold": 3,
+    "prbs_max_hold": 20,
+    "prbs_smooth_width": 5,
+    "chirp_freqs_rudder": [
+      [
+        0.01,
+        0.15
+      ],
+      [
+        0.05,
+        0.3
+      ],
+      [
+        0.1,
+        0.5
+      ]
+    ],
+    "chirp_freqs_stern": [
+      [
+        0.02,
+        0.2
+      ],
+      [
+        0.08,
+        0.4
+      ]
+    ],
+    "ou_theta": 0.3,
+    "ou_sigma": 0.8,
+    "ou_impulse_count": [
+      5,
+      15
+    ],
+    "rpm_ou_theta": 0.1,
+    "rpm_ou_sigma_frac": 0.6,
+    "max_attitude": 1.2,
+    "depth_bounds": [
+      0.5,
+      100.0
+    ],
+    "velocity_max": [
+      4.0,
+      0.8,
+      0.8,
+      0.5,
+      0.5,
+      0.5
+    ],
+    "enable_filtering": true,
+    "min_excitation_percentile": 30.0,
+    "rotation_tolerance": 0.0001,
+    "ocean_current": true,
+    "absolute_depth_context": false,
+    "current_speed_range": [
+      0.0,
+      0.5
+    ],
+    "current_direction_range": [
+      -3.141592653589793,
+      3.141592653589793
+    ],
+    "current_vertical_std": 0.05,
+    "current_drift_sigma": 0.02,
+    "current_drift_theta": 0.005,
+    "seed": 23,
+    "save_dir": "./data",
+    "num_workers": 4,
+    "save_figures": true
+  }
+}

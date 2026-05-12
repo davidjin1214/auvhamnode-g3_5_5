@@ -1,0 +1,68 @@
+# cleanrun v1 训练 invocation 链 — phase1a_oc_v4lite_cleanrun_v1
+
+## Notebook 环境变量
+RUN_TAG=phase1a_oc_v4lite_cleanrun_v1
+DATASET=data/auv_oc_traj1000_blk150_s23_d0be9434.pkl
+NOISE_REFERENCE=remus100_dr
+DECISION_SEEDS="42 43 44 45 46"
+SMOKE_SEEDS="42 44 46"
+PHASE1A_MODELS="phnode_full ablate_no_mass_prior ablate_no_lift"
+SMOKE1_MODELS="phnode_full"
+
+## 训练入口（按 notebook cell 顺序）
+
+CELL12  MODE=smoke1_train             → scripts/run_phase1a_oc_v4lite.sh
+CELL13/14  MODE=smoke1_train_v4lite_resume （仅 v4lite 分支重训，clean 不变）
+CELL18  MODE=smoke3_train             → scripts/run_phase1a_oc_v4lite.sh
+CELL24  MODE=decision_train           → scripts/run_phase1a_oc_v4lite.sh   ← 主 5-seed 训练在这里
+CELL25  bash scripts/train_all_models_noise_profile.sh （仅 seeds 43/45 三 protocol 补训）
+
+## run_phase1a_oc_v4lite.sh: decision_train 分支
+
+```
+decision_train)
+  train_protocol_triple decision "${PHASE1A_MODELS}" "${DECISION_SEEDS}"
+```
+
+`train_protocol_triple` 调用三次 `train_suite`：
+
+```
+train_suite "sweep_oc_phase1a_decision_clean_${RUN_TAG}"   models seeds clean         auto
+train_suite "sweep_oc_phase1a_decision_iid_${RUN_TAG}"     models seeds nominal_train iid_noisy_ic
+train_suite "sweep_oc_phase1a_decision_v4lite_${RUN_TAG}"  models seeds nominal_train v4_lite
+```
+
+`train_suite` 内部最终调用：
+
+```
+bash scripts/train_all_models_noise_profile.sh \
+  --profile oc \
+  --models "phnode_full ablate_no_mass_prior ablate_no_lift" \
+  --dataset "data/auv_oc_traj1000_blk150_s23_d0be9434.pkl" \
+  --seeds "42 43 44 45 46" \
+  --suite-name "sweep_oc_phase1a_decision_clean_phase1a_oc_v4lite_cleanrun_v1" \
+  --noise-profile clean \
+  --noise-protocol auto \
+  --noise-reference remus100_dr \
+  --device "${DEVICE}"
+```
+
+## train_all_models_noise_profile.sh 的下游
+
+该 wrapper 内部并不传 --num_epochs / --learning_rate / --batch_size；
+所有训练超参由 train_auv_hamnode.py 的默认值决定。
+传给下游的 `--extra-train-arg` 仅限：
+  --noise_profile         clean
+  --noise_protocol        clean  （当 NOISE_PROTOCOL=auto，noise-profile=clean 时；否则按 iid_noisy_ic / v4_lite 传）
+  --noise_reference       remus100_dr
+  --noise_scale           1.0
+  --noise_warmup_epochs   20
+  --noise_ramp            80
+  --noise_mix_ratio       0.5
+  --block_eval_noise_profiles  clean nominal_eval heading_biased_eval (auto for oc/dr)
+  --heldout_eval_noise_profiles clean nominal_eval degraded_eval heading_biased_eval (auto for oc/dr)
+
+## 关键结论
+
+cleanrun v1 与 catalog 的训练 invocation **在 sh / wrapper 层完全一致**（同 wrapper 函数、同 dataset、同 noise profile、同 epochs 数 300）。
+两侧训练超参的一切差异只能来自 `train_auv_hamnode.py` 默认值或下游代码在 2026-04-04（catalog）与 cleanrun v1 之间的变化。
