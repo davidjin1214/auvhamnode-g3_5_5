@@ -41,6 +41,7 @@ REMUS100 simulation
 | 类别 | 文档 | 当前状态 |
 |---|---|---|
 | 仓库入口与边界 | [README.md](README.md), [docs/repo_structure_audit.md](docs/repo_structure_audit.md) | 当前权威入口 |
+| 实验阶段总览 | [docs/experiment_stages_overview.md](docs/experiment_stages_overview.md) | 按云镜像+时间窗口梳理 catalog / cleanrun v1 / audit retrain / smoke-probe / unused 五阶段 |
 | 总体研究计划 | [docs/phnode_realistic_validation_plan.md](docs/phnode_realistic_validation_plan.md) | 研究计划，不是执行记录 |
 | 现实导向执行方案 | [docs/phnode_realistic_validation_execution_plan.md](docs/phnode_realistic_validation_execution_plan.md), [docs/phase1_realistic_validation_plan.md](docs/phase1_realistic_validation_plan.md) | 当前 P0-P1 / Phase-1A 执行方案 |
 | OC 补充实验计划 | [docs/oc_followup_experiment_plan.md](docs/oc_followup_experiment_plan.md) | P1 已执行并报告；P2/P3 尚未完成 |
