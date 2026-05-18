@@ -127,6 +127,14 @@
 - 如果某个 `eval_profile` 没有正式 benchmark，只存在 matched follow-up，那么 matched 结果会成为该 profile 的 canonical 记录。
 - `smoke`、`probe`、`legacy_heldout` 永远不会变成 canonical。
 
+### 4.1 canonical 与 evidence status 是两层判断
+
+`is_canonical = 1` 只表示该 rollout 在当前选择规则下是默认展示记录，不表示对应 run 一定仍可作为 current paper evidence。run 级证据状态由 `run_inventory.csv` 的 `evidence_status` 字段表达；在该字段尚未重建进 catalog 前，应同时查看人工 sidecar：
+
+- `analysis/oc_data_catalog/evidence_status_overrides.csv`
+
+当前已知的关键例外是 catalog 时代 `phnode_full clean seed42/46`。这些 run 因 2026-05 provenance audit 被标为 `stale_environment_drift`：它们可以保留在原始表和 canonical 视图中用于回溯，但不应继续作为当前模型脆弱性或 headline 排名证据。
+
 ---
 
 ## 5. 当前预期行为
@@ -180,7 +188,7 @@
 - 生成论文表格
 - 做一致性的对比分析
 
-应先基于 `rollout_run_registry.csv` 过滤到 `is_canonical = 1`，再去关联 `rollout_summary_long.csv` 或 `rollout_outcomes_long.csv`。
+应先基于 `rollout_run_registry.csv` 过滤到 `is_canonical = 1`，再去关联 `rollout_summary_long.csv` 或 `rollout_outcomes_long.csv`，最后排除或显式标注 `evidence_status != current` 的 run。
 
 ---
 

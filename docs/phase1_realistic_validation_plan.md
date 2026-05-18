@@ -18,7 +18,7 @@
 补充实验 [oc_followup_results_p1_p2.md](oc_followup_results_p1_p2.md) 已经说明：
 
 1. noisy training 不再支持把 `phnode_full` 写成 noisy all-seed winner。
-2. `phnode_full` 的 noisy 收益主要来自修复 `seed46`，不是普遍降低所有 seeds 的误差。
+2. 早期曾把 `phnode_full` 的 noisy 收益解释为主要来自修复 `seed46`；但 2026-05 provenance audit 已确认 catalog 时代 `seed46` clean fragility 是环境耦合异常，该解释现在只能作为历史动机，不能作为当前证据。
 3. `ablate_no_mass_prior` 更像稳定受益于 noisy training 的结构模型。
 4. `ablate_no_lift` 与 `phnode_qforce` 在当前 noisy schedule 下没有稳定收益。
 
@@ -104,7 +104,7 @@ Phase-1 分成两个层级。
 
 | 模型 | 角色 | 选择理由 |
 |---|---|---|
-| `phnode_full` | 主模型与 seed-fragility 诊断对象 | 需要检查协议变化是否只修复 `seed42/46` 这类坏 seed |
+| `phnode_full` | 主模型与 seed/provenance 诊断对象 | 需要在 cleanrun v1 ≡ current main 基线下重新检查协议变化是否影响主模型，而不是复用 catalog 时代 `seed42/46` fragility 作为证据 |
 | `ablate_no_mass_prior` | 稳定受益结构对照 | 当前 noisy follow-up 下最像稳定 regularization 受益者 |
 | `ablate_no_lift` | clean 强结构对照 | clean 下强且稳，但 noisy 下有 `seed44` 异常，可检验 `v4-lite` 是否伤害已有强结构 |
 
@@ -146,9 +146,9 @@ Phase-1 分成两个层级。
 
 理由：
 
-- `42`：`phnode_full` 在 clean/noisy 下都暴露核心困难
+- `42`：catalog 时代 `phnode_full` 困难 seed，已被 audit 标为需按环境 provenance 重判
 - `44`：`ablate_no_lift` 在 noisy 下有明显异常
-- `46`：`phnode_full` 被 iid noisy training 显著修复的典型 seed
+- `46`：catalog 时代 `phnode_full` former outlier；current main / cleanrun v1 已正常收敛，仍适合作为 provenance replay 诊断 seed
 
 Smoke 只回答协议是否能正确跑通，不直接写研究结论。
 
@@ -164,7 +164,7 @@ Smoke 只回答协议是否能正确跑通，不直接写研究结论。
 
 不再默认加入 `47`。理由是：
 
-- `42` 和 `46` 已覆盖 `phnode_full` 最关键的 catastrophic failure / 修复模式
+- `42` 和 `46` 覆盖 `phnode_full` 最关键的历史异常与 provenance 复核需求
 - `44` 覆盖 `ablate_no_lift` 在 noisy training 下的新异常
 - `43` 和 `45` 提供普通稳定簇参照
 - 如果这五个 seeds 仍无法说明协议变化是否影响模型结论，加入 `47` 也很难根本改变判断，只会增加计算成本
@@ -222,7 +222,7 @@ trajectory-consistent noisy IC 增强了协议真实性，
 
 ### 5.3 仅视为 seed-stabilization 工具
 
-如果收益主要来自修复 `seed42`、`seed46` 或其他单个坏 seed，则结论应收紧为：
+如果收益主要来自单个 seed 的 training failure / provenance-sensitive outlier，且该 outlier 已通过环境复核确认不是旧 catalog 偶然，则结论应收紧为：
 
 ```text
 协议变化主要缓解特定训练 failure mode，

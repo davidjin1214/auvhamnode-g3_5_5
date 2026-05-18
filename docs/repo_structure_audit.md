@@ -29,16 +29,22 @@ REMUS100 simulation
 
 当前研究计划入口为：
 
+- `EXPERIMENT_PROGRESS_TRACKER.md`
+- `docs/experiment_stages_overview.md`
 - `docs/phnode_realistic_validation_plan.md`
 - `docs/phnode_realistic_validation_execution_plan.md`
 - `docs/phase1_realistic_validation_plan.md`
+- `docs/phase1a_oc_v4lite_cleanrun_v1_report.md`
+- `docs/provenance_audit_phnode_full_clean.md`
 
 当前 OC 结果查询入口为：
 
+- `analysis/oc_data_catalog/canonical_run_inventory.csv`
 - `analysis/oc_data_catalog/run_inventory.csv`
 - `analysis/oc_data_catalog/rollout_run_registry.csv`
 - `analysis/oc_data_catalog/canonical_rollout_summary_long.csv`
 - `analysis/oc_data_catalog/canonical_rollout_outcomes_long.csv`
+- `analysis/oc_data_catalog/evidence_status_overrides.csv`
 
 ## 2. 状态分类
 
@@ -80,9 +86,22 @@ REMUS100 simulation
 - `data/`
 - `analysis/oc_data_catalog/`
 
-`data/` 下的数据集暂时全部保留。`analysis/oc_data_catalog/` 是当前结果查询和默认绘图/表格的主要来源。不要手动编辑 catalog CSV；如需变更，应修改生成脚本后重新运行 `scripts/build_oc_data_catalog.py`。
+`data/` 下的数据集暂时全部保留。`analysis/oc_data_catalog/` 是当前结果查询和默认绘图/表格的主要来源。不要手动编辑生成型 catalog CSV；如需变更，应修改生成脚本后重新运行 `scripts/build_oc_data_catalog.py`。人工 sidecar 例外是 `analysis/oc_data_catalog/evidence_status_overrides.csv`，用于标注 provenance audit 后的证据状态。
 
-### 2.4 `evidence-bearing-checkpoints`
+### 2.4 `investigation-records`
+
+以下文件或目录是人工维护的进展、审计和证据解释层，不是随机产物：
+
+- `EXPERIMENT_PROGRESS_TRACKER.md`
+- `analysis/experiment_progress_log.csv`
+- `analysis/provenance_audit/`
+- `docs/experiment_stages_overview.md`
+- `docs/provenance_audit_phnode_full_clean.md`
+- `docs/phase1a_oc_v4lite_cleanrun_v1_report.md`
+
+这些内容用于判断哪些结果仍可引用、哪些结论已被标记为 `stale_environment_drift` 或 `needs_recheck`。特别是 catalog 时代 `phnode_full clean seed42/46` 结果已被 provenance audit 判定为环境耦合的历史异常，不应继续作为模型脆弱性证据。
+
+### 2.5 `evidence-bearing-checkpoints`
 
 以下 checkpoint/sweep 目录包含当前报告、follow-up 或 catalog 仍会引用的正式实验结果：
 
@@ -93,7 +112,9 @@ REMUS100 simulation
 
 这些目录不应随意删除。若后续要移动，应同步更新相关文档、catalog 或明确保留 catalog 为历史快照。
 
-### 2.5 `flow-validation-only`
+Phase-1A cleanrun v1 相关的 `checkpoints/sweep_oc_phase1a_*_phase1a_oc_v4lite_cleanrun_v1/` 目录属于协议敏感性 decision package。使用时必须同时查看 `docs/phase1a_oc_v4lite_cleanrun_v1_report.md` 中关于 `ablate_no_lift seed43 clean` 和 provenance 限制的说明，不能直接当作 canonical catalog 的替代。
+
+### 2.6 `flow-validation-only`
 
 以下目录只用于证明流程、协议或 smoke/probe 实验跑通，不应作为当前论文结论或模型排序依据：
 
@@ -109,7 +130,7 @@ REMUS100 simulation
 
 这些原始产物可在未来物理清理时删除，但删除前应先确认是否已有最终记录文档。若删除后仍保留现有 `analysis/oc_data_catalog/`，catalog 中部分 `source_file` 会成为历史路径，而不是当前磁盘上可直接打开的文件。
 
-### 2.6 `deprecated`
+### 2.7 `deprecated`
 
 旧接口或兼容脚本，当前不再推荐运行：
 
@@ -119,7 +140,7 @@ REMUS100 simulation
 
 这些内容保留是为了读旧配置和理解历史结果。新实验应使用 `--noise_profile` 和 `scripts/train_all_models_noise_profile.sh` / `scripts/eval_all_models_noise_profile.sh`。
 
-### 2.7 `delete-candidate`
+### 2.8 `delete-candidate`
 
 用户已确认不再使用，但本文档阶段不直接删除：
 
@@ -128,7 +149,7 @@ REMUS100 simulation
 
 `checkpoints/unused/` 中的实验使用旧版且有错误的噪声设计，不应作为当前证据。`original/bf3n/` 已不再作为参考实现使用。若后续目标转为物理瘦身，这两处是优先清理对象。
 
-### 2.8 `notebook`
+### 2.9 `notebook`
 
 `notebook/` 暂时保留：
 
@@ -137,7 +158,7 @@ REMUS100 simulation
 
 因此现阶段不归档、不删除。
 
-### 2.9 `docs`
+### 2.10 `docs`
 
 `docs/` 暂时全部保留。当前计划入口是：
 
@@ -152,13 +173,17 @@ REMUS100 simulation
 如果目标是快速理解当前项目：
 
 1. `README.md`
-2. `docs/repo_structure_audit.md`
-3. `docs/phnode_realistic_validation_plan.md`
-4. `docs/phnode_realistic_validation_execution_plan.md`
-5. `docs/phase1_realistic_validation_plan.md`
-6. `docs/noise_model_design.md`
-7. `docs/oc_data_catalog_dictionary.md`
-8. `docs/oc_result_selection_policy.md`
+2. `EXPERIMENT_PROGRESS_TRACKER.md`
+3. `docs/repo_structure_audit.md`
+4. `docs/experiment_stages_overview.md`
+5. `docs/provenance_audit_phnode_full_clean.md`
+6. `docs/phase1a_oc_v4lite_cleanrun_v1_report.md`
+7. `docs/phnode_realistic_validation_plan.md`
+8. `docs/phnode_realistic_validation_execution_plan.md`
+9. `docs/phase1_realistic_validation_plan.md`
+10. `docs/noise_model_design.md`
+11. `docs/oc_data_catalog_dictionary.md`
+12. `docs/oc_result_selection_policy.md`
 
 如果目标是查当前 OC 结果：
 
@@ -166,14 +191,18 @@ REMUS100 simulation
 2. `analysis/oc_data_catalog/rollout_run_registry.csv`
 3. `analysis/oc_data_catalog/canonical_rollout_summary_long.csv`
 4. `analysis/oc_data_catalog/canonical_rollout_outcomes_long.csv`
+5. `analysis/oc_data_catalog/evidence_status_overrides.csv`
 
 ## 4. 维护规则
 
 - 不要从随机 checkpoint 目录开始理解实验结果；先看 catalog 和文档。
+- 不要忽略 `evidence_status`；canonical 只说明 rollout 选择优先级，不自动证明该行仍是 current evidence。
+- 不要把 catalog 时代 `phnode_full clean seed42/46` 的 stale run 写成当前模型脆弱性证据。
 - 不要把 `flow-validation-only` 的 smoke/probe 结果写进正式结论。
 - 不要把 `checkpoints/unused/` 里的旧噪声实验作为当前证据。
-- 不要手动编辑 `data/`、`checkpoints/` 或 `analysis/oc_data_catalog/*.csv`。
+- 不要手动编辑 `data/`、`checkpoints/` 或生成型 `analysis/oc_data_catalog/*.csv`；`evidence_status_overrides.csv` 是人工 sidecar 例外。
 - 新实验优先使用 profile-based noisy-IC 脚本。
+- 新的 evidence-bearing run 应落盘 `_audit_meta/code_revision.txt` 与 `_audit_meta/environment.txt`。
 - 物理删除大目录前，先确认是否需要同步重建 catalog 或保留 catalog 为历史快照。
 
 ## 5. 后续整理建议

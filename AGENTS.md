@@ -14,10 +14,14 @@ The repo already contains substantial experiment artifacts and a structured resu
 Before diving into random files, start from these:
 
 - `README.md`
+- `EXPERIMENT_PROGRESS_TRACKER.md`
 - `docs/repo_structure_audit.md`
+- `docs/experiment_stages_overview.md`
 - `docs/phnode_realistic_validation_plan.md`
 - `docs/phnode_realistic_validation_execution_plan.md`
 - `docs/phase1_realistic_validation_plan.md`
+- `docs/phase1a_oc_v4lite_cleanrun_v1_report.md`
+- `docs/provenance_audit_phnode_full_clean.md`
 - `docs/noise_model_design.md`
 - `docs/oc_experiments_comprehensive_report.md`
 - `docs/oc_followup_results_p1_p2.md`
@@ -27,10 +31,14 @@ Before diving into random files, start from these:
 
 For current result lookup, prefer:
 
+- `analysis/oc_data_catalog/canonical_run_inventory.csv`
 - `analysis/oc_data_catalog/run_inventory.csv`
 - `analysis/oc_data_catalog/rollout_run_registry.csv`
 - `analysis/oc_data_catalog/canonical_rollout_summary_long.csv`
 - `analysis/oc_data_catalog/canonical_rollout_outcomes_long.csv`
+- `analysis/oc_data_catalog/evidence_status_overrides.csv`
+
+Before using catalog rows as current evidence, check `evidence_status`. In particular, catalog-era `phnode_full clean seed42/46` rows are `stale_environment_drift`; do not use the old ~11 m 5-seed mean as model-fragility evidence. Use the provenance audit and the cleanrun v1 / current-main aligned baseline instead.
 
 ## Project Structure & Module Organization
 This is a flat Python repo. Important active files:
@@ -52,6 +60,7 @@ Important directories:
 - `data/`: generated datasets
 - `checkpoints/`: trained runs and sweep suites
 - `analysis/oc_data_catalog/`: normalized experiment tables and canonical views
+- `analysis/provenance_audit/`: preserved investigation notes for the `phnode_full clean` provenance audit
 - `original/bf3n/`: delete-candidate legacy reference material, not the active implementation
 
 ## Preferred Commands
@@ -99,9 +108,12 @@ For new work:
 - Treat `scripts/train_all_models_noise.sh`, `scripts/eval_all_models_noise.sh`, and `--noise_level` as deprecated compatibility paths.
 - Prefer `training_history.pkl` over `training.log` for training curves.
 - Prefer `canonical_rollout_summary_long.csv` and `canonical_rollout_outcomes_long.csv` for default plotting and reporting.
+- Check `evidence_status` before treating catalog rows as current paper evidence.
 - Use raw rollout tables only when you intentionally need all rollout variants.
 - Treat `checkpoints/unused/` as non-active and invalid for current evidence because it used an older incorrect noise design.
 - Treat smoke/probe checkpoint directories as flow-validation-only, not as current evidence for model ranking or paper conclusions.
+- Treat `docs/phase1a_oc_v4lite_cleanrun_v1_report.md` as a protocol-sensitivity decision package, not as a drop-in replacement for the canonical catalog.
+- For new evidence-bearing runs, record `_audit_meta/code_revision.txt` and `_audit_meta/environment.txt` so catalog comparisons can distinguish code and environment drift.
 
 ## Coding Style & Naming Conventions
 Follow current Python style:
@@ -120,7 +132,11 @@ Do not hand-edit generated outputs such as:
 
 - `data/*`
 - `checkpoints/*`
-- `analysis/oc_data_catalog/*.csv`
+- generated `analysis/oc_data_catalog/*.csv`
+
+The explicit catalog sidecar exception is:
+
+- `analysis/oc_data_catalog/evidence_status_overrides.csv`
 
 If you need catalog changes, modify:
 

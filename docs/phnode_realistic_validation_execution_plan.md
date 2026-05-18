@@ -1,5 +1,7 @@
 # ph-NODE 现实导向验证执行方案
 
+> **2026-05 状态注**：本文档是 Phase-1 执行方案的设计记录。`v4-lite` Phase-1A cleanrun v1 已经形成 decision package，且 `phnode_full clean seed42/46` catalog-era fragility 已被 provenance audit 标记为 `stale_environment_drift`。后续执行与引用应先查看 [experiment_stages_overview.md](experiment_stages_overview.md)、[phase1a_oc_v4lite_cleanrun_v1_report.md](phase1a_oc_v4lite_cleanrun_v1_report.md)、[provenance_audit_phnode_full_clean.md](provenance_audit_phnode_full_clean.md) 和 [../EXPERIMENT_PROGRESS_TRACKER.md](../EXPERIMENT_PROGRESS_TRACKER.md)。
+
 本文档是 [phnode_realistic_validation_plan.md](phnode_realistic_validation_plan.md) 的配套执行方案。
 
 研究计划回答“要证明什么”；本文回答“按什么顺序推进，做到什么算完成”。

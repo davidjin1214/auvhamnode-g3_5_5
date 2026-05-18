@@ -22,19 +22,30 @@ The current repo state already includes:
 
 - clean-data and noisy-data `oc` sweeps under `checkpoints/`
 - follow-up experiments for noisy robustness
+- a Phase-1A `v4-lite` cleanrun decision package
+- a provenance audit for catalog-era `phnode_full clean` seed fragility
 - summary/report scripts for model sweeps
 - a structured result catalog under `analysis/oc_data_catalog/`
+- a human-readable experiment progress tracker
 
 If you are new to the repo, the most useful current documents are:
 
+- [EXPERIMENT_PROGRESS_TRACKER.md](/Users/xiangjin/Library/CloudStorage/OneDrive-Personal/我的/Code/auv_se3node/g3_5_5/EXPERIMENT_PROGRESS_TRACKER.md)
+  Current experiment status, citation status, and open follow-up work
 - [docs/repo_structure_audit.md](/Users/xiangjin/Library/CloudStorage/OneDrive-Personal/我的/Code/auv_se3node/g3_5_5/docs/repo_structure_audit.md)
   Current map of active, generated, deprecated, smoke/probe, and delete-candidate files
+- [docs/experiment_stages_overview.md](/Users/xiangjin/Library/CloudStorage/OneDrive-Personal/我的/Code/auv_se3node/g3_5_5/docs/experiment_stages_overview.md)
+  Current phase-by-phase map of training era, cloud mirror, and evidence status
 - [docs/phnode_realistic_validation_plan.md](/Users/xiangjin/Library/CloudStorage/OneDrive-Personal/我的/Code/auv_se3node/g3_5_5/docs/phnode_realistic_validation_plan.md)
   Current realism-oriented research plan
 - [docs/phnode_realistic_validation_execution_plan.md](/Users/xiangjin/Library/CloudStorage/OneDrive-Personal/我的/Code/auv_se3node/g3_5_5/docs/phnode_realistic_validation_execution_plan.md)
   Current execution plan for realistic validation
 - [docs/phase1_realistic_validation_plan.md](/Users/xiangjin/Library/CloudStorage/OneDrive-Personal/我的/Code/auv_se3node/g3_5_5/docs/phase1_realistic_validation_plan.md)
   Current Phase-1 validation plan
+- [docs/phase1a_oc_v4lite_cleanrun_v1_report.md](/Users/xiangjin/Library/CloudStorage/OneDrive-Personal/我的/Code/auv_se3node/g3_5_5/docs/phase1a_oc_v4lite_cleanrun_v1_report.md)
+  Phase-1A `v4-lite` cleanrun v1 decision package and limitations
+- [docs/provenance_audit_phnode_full_clean.md](/Users/xiangjin/Library/CloudStorage/OneDrive-Personal/我的/Code/auv_se3node/g3_5_5/docs/provenance_audit_phnode_full_clean.md)
+  Audit of catalog-era `phnode_full clean` seed42/46 fragility and its current citation status
 - [docs/noise_model_design.md](/Users/xiangjin/Library/CloudStorage/OneDrive-Personal/我的/Code/auv_se3node/g3_5_5/docs/noise_model_design.md)
   Current noisy-IC design background
 - [docs/oc_experiments_comprehensive_report.md](/Users/xiangjin/Library/CloudStorage/OneDrive-Personal/我的/Code/auv_se3node/g3_5_5/docs/oc_experiments_comprehensive_report.md)
@@ -284,6 +295,13 @@ A typical run directory under `checkpoints/` contains:
 
 `training_history.pkl` is the preferred structured source for training curves.
 
+For new evidence-bearing training runs, also record provenance under `_audit_meta/`:
+
+- `_audit_meta/code_revision.txt`
+- `_audit_meta/environment.txt`
+
+These files are needed to distinguish code and environment drift when comparing runs across local and cloud mirrors.
+
 ## Result Catalog
 
 The repo now includes a structured result catalog for `oc` experiments:
@@ -303,6 +321,13 @@ Use these rules:
 
 - use raw tables when you want **all recorded results**
 - use canonical tables when you want the repo’s **default citation/plotting view**
+- check `analysis/oc_data_catalog/evidence_status_overrides.csv` before treating a canonical row as current evidence
+
+Important citation caveat:
+
+- catalog-era `phnode_full clean seed42/46` results are marked `stale_environment_drift` by the provenance audit
+- do not use the old ~11 m `phnode_full clean` 5-seed mean as model-fragility evidence
+- the aligned cleanrun v1 / current-main baseline for `phnode_full clean` is 0.6767 m for 60s clean `pos_err_median` 5-seed mean
 
 Rebuild the catalog with:
 
@@ -351,13 +376,17 @@ See:
 If you only want a fast orientation, read in this order:
 
 1. `README.md`
-2. [docs/repo_structure_audit.md](/Users/xiangjin/Library/CloudStorage/OneDrive-Personal/我的/Code/auv_se3node/g3_5_5/docs/repo_structure_audit.md)
-3. [docs/phnode_realistic_validation_plan.md](/Users/xiangjin/Library/CloudStorage/OneDrive-Personal/我的/Code/auv_se3node/g3_5_5/docs/phnode_realistic_validation_plan.md)
-4. [docs/phnode_realistic_validation_execution_plan.md](/Users/xiangjin/Library/CloudStorage/OneDrive-Personal/我的/Code/auv_se3node/g3_5_5/docs/phnode_realistic_validation_execution_plan.md)
-5. [docs/phase1_realistic_validation_plan.md](/Users/xiangjin/Library/CloudStorage/OneDrive-Personal/我的/Code/auv_se3node/g3_5_5/docs/phase1_realistic_validation_plan.md)
-6. [docs/noise_model_design.md](/Users/xiangjin/Library/CloudStorage/OneDrive-Personal/我的/Code/auv_se3node/g3_5_5/docs/noise_model_design.md)
-7. [docs/oc_data_catalog_dictionary.md](/Users/xiangjin/Library/CloudStorage/OneDrive-Personal/我的/Code/auv_se3node/g3_5_5/docs/oc_data_catalog_dictionary.md)
-8. [docs/oc_result_selection_policy.md](/Users/xiangjin/Library/CloudStorage/OneDrive-Personal/我的/Code/auv_se3node/g3_5_5/docs/oc_result_selection_policy.md)
+2. [EXPERIMENT_PROGRESS_TRACKER.md](/Users/xiangjin/Library/CloudStorage/OneDrive-Personal/我的/Code/auv_se3node/g3_5_5/EXPERIMENT_PROGRESS_TRACKER.md)
+3. [docs/repo_structure_audit.md](/Users/xiangjin/Library/CloudStorage/OneDrive-Personal/我的/Code/auv_se3node/g3_5_5/docs/repo_structure_audit.md)
+4. [docs/experiment_stages_overview.md](/Users/xiangjin/Library/CloudStorage/OneDrive-Personal/我的/Code/auv_se3node/g3_5_5/docs/experiment_stages_overview.md)
+5. [docs/provenance_audit_phnode_full_clean.md](/Users/xiangjin/Library/CloudStorage/OneDrive-Personal/我的/Code/auv_se3node/g3_5_5/docs/provenance_audit_phnode_full_clean.md)
+6. [docs/phase1a_oc_v4lite_cleanrun_v1_report.md](/Users/xiangjin/Library/CloudStorage/OneDrive-Personal/我的/Code/auv_se3node/g3_5_5/docs/phase1a_oc_v4lite_cleanrun_v1_report.md)
+7. [docs/phnode_realistic_validation_plan.md](/Users/xiangjin/Library/CloudStorage/OneDrive-Personal/我的/Code/auv_se3node/g3_5_5/docs/phnode_realistic_validation_plan.md)
+8. [docs/phnode_realistic_validation_execution_plan.md](/Users/xiangjin/Library/CloudStorage/OneDrive-Personal/我的/Code/auv_se3node/g3_5_5/docs/phnode_realistic_validation_execution_plan.md)
+9. [docs/phase1_realistic_validation_plan.md](/Users/xiangjin/Library/CloudStorage/OneDrive-Personal/我的/Code/auv_se3node/g3_5_5/docs/phase1_realistic_validation_plan.md)
+10. [docs/noise_model_design.md](/Users/xiangjin/Library/CloudStorage/OneDrive-Personal/我的/Code/auv_se3node/g3_5_5/docs/noise_model_design.md)
+11. [docs/oc_data_catalog_dictionary.md](/Users/xiangjin/Library/CloudStorage/OneDrive-Personal/我的/Code/auv_se3node/g3_5_5/docs/oc_data_catalog_dictionary.md)
+12. [docs/oc_result_selection_policy.md](/Users/xiangjin/Library/CloudStorage/OneDrive-Personal/我的/Code/auv_se3node/g3_5_5/docs/oc_result_selection_policy.md)
 
 ## Practical Notes
 
@@ -366,6 +395,7 @@ If you only want a fast orientation, read in this order:
 - Treat `scripts/train_all_models_noise.sh`, `scripts/eval_all_models_noise.sh`, and the `--noise_level` interface as deprecated compatibility paths.
 - Prefer `training_history.pkl` over `training.log` for plotting.
 - Prefer canonical rollout tables over raw rollout tables when making default figures.
+- Check `evidence_status` before citing catalog rows as current evidence.
 - `checkpoints/unused/` should not be treated as active experiment results; it used an older incorrect noise design.
 - Smoke/probe checkpoint directories are flow-validation-only and should not be used for headline conclusions.
 
@@ -383,5 +413,5 @@ When modifying the repo, validate the smallest affected workflow:
 ## Notes for Contributors
 
 - Generated artifacts under `data/`, `checkpoints/`, and `analysis/oc_data_catalog/` are working outputs, not source code.
-- Do not hand-edit catalog CSV files; regenerate them from scripts.
+- Do not hand-edit generated catalog CSV files; regenerate them from scripts. The explicit sidecar exception is `analysis/oc_data_catalog/evidence_status_overrides.csv`.
 - The repo contains many historical experiment files. When in doubt, treat `docs/` and the catalog tables as the authoritative orientation layer, not random checkpoint subdirectories.

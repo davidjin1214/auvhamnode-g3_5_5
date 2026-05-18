@@ -1,5 +1,7 @@
 # ph-NODE 现实导向验证研究计划
 
+> **2026-05 状态注**：本文档保留为研究计划层入口，但部分前提已被后续 Phase-1A cleanrun v1 与 provenance audit 更新。阅读本文中关于 `phnode_full` seed fragility 或 `v4-lite` 尚属拟实施协议的表述时，应同时参考 [experiment_stages_overview.md](experiment_stages_overview.md)、[phase1a_oc_v4lite_cleanrun_v1_report.md](phase1a_oc_v4lite_cleanrun_v1_report.md) 和 [provenance_audit_phnode_full_clean.md](provenance_audit_phnode_full_clean.md)。当前可引用状态以 [../EXPERIMENT_PROGRESS_TRACKER.md](../EXPERIMENT_PROGRESS_TRACKER.md) 为准。
+
 本文档是一份**研究计划**，不是实验执行手册。
 
 它的职责是先回答四个更根本的问题：
