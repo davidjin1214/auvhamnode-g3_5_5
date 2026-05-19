@@ -60,7 +60,9 @@
 \end{equation}
 其中 \(H\) 为预测步长，\(\mathcal{F}_\theta\) 可由多层感知机、循环网络、卷积时序网络或注意力模型等神经网络参数化。该视角弱化了对显式水动力参数的依赖，使模型可以从轨迹数据中学习复杂非线性关系。
 
-然而，普通离散神经时序模型并不自动继承水下航行器动力学的结构。若直接学习 \(s_k\mapsto s_{k+1}\) 的离散映射，长期递推误差会不断反馈到后续输入中；若姿态被视为普通欧氏向量，预测轨迹可能偏离旋转群结构；若速度、控制和水动力项仅作为黑箱特征输入，模型难以区分惯性运动、相对水运动、耗散和输入功率的不同角色。因此，深度学习路线需要进一步从普通时序预测走向结构化动力学学习。
+然而，普通离散神经时序模型并不自动继承水下航行器动力学的结构。若直接学习 \(s_k\mapsto s_{k+1}\) 的离散映射，长期递推误差会不断反馈到后续输入中；若姿态被视为普通欧氏向量，预测轨迹可能偏离旋转群结构；若速度、控制和水动力项仅作为非结构化特征输入，模型难以区分惯性运动、相对水运动、耗散和输入功率的不同角色。因此，深度学习路线需要进一步从普通时序预测走向结构化动力学学习。
+
+基于上述问题，本章提出基于 \(\SE(3)\) 几何与能量结构约束的 AUV 连续时间动力学学习模型。为便于与实现和实验标识对应，下文简称 AUVHamNODE。本章的核心内容包括四个方面：第一，建立有海流条件下数据空间总体速度、模型空间相对水速度与惯性系海流速度之间的变量契约；第二，将 \(\SE(3)\) 刚体运动学、相对动量和机械存储函数写入神经常微分方程；第三，将非保守广义力分解为正定耗散、斜对称零功率耦合和执行器状态驱动的可学习广义力；第四，给出长期递推评估、结构消融、初值噪声扰动和内部物理诊断共同组成的验证协议。本章不声称完整航行器--执行器--环境系统构成闭合严格 port-Hamiltonian 系统，而只讨论开放式机械核心在限定条件下的功率平衡。
 
 \section{受控轨迹预测的状态变量与问题定义}
 
@@ -163,7 +165,7 @@ Hamiltonian Neural Network 将神经网络与能量函数联系起来，通过�
 \end{equation}
 其中斜对称矩阵 \(J\) 保证 \(\dot H_\theta=\nabla H_\theta^\top J\nabla H_\theta=0\)。该思想适合表达保守动力学中的能量守恒，但水下航行器是受控、耗散并受环境扰动影响的开放系统，仅有 HNN 的保守结构并不足以描述实际运动。
 
-port-Hamiltonian 系统在 Hamiltonian 能量存储的基础上引入耗散和输入端口。其抽象形式可写为
+port-Hamiltonian 系统在 Hamiltonian 能量存储的基础上引入耗散和输入端口 \citep{vanderschaft2014porthamiltonian,vanderschaft2017l2gain}。其抽象形式可写为
 \begin{equation}
   \dot z=
   \bigl(J_\theta(z)-R_\theta(z)\bigr)\nabla H_\theta(z)
@@ -225,7 +227,7 @@ port-Hamiltonian 系统在 Hamiltonian 能量存储的基础上引入耗散和�
 
 \section{AUVHamNODE 结构化连续时间动力学模型}
 
-前文给出了本文方法的两个来源。受控时序预测表述提供了从轨迹数据中学习复杂非线性动力学的形式基础，但普通离散模型和黑箱 Neural ODE 缺少几何与能量结构；Fossen 型动力学和 port-Hamiltonian 表述提供了质量、Coriolis、阻尼、恢复力和输入功率之间的角色划分，但实际工程模型通常包含半经验项、执行器动态和环境外源。AUVHamNODE 的目标是在连续时间可学习向量场中保留这些关键结构，并将无法解析闭合的非保守效应交由受约束的神经参数化表达。
+前文给出了本文方法的两个来源。受控时序预测表述提供了从轨迹数据中学习复杂非线性动力学的形式基础，但普通离散模型和非结构化 Neural ODE 缺少几何与能量结构；Fossen 型动力学和 port-Hamiltonian 表述提供了质量、Coriolis、阻尼、恢复力和输入功率之间的角色划分，但实际工程模型通常包含半经验项、执行器动态和环境外源。AUVHamNODE 的目标是在连续时间可学习向量场中保留这些关键结构，并将无法解析闭合的非保守效应交由受约束的神经参数化表达。
 
 AUVHamNODE 在连续时间神经向量场中嵌入以下约束：
 \begin{enumerate}
@@ -235,7 +237,7 @@ AUVHamNODE 在连续时间神经向量场中嵌入以下约束：
   \item 控制命令通过执行器状态进入广义力分支；
   \item 环境外源作为状态上下文参与速度转换和广义力计算。
 \end{enumerate}
-这些约束使模型处于传统物理模型和黑箱深度模型之间：它不要求所有水动力项可解析辨识，也不放弃机械系统的基本结构。
+这些约束使模型处于传统物理模型和非结构化深度模型之间：它不要求所有水动力项可解析辨识，也不放弃机械系统的基本结构。
 
 \subsection{\texorpdfstring{\(\SE(3)\)}{SE(3)} 运动学}
 
@@ -278,7 +280,7 @@ AUVHamNODE 显式编码刚体位姿运动学：
   +\tau_\theta(\nu_r,u_a,c),
   \label{eq:nonconservative-force}
 \end{equation}
-其中 \(D_\theta(\xi)\succeq0\) 表示耗散矩阵，\(J_\theta(\xi)=-J_\theta(\xi)^\top\) 表示斜对称零功率耦合矩阵，\(\tau_\theta\) 表示由执行器状态和上下文驱动的可学习广义力分支。该分解是物理诱导的功能分解，不保证唯一恢复真实水动力项。
+其中 \(D_\theta(\xi)\succeq0\) 表示耗散矩阵，\(J_\theta(\xi)=-J_\theta(\xi)^\top\) 表示斜对称零功率耦合矩阵，\(\tau_\theta\) 表示由执行器状态和上下文驱动的可学习广义力分支。条件变量 \(\xi\) 表示耗散和零功率耦合分支可使用的运动特征；在基本情形下 \(\xi=\nu_r\)，在海流扩展中可加入体坐标海流速度 \(v_c^b\) 或总体线速度 \(v_b\)。该分解是物理诱导的功能分解，不保证唯一恢复真实水动力项。
 
 \subsection{执行器滞后与外源通道}
 
@@ -292,7 +294,7 @@ AUVHamNODE 显式编码刚体位姿运动学：
 \begin{equation}
   \dot v_c^n=0 .
 \end{equation}
-该通道用于状态转换和可选广义力条件特征。当前模型将环境场作为外源上下文处理，而非闭合 Hamiltonian 环境子系统。
+该通道用于状态转换和可选广义力条件特征。本文模型将环境场作为外源上下文处理，而非闭合 Hamiltonian 环境子系统。
 
 \subsection{相对动量动力学}
 
@@ -305,7 +307,44 @@ AUVHamNODE 显式编码刚体位姿运动学：
   +f_\theta^{\mathrm{nc}},
   \label{eq:momentum-dynamics}
 \end{equation}
-其中 \(\ad_{\nu_r}^\ast p_r\) 表示体坐标系动量方程中的刚体耦合项，并采用满足 \(\nu_r^\top\ad_{\nu_r}^\ast p_r=0\) 的功率配对约定；\(f_\theta^{V}(q)\) 表示由势能梯度诱导的保守广义力，其符号选取使势能功率与位姿运动学配对一致。质量矩阵为常矩阵时，相对速度导数由
+令 \(p_r=[p_v^\top,p_\omega^\top]^\top\)，\(\nu_r=[v_r^\top,\omega^\top]^\top\)。本文采用的体坐标动量耦合项可写为
+\begin{equation}
+  \ad_{\nu_r}^{\ast}p_r
+  =
+  \begin{bmatrix}
+    p_v\times\omega\\
+    p_\omega\times\omega+p_v\times v_r
+  \end{bmatrix}.
+  \label{eq:coadjoint-term}
+\end{equation}
+该符号约定满足
+\begin{equation}
+  \nu_r^\top\ad_{\nu_r}^{\ast}p_r
+  =
+  v_r^\top(p_v\times\omega)
+  +
+  \omega^\top(p_\omega\times\omega+p_v\times v_r)
+  =0,
+\end{equation}
+因而该项只改变体坐标动量分量之间的耦合，不改变机械存储能量。势能诱导的保守广义力 \(f_\theta^{V}(q)\) 由 \(V_\theta\) 的自动微分梯度构造。若将 \(R_{i:}\) 记为 \(R\) 的第 \(i\) 行，\(\partial V_\theta/\partial R_{i:}\) 记为对应行梯度，则可写为
+\begin{equation}
+  f_\theta^{V}(q)
+  =
+  \begin{bmatrix}
+    -R^\top\nabla_x V_\theta(q)\\
+    \sum_{i=1}^{3} R_{i:}\times
+    \frac{\partial V_\theta(q)}{\partial R_{i:}}
+  \end{bmatrix}.
+  \label{eq:potential-force}
+\end{equation}
+在静水条件下，\(\dot x=Rv_r\)、\(\dot R=R\widehat{\omega}\)，式 \eqref{eq:potential-force} 满足
+\begin{equation}
+  \nu_r^\top f_\theta^{V}(q)
+  =
+  -\frac{\dd}{\dd t}V_\theta(q).
+  \label{eq:potential-power-pairing}
+\end{equation}
+该配对关系是后文能量平衡命题成立的关键条件。质量矩阵为常矩阵时，相对速度导数由
 \begin{equation}
   \dot\nu_r=M_\theta^{-1}\dot p_r
 \end{equation}
@@ -314,7 +353,7 @@ AUVHamNODE 显式编码刚体位姿运动学：
 \section{机械核心的能量平衡性质}
 
 \begin{proposition}[静水机械核心的能量平衡]
-  考虑无海流或静水条件 \(v_c^n=0\)。假设连续时间向量场满足 \(R(t)\in\SO(3)\)、\(M_\theta\succ0\)、\(D_\theta(\xi)\succeq0\)、\(J_\theta(\xi)=-J_\theta(\xi)^\top\)，且保守广义力由势能 \(V_\theta(q)\) 的梯度产生并与运动学配对一致。对于机械存储函数 \eqref{eq:hamiltonian} 和非保守力分解 \eqref{eq:nonconservative-force}，机械核心满足
+  考虑无海流或静水条件 \(v_c^n=0\)。假设连续时间向量场满足 \(R(t)\in\SO(3)\)、\(M_\theta\succ0\) 且 \(M_\theta\) 不随状态变化、\(D_\theta(\xi)\succeq0\)、\(J_\theta(\xi)=-J_\theta(\xi)^\top\)，体坐标动量耦合项满足式 \eqref{eq:coadjoint-term} 的零功率配对，且保守广义力满足式 \eqref{eq:potential-power-pairing}。对于机械存储函数 \eqref{eq:hamiltonian} 和非保守力分解 \eqref{eq:nonconservative-force}，机械核心满足
   \begin{equation}
     \dot H_\theta
     =
@@ -322,23 +361,61 @@ AUVHamNODE 显式编码刚体位姿运动学：
     +\nu_r^\top\tau_\theta(\nu_r,u_a,c).
     \label{eq:energy-balance}
   \end{equation}
+  特别地，当 \(\tau_\theta=0\) 时，机械核心的存储能量非增。
 \end{proposition}
 
 \begin{proof}
-机械存储函数由动能和势能组成。由 \(p_r=M_\theta\nu_r\) 和 \(\partial H_\theta/\partial p_r=\nu_r\) 可知，动量方程中与 \(D_\theta\)、\(J_\theta\) 和 \(\tau_\theta\) 对应的功率分别为
-\[
-  -\nu_r^\top D_\theta(\xi)\nu_r,\qquad
-  \nu_r^\top J_\theta(\xi)\nu_r,\qquad
-  \nu_r^\top\tau_\theta(\nu_r,u_a,c).
-\]
-由于 \(J_\theta(\xi)=-J_\theta(\xi)^\top\)，有 \(\nu_r^\top J_\theta(\xi)\nu_r=0\)。在命题假设下，势能梯度项与位姿运动学配对抵消，刚体耦合项满足零功率性质。因此机械核心的能量导数只剩耗散功率和外部广义力功率，即式 \eqref{eq:energy-balance}。
+机械存储函数可分解为动能 \(K_\theta=\frac12p_r^\top M_\theta^{-1}p_r\) 和势能 \(V_\theta(q)\)。由于 \(M_\theta\) 为常正定矩阵，且 \(\partial H_\theta/\partial p_r=M_\theta^{-1}p_r=\nu_r\)，动能导数为
+\begin{equation}
+  \dot K_\theta
+  =
+  \nu_r^\top \dot p_r .
+\end{equation}
+将式 \eqref{eq:momentum-dynamics} 代入，得到
+\begin{equation}
+  \dot K_\theta
+  =
+  \nu_r^\top\ad_{\nu_r}^{\ast}p_r
+  +\nu_r^\top f_\theta^V(q)
+  +\nu_r^\top f_\theta^{\mathrm{nc}} .
+\end{equation}
+由式 \eqref{eq:coadjoint-term} 的零功率性质，第一项为零；由势能功率配对式 \eqref{eq:potential-power-pairing}，第二项等于 \(-\dot V_\theta\)。因此
+\begin{equation}
+  \dot H_\theta
+  =
+  \dot K_\theta+\dot V_\theta
+  =
+  \nu_r^\top f_\theta^{\mathrm{nc}} .
+\end{equation}
+再代入式 \eqref{eq:nonconservative-force}，有
+\begin{equation}
+  \nu_r^\top f_\theta^{\mathrm{nc}}
+  =
+  -\nu_r^\top D_\theta(\xi)\nu_r
+  +\nu_r^\top J_\theta(\xi)\nu_r
+  +\nu_r^\top\tau_\theta(\nu_r,u_a,c).
+\end{equation}
+由于 \(J_\theta(\xi)=-J_\theta(\xi)^\top\)，\(\nu_r^\top J_\theta(\xi)\nu_r=0\)，从而得到式 \eqref{eq:energy-balance}。又因 \(D_\theta(\xi)\succeq0\)，当 \(\tau_\theta=0\) 时有 \(\dot H_\theta\le0\)。
 \end{proof}
 
 该命题刻画的是机械核心在限定条件下的功率平衡。完整增强状态还包含执行器滞后、环境外源和可学习广义力分支，因而本文将其作为受控开放系统处理。有外源流场时，若势能依赖绝对位置或深度，能量导数还可能包含由外源平移引入的附加功率项。
 
 \section{可训练参数化与训练目标}
 
-神经参数化服务于上述理论对象。逆质量矩阵通过正定参数化保证 \(M_\theta^{-1}\succ0\)；势能分支输出标量 \(V_\theta(q)\)；耗散分支通过半正定构造保证 \(D_\theta\succeq0\)；斜对称分支通过反对称化保证 \(J_\theta=-J_\theta^\top\)；可学习广义力分支 \(\tau_\theta\) 接收执行器状态、相对速度和可选上下文特征。
+神经参数化服务于上述理论对象，并将部分结构性质直接写入可训练函数类。逆质量矩阵采用 Cholesky 型参数化：令 \(L_M\) 为下三角矩阵，其对角元由 softplus 映射保证为正，则
+\begin{equation}
+  M_\theta^{-1}=L_ML_M^\top\succ0,\qquad
+  M_\theta=(M_\theta^{-1})^{-1}.
+\end{equation}
+势能分支输出标量 \(V_\theta(q)\)，实际实现中可使用重力方向、姿态特征和可选绝对深度上下文作为输入。耗散分支在完整形式下输出下三角因子 \(L_D(\xi)\)，并构造
+\begin{equation}
+  D_\theta(\xi)=L_D(\xi)L_D(\xi)^\top\succeq0 ;
+\end{equation}
+对角阻尼消融则使用正对角元素构造 \(\diag(d_\theta(\xi))\)。斜对称分支输出矩阵上三角参数并反对称化：
+\begin{equation}
+  J_\theta(\xi)=A_\theta(\xi)-A_\theta(\xi)^\top .
+\end{equation}
+可学习广义力分支 \(\tau_\theta\) 接收执行器状态、相对速度和可选海流特征，用于表达执行器驱动和其他无法解析闭合的非保守广义力。
 
 \begin{table}[htbp]
   \centering
@@ -348,11 +425,12 @@ AUVHamNODE 显式编码刚体位姿运动学：
     \toprule
     理论对象 & 参数化目标 & 结构作用 \\
     \midrule
-    \(M_\theta^{-1}\) & 正定逆质量矩阵 & 保证动能二次型正定，定义相对动量和速度映射。 \\
-    \(V_\theta(q)\) & 标量势能函数 & 使保守广义力来自同一能量函数。 \\
-    \(D_\theta(\xi)\) & 半正定耗散矩阵 & 保证耗散项不向机械核心注入能量。 \\
-    \(J_\theta(\xi)\) & 斜对称耦合矩阵 & 表达零功率横向或升力类耦合。 \\
-    \(\tau_\theta(\nu_r,u_a,c)\) & 可学习广义力分支 & 表达执行器驱动和未建模非保守效应。 \\
+    \(M_\theta^{-1}\) & \(L_ML_M^\top\) 正定逆质量矩阵 & 保证动能二次型正定，定义相对动量和速度映射。 \\
+    \(V_\theta(q)\) & 标量势能网络与线性先验 & 使保守广义力来自同一能量函数。 \\
+    \(D_\theta(\xi)\) & full SPD 或对角正阻尼 & 保证耗散项不向机械核心注入能量。 \\
+    \(J_\theta(\xi)\) & 反对称化耦合矩阵 & 表达零功率横向或升力类耦合。 \\
+    \(\tau_\theta(\nu_r,u_a,c)\) & 执行器状态和上下文驱动的广义力网络 & 表达执行器驱动和未建模非保守效应；不等同于标准 \(G(q)u\) 端口矩阵。 \\
+    \(T_\theta\) & softplus 正时间常数 & 表达命令到实际执行器状态的一阶滞后。 \\
     \(\mathcal{T}_{d\to m},\mathcal{T}_{m\to d}\) & 数据/模型状态转换 & 维持输出空间和内部动力学变量的一致性。 \\
     \bottomrule
   \end{tabularx}
@@ -368,17 +446,55 @@ AUVHamNODE 显式编码刚体位姿运动学：
   \hat y(t_i)=\Phi_\theta(t_i;t_0,y_0,u_c,c),\qquad
   \hat s_i=\mathcal{T}_{m\to d}(\hat y(t_i)),
 \end{equation}
-其中 \(\Phi_\theta\) 表示由神经常微分方程积分得到的流映射。训练损失在数据空间计算，包括位置、姿态、总体速度、角速度和执行器状态误差；模型空间速度用于内部水动力相关分支，不替代输出空间的可观测速度口径。
+其中 \(\Phi_\theta\) 表示由神经常微分方程积分得到的流映射。训练时，目标轨迹也转换到模型态 \(y_i=\mathcal{T}_{d\to m}(s_i)\)，使有海流样本的速度损失作用于相对水速度口径；位置、姿态和执行器状态在数据态与模型态中保持同一数值。一个典型加权训练目标可写为
+\begin{equation}
+  \mathcal{L}
+  =
+  \sum_i
+  \lambda_x\norm{\hat x_i-x_i}^2
+  +\lambda_R d_{\SO(3)}(\hat R_i,R_i)^2
+  +\lambda_\nu\norm{\hat\nu_{r,i}-\nu_{r,i}}^2
+  +\lambda_a\norm{\hat u_{a,i}-u_{a,i}}^2
+  +\lambda_{\SO}\mathcal{L}_{\SO(3)} ,
+  \label{eq:training-loss}
+\end{equation}
+其中 \(d_{\SO(3)}\) 为旋转测地距离，\(\mathcal{L}_{\SO(3)}\) 为旋转矩阵正交性和行列式正则项。评估和报告时，预测轨迹再通过 \(\mathcal{T}_{m\to d}\) 回到数据态，因此终端位置、姿态和总体速度等可观测指标仍在数据空间解释。
 
 \section{评估设置与结构消融}
 
+\subsection{数据、训练与证据口径}
+
+评估协议的目标不是只比较局部拟合误差，而是检验结构约束是否改善长期递推稳定性、初值扰动鲁棒性和内部物理一致性。数据来源采用受控仿真生成的 AUV 轨迹块，可区分无海流和有海流设置；有海流数据使用式 \eqref{eq:velocity-contract} 明确总体速度与相对水速度的转换关系。训练设置至少区分 clean training 与 profile-based noisy initial-condition training，后者通过初值扰动的 warmup、ramp 和混合比例控制训练噪声强度。
+
+结果进入主结论前应满足一致的数据协议、评估口径和代码环境记录。目录化结果可优先使用 canonical rollout 视图生成表格和图，但 canonical 不自动等于当前论文证据；引用具体数值时还需检查 evidence status。标记为 stale、needs recheck 或仅具 protocol sensitivity 含义的结果，只能用于讨论证据边界、协议敏感性或后续工作，不能作为主性能排序的无条件依据。
+
 \subsection{长期递推预测评估}
 
-长期递推预测将上一控制块的预测末状态作为下一控制块初值，用于检验误差累积、姿态漂移、速度发散和数值失败。主要指标包括完成率、失败原因、终端位置误差、终端姿态误差、总体速度误差和误差增长曲线。能量和 \(\SO(3)\) 诊断用于解释内部结构是否按预期工作，不替代外部任务误差。
+长期递推预测将上一控制块的预测末状态作为下一控制块初值，用于检验误差累积、姿态漂移、速度发散和数值失败。该任务的首要指标是 completion rate、completed-to-horizon rate 和 failure reason，因为只有模型完成目标时域后，终端误差才具有可比性。失败原因应区分预测发散、ODE 求解失败、NaN/Inf、速度或深度约束违反，以及地面真值 rollout 自身失败等情形。
+
+在完成目标时域的样本上，主要误差指标包括终端位置误差、深度误差、旋转测地误差、总体线速度误差、总体角速度误差和误差增长曲线；可进一步报告 median、p90 或 p95 轨迹误差以展示长期误差累积。相对速度误差属于模型空间诊断，用于解释水动力建模变量是否一致，不替代数据空间总体速度指标。能量、\(\SO(3)\) 行列式误差和正交性误差用于解释内部结构是否按预期工作，也不替代外部任务误差。
 
 \subsection{结构消融设置}
 
-模型比较链条覆盖黑箱模型、几何结构模型、动量结构模型、完整结构模型和结构消融模型。消融对象包括质量先验、完整耦合耗散、斜对称零功率耦合和广义力分支的条件化方式。实验结果进入主结论前应满足一致的数据协议、评估口径和代码环境记录；不满足这些条件的历史结果仅用于协议敏感性或局限性分析。
+模型比较链条覆盖非结构化 full-state 模型、\(\SE(3)\) 加速度模型、\(\SE(3)\) 动量模型、port-Hamiltonian 风格结构模型和 AUVHamNODE 完整模型。该链条用于分离几何运动学、动量坐标、能量结构和非保守力分解各自的作用。结构消融对象包括质量先验、耦合阻尼、斜对称零功率耦合、广义力分支条件化方式以及非保守力合并方式。
+
+\begin{table}[htbp]
+  \centering
+  \caption{模型比较与结构消融的证据角色}
+  \label{tab:model-comparison-roles}
+  \begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash}p{0.26\textwidth}>{\raggedright\arraybackslash}p{0.31\textwidth}>{\raggedright\arraybackslash}X}
+    \toprule
+    模型类别 & 代表模型 & 证据作用 \\
+    \midrule
+    非结构化状态模型 & Full-State Black-Box & 检验缺少几何与能量结构时的长期递推风险。 \\
+    几何基线 & \(\SE(3)\) Acceleration Black-Box & 隔离显式位姿运动学对姿态和位置预测的作用。 \\
+    动量基线 & \(\SE(3)\) Momentum Black-Box & 隔离动量坐标和质量矩阵对速度预测的作用。 \\
+    结构化 pH 基线 & pH NODE Merged Force, pH NODE q-Force & 检验能量核心和不同广义力组织方式的贡献。 \\
+    完整模型 & AUVHamNODE / pH NODE Full & 同时包含速度契约、\(\SE(3)\) 运动学、机械存储、D/J/\(\tau\) 分解和执行器滞后。 \\
+    消融模型 & No Mass Prior, Diagonal Damping, No Lift, B(u) Only & 分别检验质量先验、耦合阻尼、零功率耦合和执行器条件化的必要性。 \\
+    \bottomrule
+  \end{tabularx}
+\end{table}
 
 \section{讨论与局限性}
 
