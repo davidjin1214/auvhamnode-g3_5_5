@@ -17,7 +17,7 @@
 1. 为什么 AUV 动力学学习需要同时处理 SE(3) 几何、能量结构、水动力耗散、执行器滞后和海流相对速度；
 2. 为什么普通黑箱神经动力学不足以支撑长期递推；
 3. Fossen 被动性、Hamiltonian Neural Network、port-Hamiltonian system 与本文方法之间的关系；
-4. AUVHamNODE 的状态定义、速度契约、机械核心、非保守力分解和执行器动态；
+4. AUVHamNODE 的状态定义、海流速度变量关系、机械核心、非保守力分解和执行器动态；
 5. 代码实现如何对应理论对象；
 6. 实验协议如何验证结构约束，而不是只比较局部拟合误差；
 7. 当前证据哪些可写、哪些需重查、哪些只能作为 provenance 或协议敏感性说明。
@@ -45,12 +45,12 @@
 
 | 符号 | 维度/空间 | 含义 | 正文落点 | 实现对应 |
 |---|---:|---|---|---|
-| \(v_b\) | \(\mathbb{R}^3\) | 体坐标系总体线速度 | 速度契约 | 数据速度线速度槽 |
-| \(\omega\) | \(\mathbb{R}^3\) | 体坐标系角速度 | 速度契约、运动学 | state velocity `[15:18]` |
+| \(v_b\) | \(\mathbb{R}^3\) | 体坐标系总体线速度 | 速度变量关系 | 数据速度线速度槽 |
+| \(\omega\) | \(\mathbb{R}^3\) | 体坐标系角速度 | 速度变量关系、运动学 | state velocity `[15:18]` |
 | \(\nu_b=[v_b,\omega]\) | \(\mathbb{R}^6\) | 数据空间体坐标系总体速度 | 问题定义 | dataset velocity convention `body_total` |
-| \(v_c^n\) | \(\mathbb{R}^3\) | 惯性系海流速度 | 速度契约、海流通道 | optional carried channel |
-| \(v_c^b=R^\top v_c^n\) | \(\mathbb{R}^3\) | 体坐标系海流速度 | 速度契约 | `_body_current` |
-| \(v_r=v_b-v_c^b\) | \(\mathbb{R}^3\) | 相对水线速度 | 速度契约、水动力建模 | model velocity linear slot |
+| \(v_c^n\) | \(\mathbb{R}^3\) | 惯性系海流速度 | 速度变量关系、海流通道 | optional carried channel |
+| \(v_c^b=R^\top v_c^n\) | \(\mathbb{R}^3\) | 体坐标系海流速度 | 速度变量关系 | `_body_current` |
+| \(v_r=v_b-v_c^b\) | \(\mathbb{R}^3\) | 相对水线速度 | 速度变量关系、水动力建模 | model velocity linear slot |
 | \(\nu_r=[v_r,\omega]\) | \(\mathbb{R}^6\) | 模型空间相对水速度 | 方法核心 | ODE state velocity slot |
 | \(c\) | variable | 可选上下文，包括体坐标系海流、总体速度或深度上下文 | 广义力分支 | `actuation_current_feature`, `dj_current_feature`, `z_ref` |
 
@@ -204,7 +204,7 @@ R^\top v_c^n\\0
 
 | ID | 可写结论 | 推荐正文表述 | 证据来源 | 状态 | 落点 | 边界 |
 |---|---|---|---|---|---|---|
-| C1 | 数据空间与模型空间速度契约成立 | 数据保存总体速度，模型内部转换为相对水速度，输出时恢复总体速度 | `AUVHamNODE.py`, `train_utils.py` | current | 问题定义、方法 | 只在有海流时发生速度平移；无海流为 no-op |
+| C1 | 数据空间与模型空间速度变量关系成立 | 数据保存总体速度，模型内部转换为相对水速度，输出时恢复总体速度 | `AUVHamNODE.py`, `train_utils.py` | current | 问题定义、方法 | 只在有海流时发生速度平移；无海流为 no-op |
 | C2 | SE(3) 运动学被显式编码 | 模型显式使用 \(\dot x=Rv_b\)、\(\dot R=R\hat\omega\) | `AUVHamNODE.py` | current | 方法 | 普通 ODE solver 不保证数值严格在 SO(3) 上 |
 | C3 | 机械核心具有 pH 风格能量结构 | 正定质量、标量势能、正定耗散和斜对称零功率项构成开放式机械核心 | `AUVHamNODE.py` 与理论推导 | current | 方法、理论命题 | 不等于完整闭合严格 pH 系统 |
 | C4 | 静水机械核心满足能量平衡 | 限定条件下 \(\dot H_\theta=-\nu_r^\top D_\theta\nu_r+\nu_r^\top\tau_\theta\) | 理论推导 | current | 命题 | 需要列出连续时间、\(R\in SO(3)\)、\(D\succeq0\)、\(J=-J^\top\) 等条件 |
@@ -283,7 +283,7 @@ R^\top v_c^n\\0
 |---|---|---|---|---|---|
 | E1 | 模型是否能拟合局部动力学 | core models | block prediction | position, rotation, velocity, actuator loss | 局部拟合能力 |
 | E2 | 结构是否改善长期递推 | blackbox, SE3, pH, full | clean/noisy, rollout | completion, failure reason, final pos/rot/vel | 主证据 |
-| E3 | 速度契约在海流下是否合理 | oc vs noc, current feature ablations if available | clean and OC eval | total velocity, position, relative velocity diagnostic | 速度契约证据 |
+| E3 | 速度变量关系在海流下是否合理 | oc vs noc, current feature ablations if available | clean and OC eval | total velocity, position, relative velocity diagnostic | 速度变量关系证据 |
 | E4 | noisy IC training 是否鲁棒 | selected strong models | clean vs noisy train, multiple eval profiles | degradation vs clean, completion, final error | 结构相关鲁棒性 |
 | E5 | D/J/B 分解是否有价值 | `phnode_full`, `phnode_merged_force`, `phnode_qforce` | matched eval | long rollout and diagnostics | 结构消融 |
 | E6 | mass prior 是否关键 | `phnode_full`, `ablate_no_mass_prior` | clean/noisy | rollout, convergence, seed spread | 消融与讨论 |
@@ -313,7 +313,7 @@ R^\top v_c^n\\0
 | 图号 | 图名 | 内容 | 目的 |
 |---|---|---|---|
 | Fig. 1 | 总体框架图 | 数据态、模型态、ODE solve、输出评估 | 建立全章结构 |
-| Fig. 2 | 速度契约图 | \(\nu_b\)、\(\nu_r\)、\(v_c^n\)、\(R^\top v_c^n\)、\(\dot x=Rv_b\) | 解释海流下变量契约 |
+| Fig. 2 | 速度变量关系图 | \(\nu_b\)、\(\nu_r\)、\(v_c^n\)、\(R^\top v_c^n\)、\(\dot x=Rv_b\) | 解释海流下变量契约 |
 | Fig. 3 | AUVHamNODE 机械核心图 | \(M,V,D,J,\tau,u_c\to u_a\) | 解释能量流和非保守力分解 |
 | Fig. 4 | 模型结构阶梯图 | full-state blackbox 到 pH full | 展示结构逐级增强 |
 | Fig. 5 | 长期 rollout 误差增长图 | position, rotation, total velocity median/p90 | 展示长期稳定性 |
@@ -341,13 +341,13 @@ R^\top v_c^n\\0
 学位论文不需要从摘要和引言开始。建议实际写作顺序如下：
 
 1. **符号和问题定义**：先写 \(\nu_b,\nu_r,v_c^n,u_a,u_c,y,s\)，这是全章地基。
-2. **速度契约**：单独成节，解释总体速度和相对水速度为什么必须区分。
+2. **速度变量关系**：单独成节，解释总体速度和相对水速度为什么必须区分。
 3. **SE(3) 运动学**：给出 \(\dot x\)、\(\dot R\) 和连续时间切空间性质。
 4. **机械核心**：写 \(M_\theta,V_\theta,p_r,H_\theta\)。
 5. **非保守力分解**：写 \(D,J,\tau\) 及功率性质。
 6. **执行器和外源通道**：写 \(u_a,u_c,v_c^n,z_{ref}\)。
 7. **能量命题**：给出条件、结论和边界。
-8. **实现映射**：把理论对象逐项映射到代码实现。
+8. **可训练参数化**：把理论对象逐项映射到模型参数化。
 9. **实验协议**：先写评估设计，不急着写结果。
 10. **结果和讨论**：按 evidence status 过滤后填入结果。
 11. **引言和摘要**：最后写，使它们准确概括已完成正文。
@@ -362,7 +362,7 @@ R^\top v_c^n\\0
 2. 为 `phnode_full clean` 统一使用 current-main / cleanrun v1 对齐口径，避免旧 `seed42/46` 异常进入主结论。
 3. 决定 `ablate_no_lift clean seed43` 是重跑、剔除说明，还是在正文中标注 needs recheck。
 4. 将 `v4_lite` 结果定位为 protocol sensitivity diagnostic，不并入主 canonical 结论表，除非后续补齐 provenance 和异常修复。
-5. 生成或手绘速度契约图和机械核心图，这两张图应早于实验结果图完成。
+5. 生成或手绘速度变量关系图和机械核心图，这两张图应早于实验结果图完成。
 6. 为每个结果图记录数据来源、过滤条件、eval profile、horizon 和 metric key，避免后续图表不可追溯。
 7. 若计划把离散 RNN/TCN/MLP 作为额外基线，需要先确认是否已有实现和结果；没有结果时不要在正文主实验中承诺。
 
@@ -392,7 +392,7 @@ R^\top v_c^n\\0
 
 ### 11.1 问题定义种子段落
 
-六自由度 AUV 的配置由惯性系位置 \(x\in\mathbb{R}^3\) 和旋转矩阵 \(R\in SO(3)\) 给出，其中 \(R\) 将体坐标系向量映射到惯性坐标系。在有海流环境中，航行器相对于惯性系的总体速度与相对于周围水体的相对速度并不相同。本文将数据空间中的体坐标系总体速度记为 \(\nu_b=[v_b,\omega]\)，将模型空间中的相对水速度记为 \(\nu_r=[v_r,\omega]\)。若惯性系海流速度为 \(v_c^n\)，则体坐标系海流为 \(R^\top v_c^n\)，并有 \(\nu_r=\nu_b-[R^\top v_c^n;0]\)。该速度契约使位姿运动学和水动力建模分别使用其物理上对应的速度变量。
+六自由度 AUV 的配置由惯性系位置 \(x\in\mathbb{R}^3\) 和旋转矩阵 \(R\in SO(3)\) 给出，其中 \(R\) 将体坐标系向量映射到惯性坐标系。在有海流环境中，航行器相对于惯性系的总体速度与相对于周围水体的相对速度并不相同。本文将数据空间中的体坐标系总体速度记为 \(\nu_b=[v_b,\omega]\)，将模型空间中的相对水速度记为 \(\nu_r=[v_r,\omega]\)。若惯性系海流速度为 \(v_c^n\)，则体坐标系海流为 \(R^\top v_c^n\)，并有 \(\nu_r=\nu_b-[R^\top v_c^n;0]\)。该速度变量关系使位姿运动学和水动力建模分别使用其物理上对应的速度变量。
 
 ### 11.2 方法总述种子段落
 
@@ -412,7 +412,7 @@ AUVHamNODE 的构造从几何、能量和非保守力三个层面约束连续时
 
 正式开写前，建议下一步只做两件事：
 
-1. 新建正文草稿文件，例如 `paper/drafts/auvhamnode_thesis_chapter_zh.md`，先写“问题定义”和“速度契约”两节。
+1. 新建正文草稿文件，例如 `paper/drafts/auvhamnode_thesis_chapter_zh.md`，先写“问题定义”和“速度变量关系”两节。
 2. 运行或编写结果导出脚本，将 current evidence 的 rollout 主表导出为论文表格底稿。
 
 第一件事推动正文，第二件事锁定证据。不要再继续扩展指南，除非正式写作中发现具体缺口。
