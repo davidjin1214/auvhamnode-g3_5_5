@@ -14,6 +14,9 @@
 | [auvhamnode_formal_writing_companion_zh.md](auvhamnode_formal_writing_companion_zh.md) | 正式写作伴随文件 | 强化“三个账本”、摘要/引言主线、方法章组织、证据阶梯和审稿风险控制 | 准备正式开写、确定叙事顺序和段落逻辑时 |
 | [auvhamnode_expert_review_decision_notes_zh.md](auvhamnode_expert_review_decision_notes_zh.md) | 专家复核与落稿决策备忘 | 固化最终论文定位、必须保留的贡献点、理论边界、实验证据红线，以及内部指南到正式正文的转化规则 | 判断“什么能写、什么不能写、如何转化成正文”时 |
 | [auvhamnode_thesis_chapter_prewrite_pack_zh.md](auvhamnode_thesis_chapter_prewrite_pack_zh.md) | 学位论文章节开写前材料包 | 集中整理符号表、claim-evidence 表、理论到代码映射、实验矩阵、图表清单、正文种子段落和待补材料 | 真正开始写正文前，作为底稿索引和任务清单使用 |
+| [drafts/auvhamnode_thesis_chapter_review_notes_zh.md](drafts/auvhamnode_thesis_chapter_review_notes_zh.md) | 旧稿审查意见与重写约束 | 记录旧中间稿的问题、可保留素材、重写原则和新稿结构 | 继续写正文前，先确认不重复旧稿问题 |
+| [drafts/auvhamnode_thesis_chapter_zh.tex](drafts/auvhamnode_thesis_chapter_zh.tex) | 当前正式重写主稿骨架 | 以正式方法章为目标，重建命名、结构、速度契约、机械核心、验证协议和边界 | 后续正文扩写的唯一主稿入口 |
+| [drafts/deprecated/auvhamnode_thesis_chapter_zh_intermediate_20260519.tex](drafts/deprecated/auvhamnode_thesis_chapter_zh_intermediate_20260519.tex) | 已降级旧中间稿 | 保留旧稿公式、段落和表格素材，但不再作为主稿逐句修改 | 仅在迁移素材时查阅 |
 
 ---
 
@@ -28,11 +31,12 @@
 
 ### 2.2 准备正式写正文
 
-直接从 [auvhamnode_thesis_chapter_prewrite_pack_zh.md](auvhamnode_thesis_chapter_prewrite_pack_zh.md) 开始，必要时回查：
+直接从 [drafts/auvhamnode_thesis_chapter_review_notes_zh.md](drafts/auvhamnode_thesis_chapter_review_notes_zh.md) 和 [drafts/auvhamnode_thesis_chapter_zh.tex](drafts/auvhamnode_thesis_chapter_zh.tex) 开始。写正文时，以重写主稿为唯一主线，必要时回查：
 
 - 概念或推导不清楚：查总指南；
 - 叙事顺序不清楚：查正式写作伴随文件；
 - 不确定能否这样写：查专家复核与决策备忘。
+- 需要迁移符号、claim-evidence、实验矩阵或图表清单：查开写前材料包。
 
 ### 2.3 写作中遇到证据风险
 
@@ -64,6 +68,7 @@
 
 - `done`：材料已完成，可直接使用。
 - `ready`：材料足够，可以开始写正文。
+- `in_progress`：已有正文或骨架，正在扩写。
 - `pending`：尚未完成，需要补充。
 - `blocked`：需要实验、数据或用户决策后才能推进。
 - `watch`：可写但必须带边界或证据状态说明。
@@ -78,11 +83,12 @@
 | claim-evidence 表 | ready | 开写前材料包第 4 节 | 写结果章前按最新 catalog 再校验一次 |
 | 实验矩阵 | ready | 开写前材料包第 6 节 | 根据实际可用结果确定主表和附表 |
 | 图表清单 | ready | 开写前材料包第 7 节 | 优先制作速度契约图和机械核心图 |
-| 正文草稿 | pending | 尚未创建 | 建议新建 `paper/drafts/auvhamnode_thesis_chapter_zh.md` |
-| 问题定义正文 | pending | 种子段落已在材料包中 | 第一批正式写作任务 |
-| 速度契约正文 | pending | 符号和公式已齐备 | 与问题定义同步写 |
-| 方法正文 | pending | 总指南和材料包已有推导框架 | 在问题定义后写 SE(3)、能量、D/J/\(\tau\)、执行器 |
-| 实验协议正文 | pending | 材料包已有矩阵和指标分类 | 先写协议，后填结果 |
+| 旧中间稿审查与降级 | done | 审查意见文档 + deprecated 旧稿 | 旧稿只作素材库，不再逐句修改 |
+| 正文草稿 | in_progress | `drafts/auvhamnode_thesis_chapter_zh.tex` 重写骨架 | 按正式正文扩写问题定义、方法推导和验证协议 |
+| 问题定义正文 | in_progress | 重写骨架已有基本定义 | 扩展状态、控制、坐标系和受控初值问题 |
+| 速度契约正文 | in_progress | 重写骨架已有核心公式和命题 | 补充数据空间、模型空间、输出空间的正式论证 |
+| 方法正文 | in_progress | 重写骨架已有 SE(3)、能量和非保守力结构 | 补完整能量证明、实现映射和模型对比 |
+| 实验协议正文 | in_progress | 重写骨架已有验证协议 | 后续按 current evidence 扩写结果章 |
 | 结果主表导出 | pending | catalog 已有 canonical views | 导出 current evidence 主表，标注 evidence status |
 | `phnode_full clean` 结果口径 | watch | provenance audit 已给 0.6767 m 对齐基线 | 正文避免旧 11 m 脆弱性叙事 |
 | `ablate_no_lift clean` 结论 | blocked | seed43 clean 异常需处理 | 用户决定重跑、剔除说明或标注 needs recheck |
@@ -113,7 +119,7 @@
    - 模型空间相对水速度
    - 数据态与模型态转换
 
-4. **AUVHamNODE 结构化模型**
+4. **结构化连续时间模型（AUVHamNODE）**
    - SE(3) 运动学
    - 相对动量与哈密顿量
    - 正定耗散和斜对称零功率耦合
@@ -133,7 +139,7 @@
    - rollout benchmark
    - 指标和 evidence status
 
-7. **实验结果与分析**
+7. **实验结果与分析**（需导出 current evidence 后扩写）
    - 短时控制块预测
    - 长期 rollout
    - 海流速度契约验证
@@ -156,14 +162,16 @@
 | 阶段 | 任务 | 产物 | 状态 |
 |---|---|---|---|
 | P0 | 整理指南与材料入口 | 本 README | done |
-| P1 | 创建正式正文草稿 | `paper/drafts/auvhamnode_thesis_chapter_zh.md` | pending |
-| P2 | 写“问题定义与速度契约” | 正文第 3 节初稿 | pending |
-| P3 | 写“SE(3) 运动学与机械核心” | 正文第 4 节前半 | pending |
-| P4 | 写“非保守力分解、执行器与海流通道” | 正文第 4 节后半 | pending |
+| P1a | 审查旧中间稿 | `paper/drafts/auvhamnode_thesis_chapter_review_notes_zh.md` | done |
+| P1b | 降级旧中间稿 | `paper/drafts/deprecated/auvhamnode_thesis_chapter_zh_intermediate_20260519.tex` | done |
+| P1c | 创建正式重写骨架 | `paper/drafts/auvhamnode_thesis_chapter_zh.tex` | done |
+| P2 | 写“问题定义与速度契约” | 正文第 2 节正式扩写 | in_progress |
+| P3 | 写“SE(3) 运动学与机械核心” | 正文第 4 节前半 | in_progress |
+| P4 | 写“非保守力分解、执行器与海流通道” | 正文第 4 节后半 | in_progress |
 | P5 | 写“能量平衡命题与边界” | 命题、证明要点和边界说明 | pending |
 | P6 | 写“实现映射与模型对比” | 实现表、模型结构表 | pending |
 | P7 | 导出 current evidence 结果表 | 论文结果表底稿 | pending |
-| P8 | 写“训练与评估协议” | 正文协议节 | pending |
+| P8 | 写“训练与评估协议” | 正文协议节 | in_progress |
 | P9 | 写“实验结果与讨论” | 结果章初稿 | blocked until P7 |
 | P10 | 写引言、摘要和章节小结 | 完整章节初稿 | pending |
 

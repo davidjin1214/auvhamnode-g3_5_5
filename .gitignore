@@ -67,6 +67,7 @@ results/
 checkpoints/
 logs/
 data/
+exports/
 *.pkl
 *.pth
 *.pt

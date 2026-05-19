@@ -27,6 +27,7 @@ The current repo state already includes:
 - summary/report scripts for model sweeps
 - a structured result catalog under `analysis/oc_data_catalog/`
 - a human-readable experiment progress tracker
+- a `paper/` writing workspace for the AUVHamNODE thesis chapter, including current rewrite notes and the active LaTeX draft skeleton
 
 If you are new to the repo, the most useful current documents are:
 
@@ -60,6 +61,8 @@ If you are new to the repo, the most useful current documents are:
   Canonical rollout selection rules
 - [docs/oc_catalog_template_usage.md](/Users/xiangjin/Library/CloudStorage/OneDrive-Personal/我的/Code/auv_se3node/g3_5_5/docs/oc_catalog_template_usage.md)
   Ready-to-use plotting/export templates
+- [paper/README.md](/Users/xiangjin/Library/CloudStorage/OneDrive-Personal/我的/Code/auv_se3node/g3_5_5/paper/README.md)
+  AUVHamNODE thesis chapter writing entrypoint, current draft status, and writing boundaries
 
 ## Quick Start
 
@@ -210,6 +213,8 @@ Important directories:
   Trained runs and sweep suites
 - `analysis/oc_data_catalog/`
   Cataloged experiment tables and canonical views
+- `paper/`
+  Thesis-chapter writing materials, review notes, active draft skeleton, and deprecated intermediate drafts
 - `original/bf3n/`
   Delete-candidate legacy reference material; not the active implementation
 
@@ -335,6 +340,19 @@ Rebuild the catalog with:
 conda run -n mytorch1 python scripts/build_oc_data_catalog.py
 ```
 
+## Thesis Chapter Drafting
+
+The `paper/` directory is the current workspace for writing the AUVHamNODE method as a Chinese doctoral thesis chapter. Start from:
+
+- [paper/README.md](/Users/xiangjin/Library/CloudStorage/OneDrive-Personal/我的/Code/auv_se3node/g3_5_5/paper/README.md)
+  Writing entrypoint, document roles, progress board, and current chapter structure
+- [paper/drafts/auvhamnode_thesis_chapter_review_notes_zh.md](/Users/xiangjin/Library/CloudStorage/OneDrive-Personal/我的/Code/auv_se3node/g3_5_5/paper/drafts/auvhamnode_thesis_chapter_review_notes_zh.md)
+  Strict review of the deprecated intermediate draft and constraints for rewriting
+- [paper/drafts/auvhamnode_thesis_chapter_zh.tex](/Users/xiangjin/Library/CloudStorage/OneDrive-Personal/我的/Code/auv_se3node/g3_5_5/paper/drafts/auvhamnode_thesis_chapter_zh.tex)
+  Active LaTeX rewrite skeleton for the formal thesis chapter
+
+The previous draft has been downgraded to `paper/drafts/deprecated/auvhamnode_thesis_chapter_zh_intermediate_20260519.tex`. Treat it as a source of formulas and reusable material only, not as the main text to polish line by line. The active thesis chapter should use a formal method definition before introducing `AUVHamNODE` as a shorthand, avoid internal writing-plan language, and keep experiment conclusions gated on current evidence status.
+
 ## Plotting and Export Templates
 
 Minimal query/export helpers:
@@ -387,6 +405,7 @@ If you only want a fast orientation, read in this order:
 10. [docs/noise_model_design.md](/Users/xiangjin/Library/CloudStorage/OneDrive-Personal/我的/Code/auv_se3node/g3_5_5/docs/noise_model_design.md)
 11. [docs/oc_data_catalog_dictionary.md](/Users/xiangjin/Library/CloudStorage/OneDrive-Personal/我的/Code/auv_se3node/g3_5_5/docs/oc_data_catalog_dictionary.md)
 12. [docs/oc_result_selection_policy.md](/Users/xiangjin/Library/CloudStorage/OneDrive-Personal/我的/Code/auv_se3node/g3_5_5/docs/oc_result_selection_policy.md)
+13. [paper/README.md](/Users/xiangjin/Library/CloudStorage/OneDrive-Personal/我的/Code/auv_se3node/g3_5_5/paper/README.md)
 
 ## Practical Notes
 
