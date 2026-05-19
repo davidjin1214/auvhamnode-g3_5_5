@@ -1,0 +1,698 @@
+\documentclass[UTF8,zihao=-4]{ctexrep}
+
+\usepackage[a4paper,margin=2.6cm]{geometry}
+\usepackage{amsmath,amssymb,amsthm,bm}
+\usepackage{booktabs}
+\usepackage{tabularx}
+\usepackage{array}
+\usepackage{longtable}
+\usepackage{hyperref}
+\usepackage[round,authoryear]{natbib}
+
+\hypersetup{
+  colorlinks=true,
+  linkcolor=black,
+  citecolor=black,
+  urlcolor=black
+}
+\emergencystretch=3em
+
+\newtheorem{proposition}{命题}[chapter]
+\newtheorem{assumption}{假设}[chapter]
+
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\SO}{\mathrm{SO}}
+\newcommand{\SE}{\mathrm{SE}}
+\newcommand{\se}{\mathfrak{se}}
+\newcommand{\diag}{\operatorname{diag}}
+\newcommand{\ad}{\operatorname{ad}}
+\newcommand{\dd}{\mathrm{d}}
+\newcommand{\norm}[1]{\left\lVert #1\right\rVert}
+
+\title{AUVHamNODE：面向六自由度自主水下航行器动力学学习的能量结构化神经常微分方程}
+\author{}
+\date{}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+自主水下航行器在长期运动预测中同时受到姿态几何约束、强耦合水动力、执行器滞后和环境海流扰动的影响。传统海洋航行器动力学模型具有明确的质量、Coriolis、阻尼、恢复力和输入功率结构，但依赖平台参数、半经验水动力项和特定航行器建模假设；黑箱神经动力学模型具有较强表达能力，却容易在长期递推中出现姿态不一致、速度漂移和能量行为不可解释等问题。为此，本章提出 AUVHamNODE，一种面向六自由度 AUV 动力学学习的 \(\SE(3)\) 结构化、能量约束神经常微分方程模型。该模型在数据空间保存体坐标系总体速度，在模型空间使用相对水速度参数化水动力相关广义力，并通过正定质量、标量势能、正定耗散、斜对称零功率耦合、执行器滞后和可学习广义力分支构造开放式端口哈密顿风格机械核心。理论上，本章证明静水连续时间条件下该机械核心满足端口哈密顿风格能量平衡；实验设计上，本章将短时控制块预测、长期 rollout、海流速度契约、噪声初值鲁棒性、结构消融以及能量和 \(\SO(3)\) 诊断组织为验证结构约束作用的证据链。AUVHamNODE 的目标不是将某个 REMUS100 工程模拟器逐项改写为闭合严格端口哈密顿系统，而是把 AUV 动力学中与几何、能量、耗散、执行器和海流速度约定相关的关键结构转化为可学习、可消融、可长期递推验证的连续时间假设空间。
+\end{abstract}
+
+\tableofcontents
+
+\chapter{AUVHamNODE 结构化动力学学习方法}
+
+\section{研究问题与方法定位}
+
+六自由度自主水下航行器（autonomous underwater vehicle, AUV）的运动预测是一个同时包含刚体姿态几何、水动力耗散、执行器动态和环境扰动的受控连续时间建模问题。与平面移动机器人或低维质点系统相比，AUV 的状态不仅包含位置和速度，还包含三维姿态、体坐标系角速度以及与舵、桨、鳍面等执行机构相关的内部动态。长期递推预测时，模型误差会在姿态、速度和位置之间反复耦合；短时一步误差较小的模型，未必能在长时间 rollout 中保持稳定、物理一致和可解释。
+
+传统海洋航行器建模通常以 Fossen 型六自由度方程为基础，将刚体与附加质量、Coriolis/向心项、阻尼、恢复力和控制输入组织成具有功率配对和被动性结构的动力学方程 \citep{fossen2011handbook,fossen2021handbook}。这类模型提供了清晰的物理结构，但实际平台往往需要大量水动力参数、执行器模型和半经验修正项。以 REMUS 风格仿真模型为例，其六自由度运动方程能够提供受控数据来源和结构验证环境，但其中的升阻力、横流阻力、舵桨力和执行器近似并不天然构成一个可以逐项声明的标准闭合端口哈密顿系统 \citep{prestero2001verification}。
+
+另一方面，神经常微分方程（neural ordinary differential equation, Neural ODE）将连续时间向量场参数化为神经网络，并通过数值积分器定义从初值到轨迹的映射 \citep{chen2018neuralode}。这种表达方式适合受控轨迹学习，但若直接以黑箱网络学习完整状态导数，模型通常缺少对 \(\SO(3)\) 姿态流形、机械能存储、耗散功率和相对水速度的显式约束。Hamiltonian Neural Network 通过标量哈密顿量生成保守系统向量场 \citep{greydanus2019hamiltonian}，端口哈密顿理论进一步用输入、输出和耗散项描述开放系统中的能量交换 \citep{vanderschaft2014porthamiltonian,vanderschaft2017l2gain}。然而，AUV 是受控、耗散、受海流扰动并包含执行器滞后的开放机械系统，不能被简单等同为闭合保守哈密顿系统。
+
+本章的核心方法定位是：AUVHamNODE 不是对某个工程模拟器的逐项端口哈密顿化，而是面向 AUV 轨迹预测构造一个结构化连续时间假设空间。该假设空间保留三类关键约束。第一，几何约束要求位置和姿态由 \(\SE(3)\) 运动学推进。第二，能量约束要求机械核心由正定质量、标量势能、耗散项和零功率耦合项组织。第三，速度契约要求位姿运动学使用航行器相对惯性系的总体速度，而水动力相关广义力使用航行器相对周围水体的相对速度。这个定位使模型既能吸收 Fossen 型动力学中的被动性思想，又不会超出当前实现和实验可支撑的理论边界。
+
+本章贡献可以概括为四点：
+\begin{enumerate}
+  \item 提出数据空间总体速度与模型空间相对水速度之间的速度契约，使海流场景中的运动学变量和水动力变量保持物理区分。
+  \item 构造 \(\SE(3)\) 结构化、能量约束的 Neural ODE，使位置、姿态、相对动量、执行器状态和外源海流通道在统一连续时间模型中演化。
+  \item 将非保守广义力分解为正定耗散、斜对称零功率耦合和可学习广义力分支，并给出静水机械核心的能量平衡命题。
+  \item 建立从黑箱模型、几何结构模型、动量结构模型、端口哈密顿风格模型到结构消融模型的比较链条，用短时拟合、长期 rollout、噪声初值和物理诊断共同检验结构约束的作用。
+\end{enumerate}
+
+上述贡献的共同目标不是追求一个在所有指标上都由单一模型绝对领先的经验结论，而是建立一个可以解释、可以消融、可以长期递推检验的结构化动力学学习框架。AUV 轨迹预测中的主要困难并不只来自非线性函数逼近本身，还来自状态变量的物理类型不同、速度变量的参照系不同、保守力和非保守力的功率角色不同，以及短期误差和长期稳定性之间存在不一致。若将这些差异全部交给黑箱网络在数据中自行发现，模型可能在训练窗口内取得较低误差，却在长期递推时把姿态漂移、能量异常和海流速度混淆放大为位置误差。因此，本章将结构约束视为学习假设空间的一部分，而不是训练之后再解释的附加属性。
+
+本章的理论声称范围也需要在开头明确。AUVHamNODE 中的“端口哈密顿”不是指完整系统已经被写成标准仿射输入端口哈密顿形式。完整增强状态包含执行器一阶滞后、外源海流携带通道和由神经网络参数化的广义力分支，这些部分没有被证明组成一个闭合正则端口哈密顿系统。本章能够严格讨论的是机械核心的能量存储、耗散、零功率耦合和速度--广义力功率配对；能够通过实验讨论的是这些结构约束是否改善长期递推稳定性、扰动鲁棒性和物理诊断表现。这样的限定不是削弱方法价值，而是保证理论、实现和实验证据处在同一声称边界内。
+
+\section{结构化建模主线}
+
+为了避免方法章节被写成代码模块说明，本章从三条约束主线组织 AUVHamNODE：几何约束、能量约束和速度约束。三者分别回答不同层面的问题。几何约束回答“位姿变量应如何演化”；能量约束回答“哪些项储能、耗能或交换功率”；速度约束回答“数据中的速度和水动力中的速度是否是同一个物理量”。只有三条主线同时成立，AUVHamNODE 才能被解释为面向 AUV 长期轨迹学习的结构化连续时间模型。
+
+\subsection{几何约束主线}
+
+AUV 的配置空间不是普通欧氏空间，而是 \(\R^3\times\SO(3)\)。位置 \(x\) 可以用三维向量表达，但姿态 \(R\) 必须满足 \(R^\top R=I\) 和 \(\det R=1\)。若模型把旋转矩阵的九个元素当作普通状态分量并直接学习其导数，则长期递推后可能得到不再正交的矩阵，进而破坏体坐标系速度、海流坐标变换和姿态误差计算的物理意义。几何约束的作用是把位姿运动学从学习任务中分离出来：网络不负责自由学习 \(\dot x\) 和 \(\dot R\) 的任意形式，而是在给定速度后由刚体运动学确定位置和姿态的变化。
+
+这种处理并不意味着所有数值轨迹天然严格停留在 \(\SO(3)\) 上。当前实现使用常规 ODE 求解器积分旋转矩阵元素，连续时间向量场与 \(\SO(3)\) 切空间相容，但离散求解器仍可能产生小的正交性误差。因此，几何约束主线包含两个层次：理论上，向量场采用 \(\dot R=R\widehat\omega\)；实验上，需要报告或检查 \(\SO(3)\) 正交性和行列式诊断。前者说明模型结构合理，后者说明数值实现没有把理论性质过度解释为离散积分器的严格保证。
+
+\subsection{能量约束主线}
+
+AUV 动力学包含明显的能量角色分工。质量矩阵和速度决定动能，重力、浮力和姿态相关项可以通过势能或恢复力表达，水动力阻尼耗散机械能，Coriolis/向心项和某些横向耦合项改变动量方向但不产生净功，推进器和舵面通过广义力向系统输入或抽取机械功。传统 Fossen 型模型正是利用这种结构组织六自由度航行器方程。AUVHamNODE 的能量约束主线把这种物理分工转化为神经参数化结构：正定质量保证动能项正定，标量势能保证保守项来自一个能量函数，正定耗散矩阵保证阻尼功率非正，斜对称矩阵保证零功率耦合，可学习广义力分支承担执行器和未建模非保守效应。
+
+这种能量组织方式与普通黑箱加速度模型不同。黑箱模型可以学习任意速度导数，但无法区分某个分量是在耗散能量、交换能量还是由输入供能。AUVHamNODE 并不要求神经网络恢复唯一真实水动力分解，而是要求学习到的向量场在结构上遵守功率角色：耗散分支不能产生正耗散功率，斜对称分支不能直接改变机械能，广义力分支通过速度--力内积与机械核心交换能量。这种约束减少了长期递推中出现无物理来源能量增长的自由度，也为能量诊断提供了可解释对象。
+
+\subsection{速度约束主线}
+
+海流使 AUV 动力学中的速度变量具有双重含义。位置运动学需要的是航行器相对于惯性系的总体速度，因为位置 \(x\) 是在惯性坐标系中变化的；水动力建模需要的是航行器相对于周围水体的相对速度，因为阻尼、升力和舵桨水动力主要由相对来流决定。在无海流环境中，这两个速度可以重合；在有海流环境中，它们相差体坐标系海流 \(R^\top v_c^n\)。如果模型在运动学和广义力分支中不区分这两类速度，就会把环境平移效应和相对水动力效应混在同一个变量中。
+
+因此，本章将速度契约作为核心建模贡献，而不是实现细节。数据空间保存总体速度，使预测输出与仿真和评估口径一致；ODE 模型空间使用相对水速度，使水动力相关分支接收物理上合适的输入；在进入和离开 ODE 求解器时，通过 \(R^\top v_c^n\) 完成两种速度之间的转换。这个契约同时影响问题定义、模型结构、训练损失和实验解释。长期 rollout 中的位置误差应基于总体速度解释，而阻尼和广义力诊断则应基于相对水速度解释。
+
+\section{理论背景}
+
+\subsection{Neural ODE 与受控轨迹学习}
+
+Neural ODE 将离散层堆叠解释为连续时间动力系统
+\begin{equation}
+  \dot z(t)=f_\theta(z(t),t),
+  \qquad
+  z(t_1)=z(t_0)+\int_{t_0}^{t_1}f_\theta(z(t),t)\,\dd t ,
+\end{equation}
+其中 \(f_\theta\) 由神经网络参数化。对于 AUV 轨迹预测，状态 \(z\) 不只是欧氏空间中的一般向量，而包含位置、旋转矩阵、体坐标系速度、执行器状态和外源上下文。因此，模型的关键不在于是否使用连续时间积分器本身，而在于向量场 \(f_\theta\) 是否尊重 AUV 动力学中的几何和能量结构。
+
+在受控场景中，控制命令通常在一个积分窗口内保持分段常值。设控制命令为 \(u_c\)，实际执行器状态为 \(u_a\)，则受控 Neural ODE 可以写成增强状态系统
+\begin{equation}
+  \dot y=f_\theta(y,u_c,c),
+\end{equation}
+其中 \(c\) 表示海流、深度参考等外源上下文。AUVHamNODE 采用这种增强状态观点，但对 \(f_\theta\) 施加 \(\SE(3)\) 运动学、机械能和功率配对结构。
+
+\subsection{Hamiltonian 与端口哈密顿结构}
+
+对于保守机械系统，哈密顿量 \(H(q,p)\) 表示系统总能量，并通过辛结构生成状态演化。Hamiltonian Neural Network 使用神经网络学习标量 \(H_\theta\)，再由结构方程产生向量场，从而在模型形式上保留能量相关约束 \citep{greydanus2019hamiltonian}。AUV 动力学并非保守系统：水动力阻尼耗散机械能，推进器和舵面输入机械功，海流改变相对水速度，执行器还引入内部滞后。因此，仅用闭合 Hamiltonian 系统不足以刻画 AUV 的实际运动。
+
+端口哈密顿系统将能量存储、互连结构、耗散结构和外部端口统一起来。其典型形式可写为
+\begin{equation}
+  \dot x =
+  \left[J(x)-R(x)\right]\nabla H(x)+G(x)u,
+  \qquad
+  y=G(x)^\top\nabla H(x),
+\end{equation}
+其中 \(J(x)=-J(x)^\top\) 描述功率守恒互连，\(R(x)\succeq0\) 描述耗散，输入输出端口满足功率配对。AUVHamNODE 借用这一思想构造机械核心，但完整增强系统还包含执行器滞后、外源海流携带通道和可学习非线性广义力分支。因此，本章仅声称机械核心在限定条件下具有端口哈密顿风格能量平衡，而不声称完整 AUV--执行器--海流增强系统是标准仿射输入形式下的闭合端口哈密顿系统。
+
+\subsection{Fossen 型海洋航行器被动性}
+
+Fossen 型海洋航行器动力学通常写作
+\begin{equation}
+  M\dot\nu+C(\nu)\nu+D(\nu)\nu+g(\eta)=\tau ,
+\end{equation}
+其中 \(\eta\) 为位置和姿态变量，\(\nu\) 为体坐标系速度，\(M\) 为正定惯性矩阵，\(C(\nu)\) 满足零功率性质，\(D(\nu)\) 表示耗散，\(g(\eta)\) 表示恢复力，\(\tau\) 为广义输入 \citep{fossen2011handbook,fossen2021handbook}。若取机械能
+\begin{equation}
+  H(\eta,\nu)=\frac12\nu^\top M\nu+V(\eta),
+\end{equation}
+则在理想条件下可以得到输入功率、耗散功率和储能变化之间的平衡关系。AUVHamNODE 的机械核心正是从这一结构中提取可学习约束：质量矩阵保持正定，势能由标量函数产生，耗散矩阵保持半正定，斜对称耦合项保持零功率，可学习广义力通过速度--力配对与机械能交换。
+
+\section{问题定义与速度契约}
+
+\subsection{状态、控制与坐标系}
+
+设 \(n\) 表示惯性坐标系或导航坐标系，\(b\) 表示 AUV 体坐标系。AUV 配置由位置 \(x\in\R^3\) 和旋转矩阵 \(R\in\SO(3)\) 描述，其中 \(R\) 将体坐标系向量映射到惯性坐标系。角速度 \(\omega\in\R^3\) 在体坐标系表达，控制命令 \(u_c\in\R^m\) 表示当前积分窗口内保持的执行器命令，实际执行器状态 \(u_a\in\R^m\) 通过一阶滞后动态响应命令。
+
+本章研究的预测任务可以表述为受控初值问题。给定控制块初始状态 \(s(t_k)\)、控制命令 \(u_c(t_k)\) 以及外源上下文 \(c(t_k)\)，模型需要在时间区间 \([t_k,t_{k+1}]\) 内生成连续时间轨迹，并在离散采样时刻输出与数据空间一致的状态预测。若将一个控制块内的采样时刻记为 \(t_{k,0},\ldots,t_{k,L}\)，则训练数据可写为
+\begin{equation}
+  \mathcal D
+  =
+  \left\{
+    \left(s_{i,k,0:L},u_{i,k},c_{i,k}\right)
+  \right\}_{i,k},
+\end{equation}
+其中 \(i\) 表示轨迹编号，\(k\) 表示控制块编号。模型从 \(s_{i,k,0}\) 出发积分得到 \(\hat s_{i,k,1:L}\)，并通过轨迹级损失约束预测序列与真实序列一致。长期 rollout 时，前一控制块的预测末状态会作为下一控制块的初值，因此局部误差会沿控制块序列累积。
+
+\begin{longtable}{>{\raggedright\arraybackslash}p{0.18\textwidth}>{\raggedright\arraybackslash}p{0.18\textwidth}>{\raggedright\arraybackslash}p{0.54\textwidth}}
+  \caption{本章主要符号约定}
+  \label{tab:notation}\\
+  \toprule
+  符号 & 空间或维度 & 含义 \\
+  \midrule
+  \endfirsthead
+  \toprule
+  符号 & 空间或维度 & 含义 \\
+  \midrule
+  \endhead
+  \(x\) & \(\R^3\) & 惯性系位置或控制块内相对位置。 \\
+  \(R\) & \(\SO(3)\) & 从体坐标系到惯性坐标系的旋转矩阵。 \\
+  \(q=(x,R)\) & \(\R^3\times\SO(3)\) & AUV 配置变量。 \\
+  \(v_b\) & \(\R^3\) & 体坐标系总体线速度，即相对于惯性系运动的体坐标表达。 \\
+  \(\omega\) & \(\R^3\) & 体坐标系角速度。 \\
+  \(\nu_b=[v_b,\omega]\) & \(\R^6\) & 数据空间中的体坐标系总体速度。 \\
+  \(v_c^n\) & \(\R^3\) & 惯性系海流速度。 \\
+  \(v_c^b=R^\top v_c^n\) & \(\R^3\) & 体坐标系海流速度。 \\
+  \(v_r=v_b-v_c^b\) & \(\R^3\) & 相对水线速度。 \\
+  \(\nu_r=[v_r,\omega]\) & \(\R^6\) & 模型空间中的相对水速度。 \\
+  \(u_c\) & \(\R^m\) & 执行器命令，在单个控制块内作为外源输入携带。 \\
+  \(u_a\) & \(\R^m\) & 实际执行器状态，由一阶滞后动态更新。 \\
+  \(p_r=M_\theta\nu_r\) & \(\R^6\) & 相对动量。 \\
+  \(H_\theta\) & \(\R\) & 机械存储函数。 \\
+  \(D_\theta,J_\theta,\tau_\theta\) & -- & 耗散矩阵、斜对称零功率耦合和可学习广义力分支。 \\
+  \bottomrule
+\end{longtable}
+
+在无海流环境中，体坐标系线速度可直接作为水动力和运动学共同使用的速度变量。在有海流环境中，航行器相对惯性系的总体速度和相对水体的速度并不相同。设惯性系海流速度为 \(v_c^n\in\R^3\)，则其在体坐标系中的表达为
+\begin{equation}
+  v_c^b=R^\top v_c^n .
+\end{equation}
+本文将数据空间中的体坐标系总体速度记为
+\begin{equation}
+  \nu_b=\begin{bmatrix}v_b\\\omega\end{bmatrix}\in\R^6,
+\end{equation}
+将模型空间中的相对水速度记为
+\begin{equation}
+  \nu_r=\begin{bmatrix}v_r\\\omega\end{bmatrix}\in\R^6,
+  \qquad
+  v_r=v_b-v_c^b .
+\end{equation}
+因此，两种速度之间满足
+\begin{equation}
+  \nu_r=
+  \nu_b-
+  \begin{bmatrix}
+    R^\top v_c^n\\0
+  \end{bmatrix},
+  \qquad
+  \nu_b=
+  \nu_r+
+  \begin{bmatrix}
+    R^\top v_c^n\\0
+  \end{bmatrix}.
+  \label{eq:velocity-contract}
+\end{equation}
+
+\subsection{数据空间、模型空间与输出空间}
+
+训练数据保存的是总体速度约定下的状态
+\begin{equation}
+  s=
+  [x,R,\nu_b,u_a,u_c,v_c^n,z_{\mathrm{ref}}],
+  \label{eq:data-state}
+\end{equation}
+其中 \(z_{\mathrm{ref}}\) 是可选深度上下文。ODE 求解器内部使用相对水速度约定下的增强状态
+\begin{equation}
+  y=
+  [x,R,\nu_r,u_a,u_c,v_c^n,z_{\mathrm{ref}}].
+  \label{eq:ode-state}
+\end{equation}
+从数据状态到 ODE 状态的映射只改变线速度槽：
+\begin{equation}
+  \mathrm{to\_ode\_state}(s):\quad
+  \nu_b\mapsto\nu_r
+  =
+  \nu_b-
+  \begin{bmatrix}
+    R^\top v_c^n\\0
+  \end{bmatrix}.
+\end{equation}
+从 ODE 状态回到数据状态时使用逆映射：
+\begin{equation}
+  \mathrm{to\_data\_state}(y):\quad
+  \nu_r\mapsto\nu_b
+  =
+  \nu_r+
+  \begin{bmatrix}
+    R^\top v_c^n\\0
+  \end{bmatrix}.
+\end{equation}
+无海流时 \(v_c^n=0\)，该转换退化为恒等映射。
+
+速度契约的物理含义是：位姿运动学由总体速度推进，水动力相关广义力由相对水速度参数化。于是有
+\begin{equation}
+  \dot x=R v_b
+  =R(v_r+R^\top v_c^n)
+  =Rv_r+v_c^n,
+  \qquad
+  \dot R=R\widehat\omega ,
+  \label{eq:kinematics-with-current}
+\end{equation}
+其中 \(\widehat\omega\in\mathfrak{so}(3)\) 为角速度对应的反对称矩阵。式 \eqref{eq:kinematics-with-current} 表明，海流对惯性系位置变化具有直接平移贡献；而相对水速度 \(v_r\) 则保留给阻尼、升力、舵桨力等水动力相关项使用。若将总体速度和相对水速度混用，模型会在海流场景下把环境平移和水动力作用混为同一变量，从而削弱结构解释性和跨海流条件的泛化能力。
+
+速度契约还决定了模型输出的解释方式。训练和评估中的位置、姿态和总体速度误差都在数据空间计算，因为这些量对应观测和仿真保存的变量；耗散功率、斜对称零功率误差和可学习广义力功率则在模型空间解释，因为它们与 \(\nu_r\) 的功率配对有关。因此，同一个 rollout 轨迹在进入模型、内部积分和输出评估时经历了三个语义层次：数据空间保证可观测量口径一致，模型空间保证水动力变量口径一致，输出空间保证预测结果可与数据和基线模型公平比较。
+
+\begin{proposition}[速度契约的一致性]
+  设 \(R\in\SO(3)\)，惯性系海流 \(v_c^n\) 在一个积分窗口内作为外源上下文给定。若数据空间和模型空间由式 \eqref{eq:velocity-contract} 相互转换，则以总体速度推进的位置运动学满足
+  \[
+    \dot x=R v_b=R v_r+v_c^n .
+  \]
+  因而，模型既可在水动力分支中使用相对水速度 \(v_r\)，又可在输出轨迹中保持惯性系位置变化与总体速度一致。
+\end{proposition}
+
+\begin{proof}
+  由速度契约可得 \(v_b=v_r+R^\top v_c^n\)。代入刚体位置运动学 \(\dot x=Rv_b\)，有
+  \[
+    \dot x=R(v_r+R^\top v_c^n)=Rv_r+RR^\top v_c^n .
+  \]
+  因为 \(R\in\SO(3)\)，所以 \(RR^\top=I\)，从而 \(\dot x=Rv_r+v_c^n\)。该关系说明海流以惯性系速度形式直接贡献位置平移，而相对水速度仍保留在水动力建模变量中。
+\end{proof}
+
+\section{AUVHamNODE 结构化模型}
+
+\subsection{\texorpdfstring{\(\SE(3)\) 运动学}{SE(3) 运动学}}
+
+AUVHamNODE 显式编码位置和姿态运动学：
+\begin{equation}
+  \dot x=R v_b,\qquad
+  \dot R=R\widehat\omega .
+  \label{eq:se3-kinematics}
+\end{equation}
+连续时间层面，若 \(R(0)\in\SO(3)\)，则 \(\dot R=R\widehat\omega\) 位于 \(\SO(3)\) 的切空间中。这说明向量场与旋转矩阵流形结构相容。需要区分的是，常规 ODE 求解器对旋转矩阵元素进行数值积分时，并不自动构成严格李群积分器；因此，数值实现仍需要通过正交性误差或重投影策略诊断 \(\SO(3)\) 漂移 \citep{hairer2006geometric}。
+
+\begin{proposition}[连续时间姿态流的切空间相容性]
+  若 \(R(0)\in\SO(3)\)，且连续时间动力学满足 \(\dot R=R\widehat\omega\)，其中 \(\widehat\omega^\top=-\widehat\omega\)，则精确连续时间流保持 \(R(t)^\top R(t)=I\)。
+\end{proposition}
+
+\begin{proof}
+  对 \(R^\top R\) 求导可得
+  \[
+    \frac{\dd}{\dd t}(R^\top R)
+    =
+    \dot R^\top R+R^\top \dot R
+    =
+    (R\widehat\omega)^\top R+R^\top R\widehat\omega
+    =
+    \widehat\omega^\top+\widehat\omega=0 .
+  \]
+  因此若初始姿态满足 \(R(0)^\top R(0)=I\)，连续时间精确流保持该约束。若同时初始 \(\det R(0)=1\)，则解保持在 \(\SO(3)\) 的连通分支中。
+\end{proof}
+
+该命题说明的是向量场层面的几何相容性，而不是普通数值积分器的严格保持性质。在实现和实验中，旋转矩阵作为九维数组随 ODE 状态一起积分，求解误差可能导致 \(R^\top R-I\) 不为零。因此，姿态误差评价应同时包含任务层面的旋转测地误差和结构层面的正交性诊断，例如 \(\norm{R^\top R-I}_F\) 以及 \(|\det R-1|\)。若应用场景需要在离散时间层面严格保持群结构，可以把式 \eqref{eq:se3-kinematics} 与李群积分器结合；这属于数值积分方案选择，而不是当前结构化向量场本身的必要组成。
+
+\subsection{相对动量与机械存储函数}
+
+模型使用相对水速度定义机械动量
+\begin{equation}
+  p_r=M_\theta\nu_r ,
+\end{equation}
+其中 \(M_\theta\in\R^{6\times6}\) 为正定质量矩阵。实现中直接参数化正定逆质量矩阵
+\begin{equation}
+  M_\theta^{-1}=L_\theta L_\theta^\top ,
+\end{equation}
+并通过 Cholesky 型下三角因子和正对角约束保证其正定性。机械存储函数定义为
+\begin{equation}
+  H_\theta(q,p_r)
+  =
+  \frac12p_r^\top M_\theta^{-1}p_r
+  +V_\theta(q),
+  \qquad
+  q=(x,R),
+  \label{eq:hamiltonian}
+\end{equation}
+其中 \(V_\theta(q)\) 是标量势能函数。由于保守广义力由势能梯度产生，使用标量势能而非直接学习任意配置力，可以保持保守项与机械能之间的结构一致性。
+
+质量矩阵在本章中承担两个角色。第一，它定义相对速度和相对动量之间的线性映射 \(p_r=M_\theta\nu_r\)，从而决定动能度量。第二，它把动量导数转换回相对速度导数 \(\dot\nu_r=M_\theta^{-1}\dot p_r\)，使 ODE 状态可以继续以速度形式储存。实现中可以用物理质量矩阵初始化 \(M_\theta\)，也可以通过消融实验去掉该先验。无论是否使用物理初始化，正定参数化都是必要的，因为非正定质量会破坏动能作为机械存储函数的基本意义。
+
+势能 \(V_\theta(q)\) 以标量形式出现，是为了使保守项具有共同势函数。对于水下航行器，重力、浮力和姿态相关恢复效应通常与姿态和深度有关。当前模型允许势能网络依赖体坐标系重力方向以及可选深度上下文。这样做并不声称完全恢复真实恢复力模型，而是保证这一部分广义力可由同一个标量存储函数解释。若直接用无约束网络学习配置力，则同样可以拟合短时轨迹，但难以在能量平衡中与 \(\dot V_\theta\) 形成一致配对。
+
+\subsection{非保守广义力分解}
+
+水动力阻尼、升力、执行器作用和未建模效应通过非保守广义力进入相对动量动力学。AUVHamNODE 将非保守项写作
+\begin{equation}
+  f_\theta^{\mathrm{nc}}
+  =
+  -D_\theta(\xi)\nu_r
+  +J_\theta(\xi)\nu_r
+  +\tau_\theta(\nu_r,u_a,c).
+  \label{eq:nonconservative-force}
+\end{equation}
+其中 \(D_\theta(\xi)\succeq0\) 是耗散矩阵，\(J_\theta(\xi)=-J_\theta(\xi)^\top\) 是斜对称零功率耦合矩阵，\(\tau_\theta\) 是可学习广义力分支，\(\xi\) 和 \(c\) 表示可选上下文特征，例如相对速度、体坐标系海流或总体速度。
+
+该分解的目的不是唯一辨识真实水动力项，而是把非保守效应约束在三个功率角色中。耗散项满足
+\begin{equation}
+  \nu_r^\top D_\theta(\xi)\nu_r\ge0 ,
+\end{equation}
+因此 \(-D_\theta\nu_r\) 对机械能的贡献非正；斜对称项满足
+\begin{equation}
+  \nu_r^\top J_\theta(\xi)\nu_r=0 ,
+\end{equation}
+因此只改变动量方向或耦合结构，不直接产生机械功；\(\tau_\theta\) 通过 \(\nu_r^\top\tau_\theta\) 与机械核心交换功率。实现中的 \texttt{B\_net} 对应 \(\tau_\theta\)，它不是标准端口哈密顿形式中的固定输入矩阵 \(G(q)u\)，而是依赖执行器状态和上下文的非线性广义力映射。
+
+耗散分支 \(D_\theta\) 可以采用完整耦合矩阵或对角矩阵。完整耦合矩阵允许不同自由度之间存在耗散耦合，例如横荡、艏摇和纵向速度之间的相互影响；对角耗散消融则检查这种耦合是否确实对长期预测有贡献。无论采用哪种形式，关键约束都是 \(D_\theta\succeq0\)，因为这保证耗散分支的功率贡献 \(-\nu_r^\top D_\theta\nu_r\le0\)。
+
+斜对称分支 \(J_\theta\) 用于表达不直接做功的速度相关耦合。AUV 水动力中存在升力、横向耦合和旋转--平移耦合等效应，它们可能显著改变轨迹，却不应被简单归入耗散或输入供能。通过约束 \(J_\theta=-J_\theta^\top\)，模型允许该分支改变动量方向，同时严格保持 \(\nu_r^\top J_\theta\nu_r=0\)。这解释了为什么 \texttt{ablate\_no\_lift} 不是普通小网络消融，而是对零功率耦合结构的消融。
+
+可学习广义力分支 \(\tau_\theta\) 是表达能力和结构性的折中。若完全没有 \(\tau_\theta\)，模型只能表达势能、耗散和零功率耦合，难以覆盖舵桨输入和复杂未建模残差；若把所有非保守项都交给 \(\tau_\theta\)，则耗散和零功率结构可能被绕开。AUVHamNODE 保留 \(\tau_\theta\)，但通过并列的 \(D_\theta\) 和 \(J_\theta\) 分支诱导网络把一部分动力学解释为耗散或零功率耦合。该分解具有结构诱导意义，不具有唯一物理辨识保证。
+
+\subsection{执行器滞后与外源携带通道}
+
+执行器命令不直接等同于实际广义力。模型使用一阶滞后动态描述实际执行器状态：
+\begin{equation}
+  \dot u_a=T_\theta^{-1}(u_c-u_a),
+  \qquad
+  \dot u_c=0,
+  \label{eq:actuator-lag}
+\end{equation}
+其中 \(T_\theta\in\R_{>0}^m\) 为正执行器时间常数。执行器状态 \(u_a\) 经过尺度归一后进入 \(\tau_\theta\)，并可与 \(\nu_r\)、体坐标系海流或总体速度共同作为输入特征。
+
+海流在当前模型中作为短积分窗口内的外源携带通道：
+\begin{equation}
+  \dot v_c^n=0 .
+\end{equation}
+该通道用于式 \eqref{eq:velocity-contract} 的速度转换，也可作为非保守广义力分支的上下文特征。这个处理方式并不把海流建模为闭合 Hamiltonian 环境子系统；若需要刻画空间变化或时间变化海流，则应引入独立海流场模型或显式 \(\dot v_c^n\) 动态。
+
+\subsection{相对动量动力学}
+
+综合 \(\SE(3)\) 运动学、势能梯度和非保守广义力，模型在相对动量变量上构造连续时间向量场：
+\begin{equation}
+  \dot p_r
+  =
+  \mathrm{ad}_{\nu_r}^\ast p_r
+  +f_\theta^{V}(q)
+  +f_\theta^{\mathrm{nc}},
+  \label{eq:momentum-dynamics}
+\end{equation}
+其中 \(\mathrm{ad}_{\nu_r}^\ast p_r\) 表示体坐标系动量方程中的刚体耦合项，\(f_\theta^V(q)\) 表示由势能梯度诱导的保守广义力。实现中，线动量和角动量部分分别包含与 \(\omega\)、\(v_r\) 的叉乘耦合；势能对位置和旋转矩阵的梯度通过体坐标系转换进入广义力。由于质量矩阵在当前模型中为常矩阵，相对速度导数由
+\begin{equation}
+  \dot\nu_r=M_\theta^{-1}\dot p_r
+\end{equation}
+给出。
+
+在体坐标系中写动量动力学的好处是速度、角速度和广义力可以统一使用体坐标表达，这与海洋航行器动力学的常见形式一致。刚体耦合项虽然会影响各自由度之间的动量转移，但在能量计算中不产生净功；势能梯度项与 \(\dot q\) 配对后抵消 \(\dot V_\theta\)；剩余能量变化由非保守广义力决定。这个组织方式是后续能量命题成立的关键。
+
+\begin{proposition}[静水机械核心的能量平衡]
+  考虑无海流或静水条件 \(v_c^n=0\)。假设连续时间向量场满足 \(R(t)\in\SO(3)\)，\(M_\theta\succ0\)，\(D_\theta(\xi)\succeq0\)，\(J_\theta(\xi)=-J_\theta(\xi)^\top\)，并且保守广义力由势能 \(V_\theta(q)\) 的梯度产生。对于机械存储函数 \eqref{eq:hamiltonian} 和非保守力分解 \eqref{eq:nonconservative-force}，机械核心满足
+  \begin{equation}
+    \dot H_\theta
+    =
+    -\nu_r^\top D_\theta(\xi)\nu_r
+    +\nu_r^\top\tau_\theta(\nu_r,u_a,c).
+    \label{eq:energy-balance}
+  \end{equation}
+\end{proposition}
+
+\begin{proof}
+  由 \(p_r=M_\theta\nu_r\) 和 \(M_\theta\) 常正定可得
+  \begin{equation}
+    \frac{\dd}{\dd t}
+    \left(\frac12p_r^\top M_\theta^{-1}p_r\right)
+    =
+    \nu_r^\top\dot p_r .
+  \end{equation}
+  体坐标系动量方程中的刚体耦合项满足零功率性质，保守广义力与势能变化互相抵消。因此，\(\dot H_\theta\) 中只剩非保守广义力对相对速度的功率：
+  \begin{equation}
+    \dot H_\theta
+    =
+    \nu_r^\top f_\theta^{\mathrm{nc}} .
+  \end{equation}
+  将式 \eqref{eq:nonconservative-force} 代入，并利用 \(D_\theta\succeq0\) 与 \(J_\theta=-J_\theta^\top\)，得到
+  \begin{equation}
+    \nu_r^\top f_\theta^{\mathrm{nc}}
+    =
+    -\nu_r^\top D_\theta\nu_r
+    +\nu_r^\top J_\theta\nu_r
+    +\nu_r^\top\tau_\theta
+    =
+    -\nu_r^\top D_\theta\nu_r
+    +\nu_r^\top\tau_\theta .
+  \end{equation}
+  证毕。
+\end{proof}
+
+命题的结论限定于机械核心和静水连续时间条件。包含执行器滞后、海流携带通道和可学习广义力分支的完整增强系统不因此成为闭合严格端口哈密顿系统。有海流时，若势能依赖绝对位置或深度，能量导数还可能包含由外源平移引入的附加功率项；此时应将海流解释为外部扰动和速度契约的一部分，而不是内部 Hamiltonian 子系统。
+
+\subsection{有海流条件下的能量边界}
+
+在有海流条件下，位置运动学为 \(\dot x=Rv_r+v_c^n\)。若势能 \(V_\theta(q)\) 依赖绝对位置或深度，则势能导数中可能出现由外源海流引入的项。概念上可写为
+\begin{equation}
+  \dot H_\theta
+  =
+  P_{\mathrm{ext}}(v_c^n,q)
+  -\nu_r^\top D_\theta(\xi)\nu_r
+  +\nu_r^\top\tau_\theta(\nu_r,u_a,c),
+  \label{eq:current-energy-boundary}
+\end{equation}
+其中 \(P_{\mathrm{ext}}\) 表示由外源海流携带通道、深度上下文或势能坐标选择引入的附加功率项。在势能不依赖绝对位置，或海流方向与势能梯度没有功率配对时，该项可以消失。式 \eqref{eq:current-energy-boundary} 的意义不是为海流建立闭合能量子系统，而是说明有海流时机械核心的能量解释必须显式标注外源功率边界。
+
+这种写法对论文可信度很重要。如果直接把有海流增强系统写成闭合端口哈密顿系统，就需要给出海流场状态、海流能量函数、海流与 AUV 之间的互连结构以及总能量平衡；当前模型没有这些对象。当前模型做的是另一件事：把海流作为外源上下文用于构造相对水速度，并允许它作为神经分支的条件变量。这个建模选择足以支持速度契约和受控预测任务，但不能支持闭合环境哈密顿化的理论声称。
+
+\subsection{与标准端口哈密顿系统的关系}
+
+标准端口哈密顿系统通常由状态 \(z\)、哈密顿量 \(H(z)\)、斜对称互连矩阵、半正定耗散矩阵和输入端口组成。若完整系统具有
+\[
+  \dot z=[J(z)-R(z)]\nabla H(z)+G(z)u,
+\]
+则可以直接得到输入输出功率平衡。AUVHamNODE 与这一形式的关系是部分继承而非完全等同：机械核心有可学习哈密顿量 \(H_\theta\)，耗散分支有半正定结构，陀螺项和 \(J_\theta\) 分支具有零功率性质，广义力分支通过 \(\nu_r^\top\tau_\theta\) 与机械能交换。
+
+差异同样明确。第一，\(\tau_\theta\) 是依赖执行器状态、速度和上下文的非线性广义力映射，而不是固定 \(G(q)u\) 形式的仿射输入矩阵。第二，执行器一阶滞后没有被纳入一个带执行器能量函数的闭合 Hamiltonian 子系统。第三，海流被作为外源携带通道处理，没有独立的环境能量和互连方程。第四，普通数值积分器没有提供严格结构保持离散化。因此，本章使用“端口哈密顿风格机械核心”描述 AUVHamNODE，比使用“完整端口哈密顿 AUV 系统”更准确。
+
+\subsection{表达能力与可辨识性}
+
+结构约束不应被理解为削弱模型表达能力到只能拟合简单线性系统。对于紧致状态--输入域，只要目标非保守动力学可以近似写成
+\begin{equation}
+  f^\star(q,\nu_r,u,c)
+  =
+  -D^\star(\nu_r,c)\nu_r
+  +J^\star(\nu_r,c)\nu_r
+  +\tau^\star(\nu_r,u,c),
+\end{equation}
+其中 \(D^\star\succeq0\)、\(J^\star=-J^{\star\top}\)，并且各分支连续，则具有足够宽度的神经网络可以在紧致域上逼近这些连续分支。这个结论依赖神经网络的通用逼近能力，说明 AUVHamNODE 的结构化函数类并非只能表达固定解析模型。
+
+但表达能力不等于可辨识性。即使模型预测轨迹准确，\(D_\theta\)、\(J_\theta\) 和 \(\tau_\theta\) 的分解也未必唯一。速度相关的 \(\tau_\theta\) 可能吸收一部分阻尼效应，\(J_\theta\) 和 \(\tau_\theta\) 也可能在有限数据域上产生相似的轨迹影响。因此，本文不把单个神经分支解释为唯一真实水动力项，而把它们解释为结构诱导的功能分解。该分解的价值需要通过长期预测、消融、功率诊断和失败模式分析来验证。
+
+\section{神经参数化与实现映射}
+
+AUVHamNODE 的神经参数化服务于上述结构，而不是按代码变量顺序定义模型。表 \ref{tab:implementation-map} 给出理论对象和实现对象之间的对应关系。
+
+模型的增强状态采用
+\[
+  y=[x,R,\nu_r,u_a,u_c,v_c^n,z_{\mathrm{ref}}],
+\]
+其中 \(v_c^n\) 和 \(z_{\mathrm{ref}}\) 是可选通道。状态布局的选择体现了本章的建模边界：\(x,R,\nu_r,u_a\) 是模型实际演化的主要状态；\(u_c\)、\(v_c^n\) 和 \(z_{\mathrm{ref}}\) 在单个积分窗口内作为上下文随状态携带，其导数置零。这样做使 ODE 求解器在每个函数调用中都能访问控制命令和环境上下文，同时避免把控制命令或海流误写成已经建模完整的内部动力学子系统。
+
+各神经分支的输入也遵守速度契约。耗散分支和斜对称分支默认以 \(\nu_r\) 为核心输入，因为它们表示水动力相关效应；在有海流设置中，可以附加体坐标系海流或总体速度作为上下文特征。广义力分支以执行器实际状态 \(u_a\) 为基本输入，并可条件化于 \(\nu_r\) 和海流相关特征。这样的设计允许模型表达执行器力随来流速度变化的现象，但仍保持 \(\tau_\theta\) 是可学习广义力分支而非固定解析舵桨模型。
+
+\begin{table}[htbp]
+  \centering
+  \caption{AUVHamNODE 理论对象与实现对象映射}
+  \label{tab:implementation-map}
+  \begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash}p{0.25\textwidth}>{\raggedright\arraybackslash}p{0.25\textwidth}>{\raggedright\arraybackslash}X}
+    \toprule
+    理论对象 & 实现对象 & 结构作用 \\
+    \midrule
+    \(M_\theta^{-1}\succ0\) & \texttt{mass\_inv} & 通过 Cholesky 型参数化保证逆质量矩阵正定。 \\
+    \(V_\theta(q)\) & \texttt{V\_net}, \texttt{V\_linear} & 用标量势能产生保守广义力。 \\
+    \(D_\theta(\xi)\succeq0\) & \texttt{D\_net}, \texttt{damping} & 通过下三角因子或正对角参数化保证耗散功率非正。 \\
+    \(J_\theta(\xi)=-J_\theta^\top\) & \texttt{J\_net}, \texttt{lift} & 通过反对称构造得到零功率耦合。 \\
+    \(\tau_\theta(\nu_r,u_a,c)\) & \texttt{B\_net} & 表示执行器和上下文驱动的可学习广义力分支。 \\
+    \(T_\theta>0\) & \texttt{T\_actuator} & 保证执行器滞后时间常数为正。 \\
+    \(\nu_b\leftrightarrow\nu_r\) & \texttt{to\_ode\_state}, \texttt{to\_data\_state} & 在数据空间总体速度和模型空间相对水速度之间转换。 \\
+    \bottomrule
+  \end{tabularx}
+\end{table}
+
+表 \ref{tab:implementation-map} 中有两类结构保证。第一类是由参数化直接保证的结构性质，包括 \(M_\theta^{-1}\succ0\)、\(D_\theta\succeq0\)、\(J_\theta=-J_\theta^\top\) 和 \(T_\theta>0\)。这些性质不依赖训练是否成功，只要前向计算按参数化执行就成立。第二类是由模型组织和评估协议共同保证的语义性质，例如数据空间与模型空间速度转换、势能梯度与保守力配对、长期 rollout 中的 \(\SO(3)\) 诊断。这些性质需要在代码路径、训练损失和评估输出中同时保持一致。
+
+这种区分决定了不同结论的证据类型。对于第一类性质，可以作为模型参数化的结构约束；对于第二类性质，只能作为建模约定和验证协议，而不是绝对数学保证。例如，\(\dot R=R\widehat\omega\) 是连续时间向量场结构，但数值轨迹是否严格满足 \(R^\top R=I\) 取决于积分器误差；又如，速度契约在模型接口中实现，但其是否改善海流场景下的预测，需要通过 oc/noc 比较、速度特征消融或 rollout 误差来验证。
+
+为了验证不同结构组件的作用，模型比较链条需要覆盖从无结构到强结构的多个层次。完全黑箱模型直接学习全状态导数；\(\SE(3)\) 加速度黑箱模型保留姿态运动学但学习速度导数；\(\SE(3)\) 动量黑箱模型进一步使用常质量和动量坐标；AUVHamNODE 使用机械能、耗散、零功率耦合和执行器滞后；消融模型则分别移除质量先验、完整耦合阻尼、斜对称 lift 或速度条件化广义力分支。这样的比较方式使实验不只是模型排名，而是对几何、能量、耗散、零功率耦合和执行器结构的逐层检验。
+
+\begin{table}[htbp]
+  \centering
+  \small
+  \caption{模型与消融链条}
+  \label{tab:model-chain}
+  \begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash}p{0.32\textwidth}>{\raggedright\arraybackslash}p{0.23\textwidth}>{\raggedright\arraybackslash}X}
+    \toprule
+    模型类型 & 论文显示名 & 结构角色 \\
+    \midrule
+    \texttt{blackbox\_fullstate} & Full-State Black-Box & 无显式 \(\SE(3)\) 和能量结构的全状态导数基线。 \\
+    \texttt{se3\_accel\_blackbox} & \(\SE(3)\) Acceleration Black-Box & 保留位姿运动学，黑箱学习加速度。 \\
+    \texttt{se3\_momentum\_blackbox} & \(\SE(3)\) Momentum Black-Box & 保留位姿运动学和常质量动量坐标，黑箱学习动量动态。 \\
+    \texttt{phnode\_qforce} & pH NODE q-Force & 使用结构化机械核心，但以更泛化的配置力替代标量势能约束。 \\
+    \texttt{phnode\_full} & AUVHamNODE & 完整结构模型，包含质量、势能、耗散、lift、执行器滞后和广义力分支。 \\
+    \texttt{ablate\_no\_mass\_prior} & No Mass Prior & 检验物理质量初始化的作用。 \\
+    \texttt{ablate\_diag\_damping} & Diagonal Damping & 检验完整耦合耗散矩阵的作用。 \\
+    \texttt{ablate\_no\_lift} & No Lift & 检验斜对称零功率耦合项的作用。 \\
+    \texttt{ablate\_bu\_only} & \(B(u)\) Only & 检验广义力分支对速度和上下文条件化的作用。 \\
+    \bottomrule
+  \end{tabularx}
+\end{table}
+
+模型链条的解释应围绕“结构逐级增加”展开。全状态黑箱模型给出最低结构约束的参考点；\(\SE(3)\) 加速度黑箱模型用于分离“显式运动学”带来的收益；\(\SE(3)\) 动量黑箱模型用于检查动量坐标和质量度量是否改善长期递推；pH 风格模型和消融模型用于评估能量、耗散、零功率耦合、执行器滞后和速度条件化分支的贡献。若某个强结构模型在短时误差上不是最优，但在长期 completion rate、失败率或高分位误差上更稳，这仍可能支持结构化建模的价值；相反，若某个消融模型表现相近或更好，则应解释为对应结构在当前协议、数据量或噪声条件下的边际作用有限，而不是回避该结果。
+
+\section{训练与评估协议}
+
+\subsection{数据生成与训练任务}
+
+实验数据采用 REMUS100 风格六自由度 AUV 仿真生成。数据集区分无海流（noc）和有海流（oc）场景；当前研究重点是有海流条件下 clean training 与 profile-based 初值噪声训练的比较。每条轨迹被组织为控制块序列，在一个控制块内执行器命令和外源上下文保持分段常值，ODE 求解器从块初值递推生成预测轨迹。
+
+训练目标使用轨迹级损失，而不是单独的一步速度回归。给定初值、控制命令和上下文，模型在短时间窗口内积分得到预测状态，再与数据空间状态对齐。对于有海流数据，训练前将数据状态转换为模型空间相对速度，积分后再转换回数据空间总体速度计算观测误差。这样可以保证训练损失和数据保存约定一致，同时让内部水动力分支使用相对水速度。
+
+设一个训练控制块包含 \(L+1\) 个采样时刻，真实数据空间状态为 \(s_0,\ldots,s_L\)。训练时首先将初始状态转换为 ODE 状态 \(y_0=\mathrm{to\_ode\_state}(s_0)\)，再在给定 \(u_c\) 和外源上下文的条件下积分
+\begin{equation}
+  \hat y_\ell
+  =
+  y_0+\int_{t_0}^{t_\ell} f_\theta(y(t),u_c,c)\,\dd t,
+  \qquad \ell=1,\ldots,L .
+\end{equation}
+随后将 \(\hat y_\ell\) 转换回数据空间 \(\hat s_\ell=\mathrm{to\_data\_state}(\hat y_\ell)\)，并在数据空间计算损失。一个典型轨迹损失可写为
+\begin{equation}
+  \begin{aligned}
+    \mathcal L_{\mathrm{traj}}
+    =
+    \sum_{\ell=1}^{L}
+    \bigl(
+      &w_x\norm{\hat x_\ell-x_\ell}_2^2
+      +w_R d_R(\hat R_\ell,R_\ell)^2 \\
+      &+w_v\norm{\hat v_{b,\ell}-v_{b,\ell}}_2^2
+      +w_\omega\norm{\hat\omega_\ell-\omega_\ell}_2^2
+      +w_u\norm{\hat u_{a,\ell}-u_{a,\ell}}_2^2
+    \bigr),
+  \end{aligned}
+  \label{eq:trajectory-loss}
+\end{equation}
+其中 \(d_R\) 表示旋转误差，可取 \(\SO(3)\) 测地距离
+\begin{equation}
+  d_R(\hat R,R)
+  =
+  \cos^{-1}
+  \left(
+    \frac{\operatorname{tr}(\hat R^\top R)-1}{2}
+  \right)
+\end{equation}
+并在数值实现中对反余弦输入做截断以避免浮点越界。式 \eqref{eq:trajectory-loss} 的关键点是速度误差使用数据空间总体速度 \(v_b\)，而不是模型内部相对速度 \(v_r\)。相对速度用于水动力建模，整体评估口径仍与数据保存和任务观测保持一致。
+
+\subsection{干净初值与噪声初值训练}
+
+clean training 使用数据给定的控制块初值作为 ODE 初值，检验模型在理想状态估计条件下的局部拟合和长期递推能力。noisy initial-condition training 则在训练过程中对初始状态施加 profile-based 噪声，用于模拟导航状态估计误差、速度估计误差、航向偏差或海流估计偏差带来的初值扰动。该训练方式并不改变动力学方程本身，而是改变模型在训练时看到的初值分布。
+
+噪声训练的合理性来自长期预测任务的实际使用方式。AUV 递推预测很少从完全准确的真实状态开始；导航滤波误差、传感器偏置和海流估计误差都会使初始状态偏离训练轨迹流形。如果模型只在干净初值附近拟合得很好，长期 rollout 可能对小扰动高度敏感。通过噪声 warmup、ramp 和 clean/noisy mix ratio，可以让模型在保持干净轨迹拟合能力的同时接触邻域状态。论文中对 noisy training 的解释应保持克制：它是对初值扰动鲁棒性的训练策略，不是保证所有模型和所有噪声 profile 都性能提升的普适机制。
+
+\subsection{长期 rollout benchmark}
+
+短时控制块误差只能说明局部拟合能力，不能单独支撑长期稳定性结论。长期 rollout benchmark 将模型在 held-out trajectory 上递推多个控制块，并报告位置、姿态、总体速度误差、完成率和失败原因。长期递推是验证结构约束价值的主证据，因为几何漂移、能量不一致和速度误差都会在该设置下积累并暴露。
+
+评价指标分为三类。第一类是外部任务指标，包括终端位置误差、轨迹位置误差、姿态误差和总体速度误差。第二类是稳定性指标，包括 completion rate、failure reason 和误差增长曲线。第三类是内部物理诊断，包括机械能行为、耗散功率、斜对称项零功率误差和 \(\SO(3)\) 正交性误差。内部诊断用于解释结构是否按预期工作，但不应替代外部任务误差。
+
+长期 rollout 与训练控制块预测的差异在于闭环递推方式。训练控制块通常从真实块初值开始，误差主要反映局部向量场拟合；长期 rollout 则把模型预测的块末状态作为下一块初值，误差会在多个控制块之间传播。如果某个模型存在轻微姿态漂移、速度偏置或能量增长倾向，短时控制块损失可能无法充分暴露，但长期 rollout 会通过位置误差、高分位终端误差或失败率体现出来。
+
+设第 \(j\) 条 held-out trajectory 的最大评估时长为 \(T_j\)，模型实际完成到 \(T_j^{\mathrm{comp}}\)。completion rate 可以定义为
+\begin{equation}
+  \mathrm{CR}
+  =
+  \frac{1}{N}
+  \sum_{j=1}^{N}
+  \mathbf 1\{T_j^{\mathrm{comp}}=T_j\}.
+\end{equation}
+终端位置误差和终端姿态误差分别写为
+\begin{equation}
+  e_x^{\mathrm{final}}
+  =
+  \norm{\hat x(T_j^{\mathrm{comp}})-x(T_j^{\mathrm{comp}})}_2,
+  \qquad
+  e_R^{\mathrm{final}}
+  =
+  d_R(\hat R(T_j^{\mathrm{comp}}),R(T_j^{\mathrm{comp}})).
+\end{equation}
+若模型提前失败，终端误差需要与失败时刻一起解释；否则只报告完成轨迹上的平均误差会低估不稳定模型的风险。因此，长期结果表应同时包含完成率、完成样本误差和失败原因，而不是只给一个 RMSE。
+
+\begin{table}[htbp]
+  \centering
+  \caption{评估指标的解释层次}
+  \label{tab:metric-levels}
+  \begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash}p{0.22\textwidth}>{\raggedright\arraybackslash}p{0.28\textwidth}>{\raggedright\arraybackslash}X}
+    \toprule
+    指标层次 & 代表指标 & 解释作用 \\
+    \midrule
+    外部任务误差 & 位置、姿态、总体速度、角速度误差 & 衡量预测是否接近数据空间观测，是主要性能指标。 \\
+    长期稳定性 & completion rate、失败时刻、failure reason、p95 终端误差 & 衡量误差累积和数值/物理失稳风险，是长期 rollout 的核心证据。 \\
+    内部物理诊断 & 机械能、耗散功率、零功率误差、\(\SO(3)\) 正交性 & 解释结构是否按预期工作，不能替代任务误差。 \\
+    证据状态 & evidence status、canonical 标记、provenance 说明 & 决定某个结果是否可进入论文主表。 \\
+    \bottomrule
+  \end{tabularx}
+\end{table}
+
+\subsection{证据状态与结果使用}
+
+本文采用两级证据准入规则组织结果表。第一，结果属于预先定义的 canonical 展示口径；第二，结果的 evidence status 支持当前论文引用。canonical rollout 表提供默认绘图和汇总视图，但 canonical 不等于 current evidence。被标注为环境漂移、旧噪声设计或需复核的结果，只能作为 provenance、协议敏感性或局限性材料，不能作为当前模型优劣的主证据。
+
+特别地，历史 catalog 中 \texttt{phnode\_full} clean seed42/46 异常不再作为 AUVHamNODE 架构脆弱性的证据。该异常更适合作为 provenance drift 案例，用于说明代码版本、环境和结果目录审计的重要性。类似地，\texttt{v4\_lite} cleanrun 结果可以作为协议敏感性诊断，但在缺少进一步证据时不能写成主协议上的最终胜利。对于 noisy initial-condition training，本章将其表述为与模型结构相关的鲁棒性现象，而不是普适增强机制。
+
+证据状态规则使结果解释更可复现。若一个结果是 canonical 但 evidence status 显示为 stale environment drift，则它可以说明历史实验记录和环境漂移问题，却不能作为当前模型性能结论。若一个结果来自 smoke/probe checkpoint，则它可以说明流程可运行，却不能作为模型排名证据。若一个结果来自旧噪声设计，则它可以放入方法演进或附录讨论，但不能与当前 profile-based IC-only noise 结果直接混合。论文主结果应优先使用 current evidence；非 current 结果必须在表注或正文中说明用途。
+
+\section{实验结果组织方式}
+
+结果分析围绕结构主张组织，而不是按脚本或文件目录堆叠。第一层结果报告短时控制块预测，用于确认模型具备局部动力学拟合能力。第二层结果报告长期 held-out rollout，这是评估结构先验是否改善递推稳定性的核心。第三层结果比较 oc 与 noc 或相关特征消融，用于验证速度契约在海流场景下的作用。第四层结果报告不同初值噪声 profile 下的鲁棒性，重点观察结构模型在偏离训练初值流形时的完成率和误差增长。第五层结果通过消融模型解释质量先验、耦合阻尼、斜对称 lift 和速度条件化广义力的贡献。第六层结果使用能量和 \(\SO(3)\) 诊断检查内部结构是否按理论预期运行。
+
+结果解释的优先级应与证据强度一致。长期 rollout 的完成率、失败类型和终端误差优先于短时 RMSE；结构消融的相对变化优先于单个模型的孤立排名；能量和 \(\SO(3)\) 诊断用于支撑物理一致性解释，但不直接等同于任务性能。若某个结构组件在不同协议下表现不一致，应将其写成协议敏感性或结构相关性，而不是简单写成绝对有效或无效。
+
+\subsection{短时控制块预测}
+
+短时控制块预测回答的是局部动力学拟合问题。若模型在训练分布附近无法拟合短窗口轨迹，则很难期待其在长期递推中可靠。该实验需要报告位置误差、姿态测地误差、总体线速度误差、角速度误差和执行器状态误差。对于 \(\SE(3)\) 相关模型，还应同时报告旋转矩阵正交性误差和行列式误差，以确认姿态表示没有在短时间内明显失真。
+
+短时结果的解释必须保持边界。较低的控制块 RMSE 表明模型能在真实初值附近逼近局部流映射，但不必然说明长期稳定。黑箱模型可能在短窗口内拟合得很好，却在闭环递推时逐步偏离物理状态流形；结构模型也可能因为受到能量和几何约束，在短时 RMSE 上略弱，但长期表现更稳。因此，短时控制块预测是必要的第一层证据，不是最终证据。
+
+\subsection{长期 held-out rollout}
+
+长期 held-out rollout 是本章实验的核心。该实验直接模拟模型在多控制块序列上的递推使用方式：每个控制块的预测末状态进入下一控制块，控制命令和外源上下文按数据序列更新。长期误差包含局部向量场误差、数值积分误差、姿态误差、速度误差和执行器状态误差的累积结果，因此更能反映结构约束对稳定性的影响。
+
+长期结果应至少包含三个视角。第一是完成率视角，即模型是否能完成指定 horizon，而不出现无效数值、姿态失真、速度发散或误差越界。第二是误差视角，即完成样本上的终端位置、姿态和速度误差，以及均值、中位数和高分位数。第三是失败模式视角，即失败来自数值积分、速度发散、姿态违反、状态越界还是其他诊断条件。只有这三类信息同时给出，才能区分“平均误差低但失败多”和“误差略高但稳定完成”的模型。
+
+对于 AUVHamNODE，长期 rollout 的关键问题不是它是否在每个短时指标上最低，而是几何、能量、速度和执行器结构是否减少误差累积的极端行为。如果结构模型在高分位终端误差、完成率或失败率上优于黑箱模型，即使平均短时 RMSE 不是最低，也可以支持结构先验对长期预测有价值的结论。相反，如果某个黑箱或弱结构模型在长期指标上表现相当，则应进一步分析数据分布、控制激励、horizon 长度和失败标准，而不是预设结构模型必然胜出。
+
+\subsection{海流速度契约验证}
+
+海流速度契约验证回答的是本章最具 AUV 特异性的建模问题：在有海流环境中，区分总体速度和相对水速度是否必要。该实验可通过 oc/noc 对比、海流特征消融、相对速度诊断或错误速度契约对照来组织。主任务指标仍是数据空间中的位置、姿态和总体速度误差；相对速度误差和水动力功率诊断属于模型空间解释指标。
+
+如果速度契约有效，预期现象不是简单地表现为某个单步误差项下降，而是体现在海流场景下的位置漂移减少、总体速度预测更一致、长期 rollout 对海流扰动更稳定。反之，若模型把总体速度直接用于水动力分支，可能在某些训练分布内通过网络补偿误差，但在海流方向、大小或姿态变化时出现较差外推。这一实验的意义在于验证速度契约是否提高了变量语义的一致性，而不仅是增加了一个输入变换。
+
+\subsection{噪声初值鲁棒性}
+
+噪声初值鲁棒性实验检验模型离开干净初值流形后的递推行为。实际 AUV 预测通常依赖导航系统提供的初值，位置、姿态、速度和海流估计都可能存在误差。若模型只在精确初值附近拟合，长期预测对初值扰动可能非常敏感。噪声 profile 可以覆盖位置扰动、姿态扰动、速度扰动、航向偏差和海流估计偏差等不同类型。
+
+该实验的主要指标包括不同 noise profile 下的 completion rate、终端位置误差、终端姿态误差、总体速度误差和 failure reason 分布。解释 noisy training 结果时，需要同时比较 clean-trained 和 noise-trained 模型，并观察收益是否与模型结构相关。例如，某些结构模型可能通过噪声初值训练获得更稳定的长期表现，而某些黑箱模型可能在噪声训练后牺牲干净条件下的局部拟合。这样的结果应解释为训练分布、模型结构和扰动类型之间的相互作用。
+
+\subsection{结构消融}
+
+结构消融实验把 AUVHamNODE 的整体结构拆成可检验组件。质量先验消融检验物理质量初始化是否改善收敛和泛化；对角阻尼消融检验完整耦合耗散是否必要；no-lift 消融检验斜对称零功率耦合是否捕获了有用的横向或旋转耦合；\(B(u)\)-only 消融检验广义力分支是否需要速度和海流条件化。与黑箱基线相比，这些消融能回答更细的问题：不是“结构模型是否好”，而是“哪一类结构在当前任务上贡献了可观测收益”。
+
+消融结果可能并不单调。去掉某个结构后，模型可能在短时误差上改善，因为约束减少、自由度增加；但长期稳定性、能量诊断或高分位失败率可能变差。也可能出现某个消融在当前数据协议下表现更好，这说明对应结构的收益依赖于数据激励、参数初始化、训练噪声和评估 horizon。博士论文中应正面解释这种协议敏感性，而不是只保留支持预期的结果。
+
+\subsection{能量与 \texorpdfstring{\(\SO(3)\)}{SO(3)} 诊断}
+
+能量诊断用于检查机械核心内部的功率分解是否符合理论预期。可报告的量包括机械能变化范围、耗散功率 \(-\nu_r^\top D_\theta\nu_r\)、斜对称分支功率 \(\nu_r^\top J_\theta\nu_r\)、广义力功率 \(\nu_r^\top\tau_\theta\) 以及异常轨迹中的能量增长模式。理论上，斜对称分支功率应接近零，耗散分支功率应非正；若诊断结果明显违反这些性质，则需要检查实现、数值误差或统计口径。
+
+\(\SO(3)\) 诊断用于检查姿态表示在长期积分中是否保持接近旋转矩阵流形。典型指标包括 \(\norm{R^\top R-I}_F\)、\(|\det R-1|\) 和是否出现姿态矩阵无效。该诊断不能替代姿态预测误差，因为一个正交矩阵也可能预测了错误姿态；但它能说明模型是否在数值上保持了姿态变量的基本几何意义。能量诊断和 \(\SO(3)\) 诊断共同构成内部一致性证据，用于解释长期 rollout 的成败原因。
+
+\section{讨论与局限性}
+
+AUVHamNODE 的端口哈密顿性质应理解为开放式机械核心的结构约束，而不是完整 AUV--执行器--海流闭环系统的严格标准端口哈密顿化。该模型保留了能量存储、耗散、零功率耦合和广义力功率配对，但执行器滞后没有被建模为闭合能量子系统，海流也只是积分窗口内的外源携带扰动。可学习广义力分支增强了表达能力，同时也意味着 \(D_\theta/J_\theta/\tau_\theta\) 的分解具有结构诱导意义，而不保证唯一恢复真实水动力项。
+
+数值实现方面，连续时间向量场与 \(\SO(3)\) 切空间相容，但常规 ODE 求解器并不自动保证离散数值轨迹严格停留在 \(\SO(3)\) 上。因此，姿态正交性误差需要作为诊断指标报告；若应用场景要求严格李群演化，则应考虑李群积分器或重投影策略 \citep{hairer2006geometric,bullo2004geometric}。
+
+实验证据方面，当前主要证据来自 REMUS100 风格仿真和受控 rollout benchmark。该设置适合验证结构约束、速度契约和消融链条，但不能直接等同于真实海试泛化。真实海域中存在传感器偏置、海流估计误差、未建模扰动和执行器退化等问题。AUVHamNODE 的结构可以为真实数据训练提供物理一致的假设空间，但其真实海试泛化能力仍需通过实测数据和更复杂环境扰动进一步验证。
+
+\section{本章小结}
+
+本章提出了 AUVHamNODE，一种面向六自由度 AUV 长期动力学学习的 \(\SE(3)\) 结构化、能量约束 Neural ODE。该方法的核心在于把 AUV 动力学中的三类结构写入连续时间向量场：几何上使用 \(\SE(3)\) 运动学推进位姿，能量上使用正定质量、标量势能、正定耗散和斜对称零功率耦合构造开放式端口哈密顿风格机械核心，速度上区分数据空间总体速度和模型空间相对水速度。静水条件下，机械核心满足明确的能量平衡关系；有海流和执行器滞后时，模型通过外源通道和可学习广义力分支保持表达能力，并通过证据状态受控的 rollout benchmark、消融和物理诊断检验结构约束的作用。该方法提供的不是完整闭合工程模型的符号化替代，而是一个可学习、可验证、可消融的 AUV 结构化动力学学习框架。
+
+\bibliographystyle{plainnat}
+\bibliography{auvhamnode_refs}
+
+\end{document}
