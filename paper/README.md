@@ -1,7 +1,7 @@
 # AUVHamNODE 学位论文章节写作入口
 
-> 更新时间：2026-05-19  
-> 目的：梳理 `paper/` 下 AUVHamNODE 中文学位论文章节相关文档的定位、阅读顺序和后续写作进度。  
+> 更新时间：2026-05-20
+> 目的：梳理 `paper/` 下 AUVHamNODE 中文学位论文章节相关文档的定位、阅读顺序和后续写作进度。
 > 使用原则：本目录中的指南和材料包服务于正式正文写作，但它们本身不是正文。正式正文应保留定义、假设、命题、实验协议、证据边界和讨论，避免保留“建议如何写”“后续再处理”等内部备忘录语气。
 
 ---
@@ -15,7 +15,8 @@
 | [auvhamnode_expert_review_decision_notes_zh.md](auvhamnode_expert_review_decision_notes_zh.md) | 专家复核与落稿决策备忘 | 固化最终论文定位、必须保留的贡献点、理论边界、实验证据红线，以及内部指南到正式正文的转化规则 | 判断“什么能写、什么不能写、如何转化成正文”时 |
 | [auvhamnode_thesis_chapter_prewrite_pack_zh.md](auvhamnode_thesis_chapter_prewrite_pack_zh.md) | 学位论文章节开写前材料包 | 集中整理符号表、claim-evidence 表、理论到代码映射、实验矩阵、图表清单、正文种子段落和待补材料 | 真正开始写正文前，作为底稿索引和任务清单使用 |
 | [drafts/auvhamnode_thesis_chapter_review_notes_zh.md](drafts/auvhamnode_thesis_chapter_review_notes_zh.md) | 旧稿审查意见与重写约束 | 记录旧中间稿的问题、可保留素材、重写原则和新稿结构 | 继续写正文前，先确认不重复旧稿问题 |
-| [drafts/auvhamnode_thesis_chapter_zh.tex](drafts/auvhamnode_thesis_chapter_zh.tex) | 当前正式重写主稿骨架 | 以正式方法章为目标，重建命名、结构、速度变量关系、机械核心、验证协议和边界 | 后续正文扩写的唯一主稿入口 |
+| [drafts/auvhamnode_thesis_chapter_zh.tex](drafts/auvhamnode_thesis_chapter_zh.tex) | 当前正式重写主稿骨架 | 采用“研究问题--相关基础--状态约定--模型构造--能量边界--训练验证--讨论--小结”的 8 节结构，避免把方法代号置于章标题中心 | 后续正文扩写的唯一主稿入口 |
+| [drafts/deprecated/auvhamnode_thesis_chapter_zh_framework_20260520.tex](drafts/deprecated/auvhamnode_thesis_chapter_zh_framework_20260520.tex) | 已降级旧框架稿 | 保留 2026-05-20 前 10 节框架、旧标题体系和已迁移正文素材 | 仅在追溯旧框架或迁移遗漏素材时查阅 |
 | [drafts/deprecated/auvhamnode_thesis_chapter_zh_intermediate_20260519.tex](drafts/deprecated/auvhamnode_thesis_chapter_zh_intermediate_20260519.tex) | 已降级旧中间稿 | 保留旧稿公式、段落和表格素材，但不再作为主稿逐句修改 | 仅在迁移素材时查阅 |
 
 ---
@@ -84,10 +85,11 @@
 | 实验矩阵 | ready | 开写前材料包第 6 节 | 根据实际可用结果确定主表和附表 |
 | 图表清单 | ready | 开写前材料包第 7 节 | 优先制作速度变量关系图和机械核心图 |
 | 旧中间稿审查与降级 | done | 审查意见文档 + deprecated 旧稿 | 旧稿只作素材库，不再逐句修改 |
-| 正文草稿 | in_progress | `drafts/auvhamnode_thesis_chapter_zh.tex` 重写骨架 | 按正式目录继续扩写推导和评估设置 |
-| 问题定义正文 | in_progress | 重写骨架已有状态、控制、速度变量关系和受控初值问题 | 补充符号一致性检查 |
-| 方法正文 | in_progress | 重写骨架已有 SE(3)、能量和非保守力结构 | 补完整能量证明和参数化说明 |
-| 评估设置正文 | in_progress | 重写骨架已有长期递推和结构消融设置 | 后续按 current evidence 扩写结果章 |
+| 旧框架稿降级 | done | `drafts/deprecated/auvhamnode_thesis_chapter_zh_framework_20260520.tex` | 旧 10 节框架只作历史快照和素材备份 |
+| 正文草稿 | in_progress | `drafts/auvhamnode_thesis_chapter_zh.tex` 8 节重写骨架 | 按当前目录继续扩写推导、协议和讨论 |
+| 问题定义正文 | in_progress | 当前主稿第 3 节已有状态、控制、速度约定和受控初值问题 | 补充符号一致性检查 |
+| 方法正文 | in_progress | 当前主稿第 4--5 节已有 SE(3)、能量、非保守力结构和能量命题 | 继续打磨理论边界和证明细节 |
+| 评估设置正文 | in_progress | 当前主稿第 6 节已有训练目标、长期递推和结构消融设置 | 后续按 current evidence 扩写结果章 |
 | 结果主表导出 | pending | catalog 已有 canonical views | 导出 current evidence 主表，标注 evidence status |
 | `phnode_full clean` 结果口径 | watch | provenance audit 已给 0.6767 m 对齐基线 | 正文避免旧 11 m 脆弱性叙事 |
 | `ablate_no_lift clean` 结论 | blocked | seed43 clean 异常需处理 | 用户决定重跑、剔除说明或标注 needs recheck |
@@ -99,56 +101,48 @@
 
 ## 5. 建议的正式正文目录
 
-当前正式主稿采用以下结构。若后续篇幅允许，评估和实验结果可单独拆成实验章。
+当前正式主稿采用以下 8 节结构。若后续篇幅允许，评估和实验结果可单独拆成实验章。
 
-1. **水下航行器运动建模问题与时序预测表述**
-   - 传统理论分析、CFD 和系统辨识的作用与局限
-   - 深度学习时序预测表述
-   - 普通神经时序模型的结构缺口
+1. **研究问题与方法概述**
+   - AUV 长期预测难点
+   - 传统模型、黑箱模型和结构化学习的关系
+   - 方法定位、简称和理论声称边界
 
-2. **受控轨迹预测的状态变量与问题定义**
-   - 坐标系、状态与控制
-   - 海流条件下的总体速度与相对水速度关系
-   - 数据态、模型态与受控初值预测问题
-
-3. **连续时间结构化神经动力学基础**
-   - 神经常微分方程建模
+2. **相关建模基础**
+   - 神经网络时序预测模型
+   - 神经常微分方程模型
    - Hamiltonian 与 port-Hamiltonian 神经模型
+   - AUV 六自由度动力学的功率结构
 
-4. **Fossen 型六自由度动力学的能量结构与 port-Hamiltonian 表述条件**
-   - 六自由度动力学模型
-   - 机械能与功率平衡
-   - 半经验工程模型的适用边界
+3. **受控状态表示与海流速度约定**
+   - 坐标系、状态与控制
+   - 总体速度与相对水速度
+   - 数据态、模型态与受控初值问题
 
-5. **AUVHamNODE 结构化连续时间动力学模型**
+4. **结构化连续时间动力学模型**
    - SE(3) 运动学
    - 相对动量与机械存储函数
-   - 非保守广义力分解
-   - 执行器滞后与外源通道
+   - 非保守广义力与执行器通道
    - 相对动量动力学
 
-6. **机械核心的能量平衡性质**
-   - 静水机械核心命题
-   - 功率平衡证明
-   - 开放系统适用条件
+5. **能量平衡与理论边界**
+   - 机械核心定义
+   - 静水能量平衡命题和证明
+   - 完整增强系统、海流外源和数值积分边界
 
-7. **可训练参数化与训练目标**
-   - \(M_\theta^{-1}\)、\(V_\theta\)、\(D_\theta\)、\(J_\theta\)、\(\tau_\theta\)
-   - 数据态/模型态转换
+6. **训练目标与验证协议**
+   - 结构保持参数化
    - 控制块训练目标
-
-8. **评估设置与结构消融**
-   - 长期递推预测评估
+   - 长期递推与证据口径
    - 结构消融设置
-   - 能量和 SO(3) 诊断
 
-9. **讨论与局限性**
+7. **讨论**
    - port-Hamiltonian 适用范围
-   - 可辨识性边界
-   - 数值积分与 SO(3) 漂移
-   - 海流、执行器与真实数据泛化边界
+   - SO(3) 数值漂移和李群积分边界
+   - 非保守力可辨识性
+   - 仿真证据、噪声训练和真实海试泛化边界
 
-10. **本章小结**
+8. **本章小结**
 
 ---
 
@@ -160,14 +154,15 @@
 | P1a | 审查旧中间稿 | `paper/drafts/auvhamnode_thesis_chapter_review_notes_zh.md` | done |
 | P1b | 降级旧中间稿 | `paper/drafts/deprecated/auvhamnode_thesis_chapter_zh_intermediate_20260519.tex` | done |
 | P1c | 创建正式重写骨架 | `paper/drafts/auvhamnode_thesis_chapter_zh.tex` | done |
-| P2 | 写“问题定义与速度变量关系” | 正文第 2 节正式扩写 | in_progress |
-| P3 | 写“SE(3) 运动学与机械核心” | 正文第 5 节前半 | in_progress |
-| P4 | 写“非保守力分解、执行器与外源通道” | 正文第 5 节后半 | in_progress |
-| P5 | 写“机械核心能量平衡性质” | 命题、证明要点和适用条件 | in_progress |
-| P6 | 写“可训练参数化与模型对比” | 参数化表、模型结构表 | in_progress |
+| P1d | 降级 10 节旧框架并重开 8 节主稿 | `paper/drafts/deprecated/auvhamnode_thesis_chapter_zh_framework_20260520.tex` + 当前主稿 | done |
+| P2 | 写“受控状态表示与海流速度约定” | 正文第 3 节正式扩写 | in_progress |
+| P3 | 写“结构化连续时间动力学模型” | 正文第 4 节 | in_progress |
+| P4 | 写“能量平衡与理论边界” | 正文第 5 节命题、证明和边界 | in_progress |
+| P5 | 写“训练目标与验证协议” | 正文第 6 节参数化、损失、rollout 和消融 | in_progress |
+| P6 | 扩写“讨论” | 正文第 7 节 | in_progress |
 | P7 | 导出 current evidence 结果表 | 论文结果表底稿 | pending |
-| P8 | 写“训练与评估协议” | 正文协议节 | in_progress |
-| P9 | 写“实验结果与讨论” | 结果章初稿 | blocked until P7 |
+| P8 | 写实验结果章或结果节 | current evidence 主表和图 | blocked until P7 |
+| P9 | 根据实验结果修订讨论和证据边界 | 讨论节与结果口径同步版本 | blocked until P7 |
 | P10 | 写引言、摘要和章节小结 | 完整章节初稿 | pending |
 
 ---
