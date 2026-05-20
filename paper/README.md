@@ -87,9 +87,9 @@
 | 旧中间稿审查与降级 | done | 审查意见文档 + deprecated 旧稿 | 旧稿只作素材库，不再逐句修改 |
 | 旧框架稿降级 | done | `drafts/deprecated/auvhamnode_thesis_chapter_zh_framework_20260520.tex` | 旧 10 节框架只作历史快照和素材备份 |
 | 正文草稿 | in_progress | `drafts/auvhamnode_thesis_chapter_zh.tex` 8 节重写骨架 | 按当前目录继续扩写推导、协议和讨论 |
-| 问题定义正文 | in_progress | 当前主稿第 3 节已有状态、控制、速度约定和受控初值问题 | 补充符号一致性检查 |
-| 方法正文 | in_progress | 当前主稿第 4--5 节已有 SE(3)、能量、非保守力结构和能量命题 | 继续打磨理论边界和证明细节 |
-| 评估设置正文 | in_progress | 当前主稿第 6 节已有训练目标、长期递推和结构消融设置 | 后续按 current evidence 扩写结果章 |
+| 问题定义正文 | in_progress | 当前主稿第 3 节已有状态、控制、速度约定和受控初值问题 | 当前优先扩写为完整正文 v1，并同步规划速度变量关系图 |
+| 方法正文 | ready | 当前主稿第 4--5 节已有 SE(3)、能量、非保守力结构和能量命题 | P2 完成后继续打磨模型构造、理论边界和证明细节 |
+| 评估设置正文 | ready | 当前主稿第 6 节已有训练目标、长期递推和结构消融设置 | P4/P5 后按 current evidence 扩写协议和结果章 |
 | 结果主表导出 | pending | catalog 已有 canonical views | 导出 current evidence 主表，标注 evidence status |
 | `phnode_full clean` 结果口径 | watch | provenance audit 已给 0.6767 m 对齐基线 | 正文避免旧 11 m 脆弱性叙事 |
 | `ablate_no_lift clean` 结论 | blocked | seed43 clean 异常需处理 | 用户决定重跑、剔除说明或标注 needs recheck |
@@ -155,15 +155,40 @@
 | P1b | 降级旧中间稿 | `paper/drafts/deprecated/auvhamnode_thesis_chapter_zh_intermediate_20260519.tex` | done |
 | P1c | 创建正式重写骨架 | `paper/drafts/auvhamnode_thesis_chapter_zh.tex` | done |
 | P1d | 降级 10 节旧框架并重开 8 节主稿 | `paper/drafts/deprecated/auvhamnode_thesis_chapter_zh_framework_20260520.tex` + 当前主稿 | done |
-| P2 | 写“受控状态表示与海流速度约定” | 正文第 3 节正式扩写 | in_progress |
-| P3 | 写“结构化连续时间动力学模型” | 正文第 4 节 | in_progress |
-| P4 | 写“能量平衡与理论边界” | 正文第 5 节命题、证明和边界 | in_progress |
-| P5 | 写“训练目标与验证协议” | 正文第 6 节参数化、损失、rollout 和消融 | in_progress |
-| P6 | 扩写“讨论” | 正文第 7 节 | in_progress |
+| P2 | 扩写“受控状态表示与海流速度约定” | 正文第 3 节完整正文 v1 + 速度变量关系图草案 | in_progress |
+| P3 | 扩写“结构化连续时间动力学模型” | 正文第 4 节完整正文 v1 | ready |
+| P4 | 扩写“能量平衡与理论边界” | 正文第 5 节命题、证明和边界完整版本 | ready |
+| P5 | 扩写“训练目标与验证协议” | 正文第 6 节参数化、损失、rollout 和消融完整版本 | ready |
+| P6 | 扩写“讨论” | 正文第 7 节完整正文 v1 | ready |
 | P7 | 导出 current evidence 结果表 | 论文结果表底稿 | pending |
 | P8 | 写实验结果章或结果节 | current evidence 主表和图 | blocked until P7 |
 | P9 | 根据实验结果修订讨论和证据边界 | 讨论节与结果口径同步版本 | blocked until P7 |
 | P10 | 写引言、摘要和章节小结 | 完整章节初稿 | pending |
+
+### 6.1 当前下一步：P2
+
+当前不再调整目录，优先把正文骨架 v2 的第 3 节“受控状态表示与海流速度约定”扩写成完整正文 v1。该节完成后，再进入第 4 节模型构造。
+
+P2 需要完成以下内容：
+
+1. 完整定义 \(x,R,\nu_b,\nu_r,v_c^n,u_a,u_c,s,y\) 及其所属空间、物理含义和数据/模型落点。
+2. 解释数据空间保存总体速度 \(\nu_b\)、模型空间使用相对水速度 \(\nu_r\) 的原因。
+3. 正式写清
+   \[
+   \nu_r=\nu_b-[R^\top v_c^n;0],
+   \qquad
+   \nu_b=\nu_r+[R^\top v_c^n;0].
+   \]
+4. 明确位置运动学由总体速度推进，水动力广义力由相对水速度参数化。
+5. 将“数据态 \(\rightarrow\) 模型态 \(\rightarrow\) 输出态”的转换写成正式数学表述。
+6. 同步规划一张速度变量关系图，至少明确图中节点、箭头和公式标注。
+
+P2 的完成标准：
+
+1. 第 3 节可以独立支撑后续 \(\mathrm{SE}(3)\) 运动学、能量模型、训练损失和评估指标。
+2. 术语不再混用“总体速度”“相对速度”“体坐标速度”和“模型态速度”。
+3. 正文中不保留写作提醒或内部备忘录语气。
+4. P2 完成后，将本表中 P2 状态改为 `done`，并将 P3 改为 `in_progress`。
 
 ---
 
