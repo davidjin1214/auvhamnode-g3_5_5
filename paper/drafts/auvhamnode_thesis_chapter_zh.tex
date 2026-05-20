@@ -153,40 +153,42 @@ port-Hamiltonian 系统在 Hamiltonian 能量存储的基础上引入耗散和�
 实际水下航行器工程模型通常不是纯粹由闭合 Hamiltonian 结构生成。为了覆盖真实平台和复杂工况，模型往往包含半经验阻尼、舵面升力、桨推力、横流阻力、执行器一阶滞后、限幅、控制器闭环以及海流外源等成分。这些成分可以分别解释为耗散、经验广义力、外部输入或外源扰动，但通常不能在不附加额外假设的情况下统一写成标准闭合 port-Hamiltonian 系统。因此，本章采用 Fossen 结构揭示的功率角色作为建模依据，并将这些角色转化为神经向量场中的结构约束。
 
 \section{受控状态表示与海流速度约定}
+\label{sec:state-current-contract}
 
 \subsection{坐标系、状态与控制}
 
-设 \(n\) 表示惯性坐标系或导航坐标系，\(b\) 表示航行器体坐标系。配置变量定义为
+设 \(n\) 表示惯性坐标系或导航坐标系，\(b\) 表示航行器体坐标系。航行器配置变量定义为
 \begin{equation}
   q=(x,R),\qquad x\in\R^3,\quad R\in\SO(3),
 \end{equation}
-其中 \(R\) 将体坐标系向量映射到惯性坐标系。体坐标系角速度记为 \(\omega\in\R^3\)。控制命令记为 \(u_c\in\R^m\)，实际执行器状态记为 \(u_a\in\R^m\)。二者具有不同物理含义：\(u_c\) 是给定命令，\(u_a\) 是由执行器动态产生并参与广义力计算的内部状态。
+其中 \(x\) 表示惯性系位置或控制块内以初始位置为原点的相对位置，\(R\) 将体坐标系向量映射到惯性坐标系。体坐标系角速度记为 \(\omega\in\R^3\)。执行器命令记为 \(u_c\in\R^m\)，实际执行器状态记为 \(u_a\in\R^m\)。二者具有不同物理含义：\(u_c\) 是控制器或数据集给出的命令，\(u_a\) 是经过执行器动态后的内部状态，并作为广义力分支的输入之一。
 
-一个训练或验证控制块由采样时刻 \(\{t_i\}_{i=0}^{T}\) 上的状态序列组成。数据空间状态采用
+一个训练或验证控制块由采样时刻 \(\{t_i\}_{i=0}^{T}\) 上的状态序列组成。数据空间保存可观测或可重建的轨迹状态，本文记为
 \begin{equation}
   s_i=
   \bigl[x_i,\operatorname{vec}(R_i),\nu_{b,i},u_{a,i},u_{c,i},v_{c,i}^n,z_{\mathrm{ref}}\bigr]
   \label{eq:data-state}
 \end{equation}
-表示，其中无海流数据省略 \(v_c^n\)，无绝对深度上下文的数据省略 \(z_{\mathrm{ref}}\)。向量化符号 \(\operatorname{vec}(R)\) 仅表示存储格式；数学上姿态变量仍受 \(R\in\SO(3)\) 约束。
+表示。这里 \(v_c^n\in\R^3\) 为惯性系海流速度，\(z_{\mathrm{ref}}\in\R\) 为可选深度上下文；无海流数据可令 \(v_c^n=0\)，无绝对深度上下文的数据可省略 \(z_{\mathrm{ref}}\)。向量化符号 \(\operatorname{vec}(R)\) 仅表示存储格式；数学上姿态变量仍受 \(R\in\SO(3)\) 约束。数据态 \(s_i\) 的速度槽采用总体速度口径，其物理含义由下一小节给出。
 
 \subsection{总体速度与相对水速度}
 
-有海流时，航行器相对于惯性系的总体速度与相对于周围水体的速度不同。令惯性系海流速度为 \(v_c^n\in\R^3\)，则体坐标系海流速度为
+有海流时，航行器相对于惯性系的总体速度与相对于周围水体的速度不同。总体速度描述航行器位姿在惯性系中的变化；相对水速度描述航行器相对于局部水体的运动，直接影响阻尼、升力和横向水动力等非保守广义力。令惯性系海流速度为 \(v_c^n\in\R^3\)，则体坐标系海流速度为
 \begin{equation}
   v_c^b=R^\top v_c^n .
+  \label{eq:body-current}
 \end{equation}
 数据空间中的体坐标系总体速度记为
 \begin{equation}
   \nu_b=\begin{bmatrix}v_b\\\omega\end{bmatrix},
 \end{equation}
-其中 \(v_b\) 是航行器相对于惯性系运动的体坐标系线速度。模型内部用于水动力相关广义力计算的相对水速度记为
+其中 \(v_b\in\R^3\) 是航行器相对于惯性系运动的体坐标系线速度，\(\omega\in\R^3\) 是体坐标系角速度。模型内部用于水动力相关广义力计算的相对水速度记为
 \begin{equation}
   \nu_r=\begin{bmatrix}v_r\\\omega\end{bmatrix},
   \qquad
   v_r=v_b-v_c^b .
 \end{equation}
-海流只平移线速度分量，不改变体坐标系角速度。因此，
+海流只平移线速度分量，不改变体坐标系角速度。因此，数据空间和模型空间之间的速度契约为
 \begin{equation}
   \nu_r=
   \nu_b-
@@ -201,26 +203,113 @@ port-Hamiltonian 系统在 Hamiltonian 能量存储的基础上引入耗散和�
   \end{bmatrix}.
   \label{eq:velocity-contract}
 \end{equation}
-无海流时可取 \(v_c^n=0\)，式 \eqref{eq:velocity-contract} 退化为 \(\nu_r=\nu_b\)。上述变量关系保证位置运动学和水动力建模使用各自适合的速度口径：位置 \(x\) 相对于惯性系变化，因此由总体速度推进；阻尼、升力、横向耦合和执行器相关水动力主要依赖航行器相对于水体的运动，因此由相对水速度参数化。
+无海流时可取 \(v_c^n=0\)，式 \eqref{eq:velocity-contract} 退化为 \(\nu_r=\nu_b\)。上述变量关系保证位置运动学和水动力建模使用各自适合的速度口径：位置 \(x\) 相对于惯性系变化，因此由总体速度推进；阻尼、升力、横向耦合和执行器相关水动力主要依赖航行器相对于水体的运动，因此由相对水速度参数化。对应的位置运动学可写为
+\begin{equation}
+  \dot x
+  =
+  Rv_b
+  =
+  R(v_r+R^\top v_c^n)
+  =
+  Rv_r+v_c^n .
+  \label{eq:position-total-relative}
+\end{equation}
+式 \eqref{eq:position-total-relative} 只说明线速度口径的转换；完整的姿态运动学和相对动量动力学在下一节的模型构造中给出。
+
+\begin{figure}[htbp]
+  \centering
+  \small
+  \setlength{\fboxsep}{4pt}
+  \begin{tabularx}{\textwidth}{@{}>{\centering\arraybackslash}X c >{\centering\arraybackslash}X c >{\centering\arraybackslash}X@{}}
+    \fbox{\parbox{0.20\textwidth}{\centering 数据态 \(s\)\\[2pt]
+    \(\nu_b=[v_b,\omega]\)\\
+    可观测总体速度}}
+    &
+    \(\xrightarrow{\mathcal{T}_{d\to m}}\)
+    &
+    \fbox{\parbox{0.21\textwidth}{\centering 海流投影\\[2pt]
+    \(v_c^b=R^\top v_c^n\)\\
+    \(\nu_r=\nu_b-[v_c^b;0]\)}}
+    &
+    \(\xrightarrow{\text{ODE}}\)
+    &
+    \fbox{\parbox{0.20\textwidth}{\centering 模型态 \(y\)\\[2pt]
+    \(\nu_r=[v_r,\omega]\)\\
+    水动力速度}}
+    \\[14pt]
+    \fbox{\parbox{0.20\textwidth}{\centering 输出态 \(\hat s\)\\[2pt]
+    \(\hat\nu_b=\hat\nu_r+[\hat R^\top v_c^n;0]\)\\
+    数据空间评估}}
+    &
+    \(\xleftarrow{\mathcal{T}_{m\to d}}\)
+    &
+    \multicolumn{3}{c}{
+    \fbox{\parbox{0.48\textwidth}{\centering 物理使用口径\\[2pt]
+    \(\dot x=Rv_b=Rv_r+v_c^n\)，位置由总体速度推进；\\
+    \(f_\theta^{\mathrm{nc}}(\cdot)\) 由相对水速度 \(\nu_r\) 参数化。}}}
+  \end{tabularx}
+  \caption{海流条件下数据态、模型态与输出态之间的速度变量关系。数据空间保留总体速度，ODE 模型空间使用相对水速度，输出评估前再恢复总体速度。}
+  \label{fig:velocity-state-contract}
+\end{figure}
 
 \subsection{数据态、模型态与受控初值问题}
 
 训练数据保存总体速度口径下的状态
 \begin{equation}
   s=[x,R,\nu_b,u_a,u_c,v_c^n,z_{\mathrm{ref}}],
+  \qquad
+  s\in\mathcal{S}_d ,
+  \label{eq:data-state-compact}
 \end{equation}
 ODE 求解器内部使用相对水速度口径下的增强状态
 \begin{equation}
-  y=[x,R,\nu_r,u_a,u_c,v_c^n,z_{\mathrm{ref}}].
+  y=[x,R,\nu_r,u_a,u_c,v_c^n,z_{\mathrm{ref}}],
+  \qquad
+  y\in\mathcal{S}_m .
   \label{eq:ode-state}
 \end{equation}
-进入 ODE 求解器前，映射 \(\mathcal{T}_{d\to m}\) 使用式 \eqref{eq:velocity-contract} 将数据态 \(s\) 转换为模型态 \(y\)；输出评估前，映射 \(\mathcal{T}_{m\to d}\) 再将 \(\nu_r\) 转换回 \(\nu_b\)。由此，受控轨迹预测任务可表述为：给定初始数据态 \(s_0\)、分段常值控制命令 \(u_c\) 和环境上下文 \(c\)，学习连续时间流映射 \(\Phi_\theta\)，使
+其中 \(\mathcal{S}_d\) 和 \(\mathcal{S}_m\) 分别表示数据态空间和模型态空间；二者在位置、姿态、执行器状态、命令和外源上下文上共享同一数值，只在线速度口径上不同。为简化记号，定义
 \begin{equation}
-  y_0=\mathcal{T}_{d\to m}(s_0),\qquad
-  \hat y(t_i)=\Phi_\theta(t_i;t_0,y_0,u_c,c),\qquad
-  \hat s_i=\mathcal{T}_{m\to d}(\hat y(t_i))
+  \Delta_c(R,v_c^n)
+  =
+  \begin{bmatrix}
+    R^\top v_c^n\\0
+  \end{bmatrix}.
 \end{equation}
-在观测时刻上逼近真实轨迹。
+则数据态到模型态的映射为
+\begin{equation}
+  \mathcal{T}_{d\to m}(s)
+  =
+  [x,R,\nu_b-\Delta_c(R,v_c^n),u_a,u_c,v_c^n,z_{\mathrm{ref}}],
+  \label{eq:data-to-model-state}
+\end{equation}
+模型态到数据态的映射为
+\begin{equation}
+  \mathcal{T}_{m\to d}(y)
+  =
+  [x,R,\nu_r+\Delta_c(R,v_c^n),u_a,u_c,v_c^n,z_{\mathrm{ref}}].
+  \label{eq:model-to-data-state}
+\end{equation}
+图~\ref{fig:velocity-state-contract} 概括了这两个映射及其物理使用口径。
+
+由此，受控轨迹预测任务可表述为一个带状态转换的连续时间初值问题。给定初始数据态 \(s_0\)、控制块内的命令 \(u_c\) 和外源上下文 \(c=(v_c^n,z_{\mathrm{ref}})\)，先将初值转换为模型态
+\begin{equation}
+  y_0=\mathcal{T}_{d\to m}(s_0).
+\end{equation}
+神经常微分方程在模型态空间中产生连续时间流
+\begin{equation}
+  \hat y(t_i)
+  =
+  \Phi_\theta(t_i;t_0,y_0,u_c,c),
+  \qquad i=0,\ldots,T,
+\end{equation}
+再通过输出映射回到数据空间
+\begin{equation}
+  \hat s_i
+  =
+  \mathcal{T}_{m\to d}(\hat y(t_i)).
+\end{equation}
+训练损失和评估指标在观测时刻比较 \(\hat s_i\) 与真实数据态 \(s_i\)。因此，位置、姿态、总体速度和执行器状态等可观测量始终在数据空间解释；相对水速度则作为模型空间变量，用于水动力建模和内部诊断。该约定使后续 \(\SE(3)\) 运动学、机械能模型、训练损失和长期 rollout 指标使用一致的状态口径。
 
 \section{结构化连续时间动力学模型}
 
