@@ -67,90 +67,62 @@
 \section{相关建模基础}
 \label{sec:modeling-prelim}
 
-AUVHamNODE 的模型构造同时依赖海洋航行器动力学、受控时序学习和结构化神经微分方程三个知识背景。若只从机器学习角度出发，AUV 轨迹可以被视为带控制输入的序列预测问题；若只从传统建模角度出发，AUV 运动又可写为 Fossen 型六自由度方程及其水动力参数辨识问题。本文需要连接这两类表述：一方面保留位置、姿态、速度、广义力和功率之间的机械关系，另一方面允许未知水动力、执行器作用和环境扰动由可学习函数表达。
+AUVHamNODE 的模型构造需要同时连接两类语言。第一类来自海洋航行器动力学，它把位置、姿态、体坐标速度、质量、阻尼、恢复力和广义力组织为六自由度运动方程，并给出机械功率账本。第二类来自连续时间学习和结构化神经动力学，它把轨迹预测表述为受控初值问题，并用几何、能量、耗散或端口功率结构限制可学习向量场。本节只保留服务于后文状态约定、模型构造和能量边界的基础内容；具体的数据态、模型态和海流速度契约将在第~\ref{sec:state-current-contract} 节正式定义。
 
-因此，本节首先给出 AUV 六自由度坐标、体坐标速度和 \(\SE(3)\) 位姿表示，随后说明 Fossen 型动力学中的质量、Coriolis/向心项、阻尼、恢复力和控制广义力如何组成机械功率账本。在此基础上，水动力参数获取与校准路线用于解释为什么纯参数化模型很难在复杂工况下完全闭合。最后，本节从受控神经时序预测、Neural ODE、科学机器学习、哈密顿神经网络和端口哈密顿神经模型出发，说明本文采用结构化连续时间假设空间的理论来源和边界。
+\subsection{AUV 六自由度运动与功率结构}
 
-\subsection{\texorpdfstring{AUV 六自由度坐标与 \(\SE(3)\) 基础}{AUV 六自由度坐标与 SE(3) 基础}}
-
-AUV 运动通常以惯性坐标系或导航坐标系 \(n\) 和航行器体坐标系 \(b\) 共同描述。位置 \(x\in\R^3\) 在惯性系中表达，体坐标系到惯性系的姿态由旋转矩阵 \(R\in\SO(3)\) 给出，因而配置可写为
+AUV 运动通常以惯性坐标系或导航坐标系 \(n\) 和航行器体坐标系 \(b\) 共同描述。位置 \(x\in\R^3\) 在惯性系中表达，姿态可由欧拉角等局部坐标表示，也可由旋转矩阵 \(R\in\SO(3)\) 表示。体坐标速度由线速度和角速度组成，记为
 \begin{equation}
-  q=(x,R)\in\SE(3).
-  \label{eq:se3-config-prelim}
+  \nu=\begin{bmatrix}v\\\omega\end{bmatrix}\in\R^6 .
+  \label{eq:body-velocity-prelim}
 \end{equation}
-体坐标速度由线速度和角速度组成，记为
+在局部姿态坐标 \(\eta=[x^\top,\vartheta^\top]^\top\) 下，海洋航行器运动学常写为
 \begin{equation}
-  \nu=\begin{bmatrix}v\\\omega\end{bmatrix}\in\R^6,
+  \dot\eta=J_\eta(\eta)\nu ,
+  \label{eq:eta-kinematics-prelim}
 \end{equation}
-其中 \(v\) 和 \(\omega\) 均在体坐标系中表达。采用旋转矩阵表示时，刚体运动学具有坐标无关的形式
+其中 \(J_\eta(\eta)\) 将体坐标速度转换为位置和姿态坐标导数 \citep{fossen2011handbook,fossen2021handbook}。局部姿态坐标便于与传统控制和仿真框架衔接，但可能引入坐标奇异性或参数化依赖。若直接使用旋转矩阵，则刚体运动学可写为
 \begin{equation}
   \dot x=Rv,\qquad
   \dot R=R\widehat{\omega},
   \label{eq:se3-prelim-kinematics}
 \end{equation}
-其中 \(\widehat{\omega}\in\mathfrak{so}(3)\) 表示角速度对应的反对称矩阵。其反对称性保证连续时间向量场位于 \(\SO(3)\) 的切空间。几何控制和几何数值积分文献均强调，旋转群约束是机械系统建模中的结构信息，而不是普通欧氏状态变量的附加正则项 \citep{bullo2004geometric,hairer2006geometric}。
+其中 \(\widehat{\omega}\in\mathfrak{so}(3)\) 是角速度对应的反对称矩阵。该形式使姿态导数位于 \(\SO(3)\) 的切空间方向上，体现了旋转群约束本身是机械系统结构信息，而不是普通欧氏状态上的附加正则项 \citep{bullo2004geometric,hairer2006geometric}。
 
-海洋航行器文献中也常使用局部姿态参数 \(\eta=[x^\top,\vartheta^\top]^\top\) 表示位置和姿态，例如欧拉角或其他最小坐标。此时运动学可写为
-\begin{equation}
-  \dot\eta=J_\eta(\eta)\nu ,
-  \label{eq:eta-kinematics-prelim}
-\end{equation}
-其中 \(J_\eta(\eta)\) 将体坐标速度转换为局部坐标导数 \citep{fossen2011handbook,fossen2021handbook}。该形式便于与传统六自由度方程、控制律和工程仿真器衔接，但局部姿态坐标可能引入坐标奇异性或参数化依赖。本文采用 \(R\in\SO(3)\) 作为姿态变量，是为了把姿态约束直接保留在状态空间中；式 \eqref{eq:eta-kinematics-prelim} 则作为理解 Fossen 型动力学的通用坐标入口。
-
-\subsection{Fossen 型六自由度动力学与功率角色}
-
-Fossen 型海洋航行器动力学把 AUV 的惯性、水动力、恢复力和控制作用组织在统一的六自由度方程中 \citep{fossen2011handbook,fossen2021handbook}。在体坐标速度 \(\nu\) 下，其常见写法为
+Fossen 型海洋航行器动力学把 AUV 的惯性、水动力、恢复力和控制作用组织在统一的六自由度方程中 \citep{fossen2011handbook,fossen2021handbook}。在体坐标速度 \(\nu\) 下，其常见形式为
 \begin{equation}
   M\dot\nu+C(\nu)\nu+D(\nu)\nu+g(\eta)=\tau ,
   \label{eq:fossen}
 \end{equation}
-其中 \(M=M_{\mathrm{RB}}+M_{\mathrm{A}}\succ0\) 包含刚体质量和附加质量，\(C(\nu)=C_{\mathrm{RB}}(\nu)+C_{\mathrm{A}}(\nu)\) 表示刚体与附加质量引起的 Coriolis/向心项，\(D(\nu)\) 表示线性或非线性水动力阻尼，\(g(\eta)\) 表示重力和浮力恢复项，\(\tau\) 表示推进器、舵面或外部广义力。该形式的价值不只在于给出加速度计算公式，更在于明确不同物理项在机械功率中的角色。
+其中 \(M=M_{\mathrm{RB}}+M_{\mathrm{A}}\succ0\) 包含刚体质量和附加质量，\(C(\nu)=C_{\mathrm{RB}}(\nu)+C_{\mathrm{A}}(\nu)\) 表示刚体与附加质量相关的 Coriolis/向心项，\(D(\nu)\) 表示线性或非线性水动力阻尼，\(g(\eta)\) 表示重力和浮力恢复项，\(\tau\) 表示推进器、舵面或外部作用产生的广义力和广义力矩。
 
-在标准假设下，式 \eqref{eq:fossen} 具有与端口哈密顿理论相容的功率结构。若 \(C(\nu)\) 满足零功率性质
+式 \eqref{eq:fossen} 的价值不只在于给出加速度计算公式，更在于它提供了机械功率账本。在标准海洋航行器假设下，若 \(C(\nu)\) 满足零功率性质
 \begin{equation}
   \nu^\top C(\nu)\nu=0,
 \end{equation}
-阻尼满足 \(D(\nu)\succeq0\)，恢复力与势能 \(V(\eta)\) 的功率配对满足 \(\dot V=\nu^\top g(\eta)\)，则机械能可写为
+阻尼满足 \(D(\nu)\succeq0\)，恢复力与势能 \(V(\eta)\) 满足功率配对 \(\dot V=\nu^\top g(\eta)\)，则机械能
 \begin{equation}
-  H(\eta,\nu)=\frac12\nu^\top M\nu+V(\eta).
+  H(\eta,\nu)=\frac12\nu^\top M\nu+V(\eta)
   \label{eq:fossen-energy}
 \end{equation}
-在 \(M\) 为常正定矩阵或满足标准海洋航行器能量配对条件时，对 \(H\) 求导并代入式 \eqref{eq:fossen} 得到
+在常正定质量矩阵或相应能量配对条件下满足
 \begin{equation}
-  \dot H
-  =
-  \nu^\top\tau-\nu^\top D(\nu)\nu .
+  \dot H=\nu^\top\tau-\nu^\top D(\nu)\nu .
   \label{eq:fossen-energy-balance}
 \end{equation}
-该等式说明，质量矩阵定义动能，恢复力对应势能，Coriolis/向心项只改变动量方向而不做净功，阻尼消耗机械能，控制和外部广义力通过速度--力配对与机械系统交换功率。这个功率账本是本文构造机械存储函数、耗散分支和外部广义力分支的主要物理依据。
+这说明质量矩阵定义动能，恢复力对应势能，Coriolis/向心项只重分配动量而不做净功，阻尼消耗机械能，外部广义力通过 \(\nu^\top\tau\) 与机械系统交换功率。后文的机械存储函数、耗散分支、零功率耦合和广义力分支均以这一功率角色划分为物理来源。
 
-功率配对还区分了“控制命令”和“广义力”两个层次。在式 \eqref{eq:fossen} 中，\(\tau\) 已经是作用在六自由度动力学上的广义力或广义力矩，因此其瞬时机械功率为
-\begin{equation}
-  P_\tau=\nu^\top\tau .
-  \label{eq:generalized-force-power}
-\end{equation}
-实际 AUV 数据中的推进器转速、舵角、控制器输出或期望命令 \(u_c\) 通常不是 \(\tau\) 本身，而是经过执行器动态、饱和、舵桨效率和流体相互作用后才产生广义力。因而，若后续神经模型把命令、执行器状态和环境上下文作为输入，它学习到的是从这些量到非保守广义力的映射，而不是简单把 \(u_c\) 视为端口哈密顿系统中的功率端口变量。海流存在时，阻尼和横向水动力还更自然地依赖航行器相对于水体的速度；这也是后文区分总体速度和相对水速度的物理原因。
+这一功率账本还区分了控制命令与广义力两个层次。在式 \eqref{eq:fossen} 中，\(\tau\) 已经是进入六自由度动力学的广义力；推进器转速、舵角、控制器输出或期望命令通常还要经过执行器动态、饱和、舵桨效率和流体相互作用，才转化为机械方程中的广义力。因此，后文模型把命令、执行器状态和环境上下文作为广义力分支的条件变量，而不把控制命令本身直接解释为端口哈密顿系统中的功率端口变量。
 
-若引入动量 \(p=M\nu\)，机械能也可写为
-\begin{equation}
-  H(\eta,p)=\frac12p^\top M^{-1}p+V(\eta),
-  \qquad
-  \frac{\partial H}{\partial p}=M^{-1}p=\nu .
-  \label{eq:fossen-momentum-energy}
-\end{equation}
-在这一变量下，Fossen 方程中的能量存储、零功率耦合、耗散和输入功率可以被解释为端口哈密顿风格机械系统的组成部分。这一解释以明确的模型边界为前提：实际 AUV 工程模型往往还包含舵桨经验力、横流阻力、执行器限幅、控制器闭环、海流外源和分段近似。它们可以作为耗散、经验广义力、外部输入或扰动进入模型，但不能在没有额外结构定义和证明的情况下统一声称为闭合标准端口哈密顿系统。
+\subsection{水动力参数获取、校准与闭合困难}
 
-\subsection{水动力参数获取与模型校准边界}
+式 \eqref{eq:fossen} 中的附加质量、阻尼、恢复力参数和执行器广义力模型通常无法仅由刚体几何直接确定。AUV 水动力系数可通过解析或半经验估计、计算流体力学（computational fluid dynamics, CFD）、约束模型试验、自由航行试验和系统辨识等路线获得 \citep{panda2021hydrodynamicreview,ahmed2023hydrodynamiccoefficients}。解析和半经验公式适合早期估计，CFD 可用于比较外形、舵面和推进布局对阻力或控制力的影响 \citep{phillips2010cfd}，模型试验能够在特定操纵和速度条件下测量力和力矩，系统辨识则利用实际或仿真输入--输出数据反推参数 \citep{caccia2000modeling,prestero2001verification}。
 
-式 \eqref{eq:fossen} 中的 \(M_{\mathrm{A}}\)、\(D(\nu)\)、恢复力参数和执行器广义力模型通常无法仅由刚体几何直接得到。AUV 的水动力系数可通过解析或半经验估计、计算流体力学（computational fluid dynamics, CFD）、约束模型试验、自由航行试验和系统辨识等路线获得 \citep{panda2021hydrodynamicreview,ahmed2023hydrodynamiccoefficients}。不同路线提供的信息不同：解析和半经验公式便于早期估计，CFD 可在设计阶段评估复杂流场和外形影响，实验流体力学和模型试验提供物理观测依据，系统辨识则利用实际或仿真轨迹反推参数。
+具体到六自由度模型，需要估计或校准的对象不仅包括纵向、横向和垂向阻尼系数，还包括附加质量矩阵中的耦合项、角速度相关力矩、二次阻力、升力或横流阻力、舵面与推进器产生的控制导数，以及重心和浮心偏置引起的恢复力参数。这些项具有明显的工况依赖性：大攻角、低速操纵、近海底运动、非均匀海流或推进器入流变化都可能改变广义力模型，使同一组名义参数在不同速度、深度或姿态区间表现出不同误差。
 
-具体到六自由度模型，需要确定或校准的对象不仅包括纵向、横向和垂向阻尼系数，还包括附加质量矩阵中的交叉耦合项、角速度相关力矩、二次阻力、升力或横流阻力、舵面与推进器产生的控制导数以及重浮心偏置引起的恢复力参数。这些项往往具有强耦合和工况依赖性：例如大攻角、低速操纵、近海底运动或非均匀海流下，线性化阻尼和常系数附加质量很难同时覆盖所有运动状态。对小型或异形 AUV 而言，舵桨干扰、推进器入流变化和外壳附体也可能改变广义力模型，使同一组名义参数在不同速度、深度或姿态区间表现出不同误差。
+不同参数获取路线也有各自边界。CFD 结果受网格、湍流模型、边界条件和计算成本影响，仍需实验或航行数据校准；约束试验覆盖的运动工况有限；自由航行试验更接近实际任务，但会同时混入控制器闭环、传感器误差、执行器非理想性和环境扰动。近年来，AI 辅助水动力系数估计和数据驱动残差建模进一步扩展了传统路线 \citep{ahmed2023hydrodynamiccoefficients,macatangay2024mluvdynamics}。已有工作使用神经网络增强水下航行器模型辨识 \citep{vandeven2007nnaugmented}，用支持向量机辨识水下航行器非线性动力学 \citep{xu2013svmuv}，也用多输出高斯过程进行非参数动力学辨识 \citep{arizaramirez2021mogp}。这类方法降低了显式参数化负担，但并不能消除水动力辨识中的非唯一性：同一轨迹误差可能由附加质量、阻尼、舵桨效率、未建模执行器动态、海流估计误差或控制输入偏差的不同组合共同造成。因此，本文后续的神经分支被解释为结构诱导的非保守广义力假设空间，而不是逐项唯一恢复真实水动力机理。
 
-CFD 在 AUV 水动力设计和系数估计中具有重要价值，尤其适用于比较外形、舵面和推进布局对阻力或控制力的影响 \citep{phillips2010cfd}。它的限制在于网格、湍流模型、边界条件和计算成本会影响结果可信度，且数值结果仍需通过实验或航行数据校准。约束模型试验包括拖曳水池、旋臂、平面运动机构等设置，能够直接测量特定速度、角速度或操纵运动下的力和力矩；自由航行试验更接近实际闭环运动，但同时混入控制器、传感器和执行器误差。系统辨识方法可在平台可用后利用输入--输出数据估计参数或低阶模型，但其有效性依赖激励充分性、传感器质量、工况覆盖和模型结构选择 \citep{caccia2000modeling,prestero2001verification}。
-
-近年来，AI 辅助的水动力系数估计和数据驱动残差建模进一步扩展了传统路线 \citep{ahmed2023hydrodynamiccoefficients}。这类方法可以降低显式参数化负担，也可以与已有 Fossen 型模型组合为混合模型。然而，它们不能消除水动力辨识的基本边界：同一轨迹误差可能由附加质量、阻尼、舵桨效率、未建模执行器动态、海流估计误差或控制输入偏差的不同组合共同造成。自由航行轨迹尤其容易出现这种非唯一性，因为传感器误差、控制器闭环和环境扰动会同时进入观测残差。因此，本文模型中的神经分支被解释为结构诱导的非保守广义力假设空间，而不是逐项唯一恢复真实水动力机理。
-
-\subsection{受控神经时序预测模型}
+\subsection{受控时序预测与连续时间动力学学习}
 
 从机器学习角度看，AUV 运动预测可以首先写成受控时序映射。设 \(s_k\) 表示离散采样时刻的状态，\(u_k\) 表示控制输入，\(c_k\) 表示海流、深度或任务上下文，则多步预测可表示为
 \begin{equation}
@@ -159,166 +131,69 @@ CFD 在 AUV 水动力设计和系数估计中具有重要价值，尤其适用�
   \mathcal{F}_\theta(s_{0:k},u_{0:k+H-1},c_{0:k+H-1}),
   \label{eq:sequence-prediction}
 \end{equation}
-其中 \(H\) 为预测步长，\(\mathcal{F}_\theta\) 可由多层感知机、循环网络、卷积时序网络或注意力模型参数化。单步状态转移也可写为
+也可用单步状态转移递推表示为
 \begin{equation}
   \hat s_{k+1}=F_\theta(s_k,u_k,c_k).
   \label{eq:discrete-transition}
 \end{equation}
-这两类表述覆盖了大多数黑箱神经时序预测方法。式 \eqref{eq:sequence-prediction} 允许模型直接利用一段历史状态和未来控制输入生成长时域输出，适合循环网络、时序卷积网络和注意力模型等序列结构；式 \eqref{eq:discrete-transition} 则强调由单步状态转移递推得到未来轨迹，适合多层感知机、残差网络或局部动力学网络。已有 AUV 研究已经利用神经网络处理导航变量预测、运动响应建模和动态定位控制等问题 \citep{song2020auvnavigation,ertogan2024neuraluuv}。这些工作说明，轨迹数据能够提供可学习的动力学信息，也说明神经模型可以作为传统建模和控制方法的补充。
+已有 AUV 研究已经利用神经网络处理导航变量预测、运动响应建模、动态定位控制和轨迹预测等问题 \citep{song2020auvnavigation,ertogan2024neuraluuv,yao2024auvtrajectory}，物理信息约束也被用于水下航行器动力学学习 \citep{zhao2024auvpin}。这些工作说明轨迹数据中包含可学习的动力学信息，也说明神经模型可以作为传统建模与控制方法的补充。
 
-离散时序模型的主要优势是训练目标直接、实现成本低，并且可以在不显式写出动力学方程的情况下拟合复杂输入--输出关系。其局限在长期状态预测中更加明显。首先，式 \eqref{eq:discrete-transition} 与采样间隔绑定，模型学习到的是特定时间步长下的状态转移，而不是独立于采样频率的连续时间向量场。其次，训练阶段常用真实历史状态作为输入，而长期验证阶段必须把模型预测状态重新作为下一步初值，局部误差会通过这种自由递推被放大。最后，普通离散映射通常不显式区分位置运动学、姿态约束、速度参照系、能量耗散和控制功率。对于 AUV 这类受控机械系统，这些缺失会使短时拟合精度与长期递推可靠性之间出现偏差。
-
-残差网络形式提供了从离散转移到连续时间模型的概念桥梁。若单步模型写为
-\begin{equation}
-  s_{k+1}=s_k+\Delta t\, f_\theta(s_k,u_k,c_k),
-  \label{eq:residual-transition}
-\end{equation}
-则它可以被视为对连续时间动力学 \(\dot s=f_\theta(s,u,c)\) 的显式欧拉离散化。当 \(\Delta t\) 固定时，式 \eqref{eq:residual-transition} 仍是一个离散预测器；当研究目标转向不同采样间隔、不同控制块长度和长期积分行为时，直接学习连续时间向量场就具有更清晰的动力学含义。神经常微分方程正是在这一意义上成为受控轨迹学习的重要工具。
-
-\subsection{神经常微分方程与受控连续时间学习}
+离散黑箱时序模型具有训练目标直接、实现成本低和表达能力强等优点，但其局限在长期递推中更加明显。首先，单步转移通常与固定采样间隔绑定，模型学习到的是特定时间步长下的状态映射，而不是独立于采样频率的连续时间向量场。其次，训练阶段常用真实历史状态作为输入，长期验证阶段却必须把预测状态反馈为下一步初值，局部误差会在自由递推中被反复放大。最后，普通离散映射通常不显式区分位置运动学、姿态约束、速度参照系、能量耗散和控制功率；对于 AUV 这类受控机械系统，这些缺失会使短时拟合误差与长时域运动一致性之间出现偏差。
 
 神经常微分方程（Neural ODE）将状态演化写成可学习连续时间向量场 \citep{chen2018neuralode}：
 \begin{equation}
   \dot y=f_\theta(y,t),
   \qquad
-  \hat y(t)=y(t_0)+\int_{t_0}^{t} f_\theta(y(\tau),\tau)\,\dd \tau .
+  \hat y(t)=y(t_0)+\int_{t_0}^{t}f_\theta(y(\tau),\tau)\,\dd\tau .
   \label{eq:node-autonomous-basic}
 \end{equation}
-与离散网络直接输出下一时刻状态不同，Neural ODE 中的神经网络输出瞬时变化率，预测轨迹由初值问题和数值积分器共同定义。若将 \(f_\theta\) 看作残差网络在 \(\Delta t\to0\) 下的连续极限，则神经常微分方程把“网络层数”转化为“连续演化时间”，也把序列预测问题转化为连续时间动力学学习问题。这一转化使模型能够自然处理非均匀采样、变步长输出和不同预测时域。
-
-对受控 AUV 运动而言，状态演化不能只依赖 \(y(t)\) 本身，还必须依赖控制命令、执行器状态和环境上下文。受控 Neural ODE 可写为
+对受控 AUV 运动，向量场还必须依赖控制命令、执行器状态或环境上下文，可写为
 \begin{equation}
   \dot y=f_\theta\bigl(y(t),u(t),c(t),t\bigr),
   \qquad
   \hat y(t_i)=\Phi_\theta(t_i;t_0,y_0,u,c),
   \label{eq:controlled-node-flow}
 \end{equation}
-其中 \(\Phi_\theta\) 表示由可学习向量场和输入函数共同诱导的流映射。若控制命令 \(u_c\) 和上下文 \(c\) 在区间 \([t_k,t_{k+1})\) 内保持分段常值，则有
-\begin{equation}
-  \dot y(t)=f_\theta\bigl(y(t),u_{c,k},c_k\bigr),
-  \qquad t\in[t_k,t_{k+1}).
-  \label{eq:controlled-node-piecewise}
-\end{equation}
-若需要把连续时间外部信号作为驱动路径而不是普通参数，也可采用受控微分方程视角，将观测或输入插值为路径 \(X(t)\)，并写成
-\begin{equation}
-  y(t)=y(t_0)+\int_{t_0}^{t} f_\theta(y(\tau))\,\dd X(\tau),
-  \label{eq:neural-cde}
-\end{equation}
-这类 Neural CDE 模型强调轨迹由连续输入路径驱动，特别适合不规则采样和部分观测时间序列 \citep{kidger2020neuralcde}。本文的 AUV 控制块采用更直接的分段常值控制和外源上下文写法，但 Neural CDE 的发展说明，连续时间学习框架可以系统处理“状态初值 + 输入路径”共同决定轨迹的情形。
+其中 \(\Phi_\theta\) 表示由可学习向量场和输入函数共同诱导的流映射。若外部信号以不规则采样或连续路径形式给出，也可采用 Neural CDE 等路径驱动连续时间模型 \citep{kidger2020neuralcde}；本文后续采用更直接的分段控制块和外源上下文表述。
 
-受控 Neural ODE 的训练目标通常在观测时刻比较预测状态与数据状态：
-\begin{equation}
-  \mathcal{L}_{\mathrm{traj}}(\theta)
-  =
-  \sum_{i=0}^{T}
-  \ell\bigl(h(\hat y(t_i)),s_i\bigr),
-  \qquad
-  \hat y(t_i)=\Phi_\theta(t_i;t_0,y_0,u,c),
-  \label{eq:node-trajectory-loss}
-\end{equation}
-其中 \(h\) 表示从模型状态到可观测数据状态的输出映射。若可获得状态导数或可由平滑轨迹估计导数，也可直接监督 \(f_\theta\)；但在 AUV 长期预测中，更关键的是积分后的自由递推轨迹是否稳定、是否保持姿态几何、是否在控制输入下产生合理的速度和位置变化。
-
-执行器动态是受控 Neural ODE 与 AUV 建模相结合时必须处理的环节。推进器和舵面命令通常不是瞬时广义力，命令到实际作用之间存在滞后、限幅和非线性映射。将执行器状态 \(u_a\) 纳入增强状态后，可以写成
+执行器动态是受控连续时间学习与 AUV 建模结合时必须处理的环节。推进器或舵面命令通常不是瞬时广义力，命令到实际作用之间存在滞后、限幅和非线性映射。将执行器状态 \(u_a\) 纳入增强状态后，可以写成
 \begin{equation}
   \dot y_{\mathrm{mech}}=f_\theta(y_{\mathrm{mech}},u_a,c),
   \qquad
-  \dot u_a=f_\theta^{a}(u_a,u_c).
+  \dot u_a=f_\theta^a(u_a,u_c).
   \label{eq:augmented-controlled-node}
 \end{equation}
-这种增强状态表述使执行器不再被隐含吸收到单步状态转移误差中，而是成为连续时间动力学的一部分。对 AUV 而言，这一点直接影响控制命令、实际广义力和机械功率之间的解释关系。
+这种写法使控制命令、执行器状态和实际广义力之间的层级关系可以在连续时间模型中表达，而不是被隐含吸收到单步预测误差中。
 
-Neural ODE 的优势并不等于物理一致性的保证。给定同一向量场，积分步长、误差容差和求解器类型都会影响离散输出。对于长时域递推，需要区分三类误差来源：第一，\(f_\theta\) 与真实连续时间向量场之间的模型误差；第二，数值积分器对给定 \(f_\theta\) 的离散近似误差；第三，预测状态反复反馈到下一积分窗口时形成的自由递推误差。三者会相互放大，特别是在姿态、速度和执行器状态共同参与动力学时更为明显。因此，Neural ODE 提供的是连续时间学习外壳；若向量场本身没有几何、能量和功率结构，它仍可能产生长期漂移或不可解释的能量变化。
+神经常微分方程提供的是连续时间学习外壳，本身并不保证物理一致性。给定同一向量场，积分步长、误差容差和求解器类型会影响离散输出；在长期递推中，向量场模型误差、数值积分误差和自由递推误差还会相互放大。因而，若可学习向量场本身没有几何、能量和功率结构，它仍可能产生姿态漂移、速度发散或难以解释的能量变化。
 
-科学机器学习进一步强调，学习型微分方程不应只依赖数据拟合，还应把可置信的先验结构写入模型。物理信息神经网络通过方程残差、边界条件和数据项联合训练模型 \citep{raissi2019pinn}；物理信息机器学习更广泛地讨论了数据驱动方法与守恒律、对称性和多尺度机理的结合 \citep{karniadakis2021piml}；通用微分方程则把已知微分方程项和未知神经项组合在同一连续时间模型中 \citep{rackauckas2020ude}。在 AUV 场景中，已有研究也尝试利用物理信息神经网络约束水下航行器动力学学习 \citep{zhao2024auvpin}。这些工作表明，物理方程和数据驱动模型可以在同一训练目标中结合；但方程残差本身并不等同于长期递推中的 \(\SO(3)\) 姿态一致性、耗散非负性、速度--广义力功率配对或相对水速度使用口径。后续的哈密顿和端口哈密顿结构正是为这些能量与功率约束提供更具体的组织方式。
+\subsection{科学机器学习与结构化动力学先验}
 
-\subsection{哈密顿力学基础与哈密顿神经网络}
+科学机器学习强调学习型微分方程不应只依赖数据拟合，还应把可信的先验结构写入模型。物理信息神经网络通过方程残差、边界条件和数据项联合训练模型 \citep{raissi2019pinn}；物理信息机器学习更广泛地讨论了数据驱动方法与守恒律、对称性和多尺度机理的结合 \citep{karniadakis2021piml}；通用微分方程则把已知微分方程项和未知神经项组合在同一连续时间模型中 \citep{rackauckas2020ude}。在水下航行器场景中，物理信息网络和 physics-guided hybrid 网络已被用于动力学建模和水动力参数辨识 \citep{zhao2024auvpin,fei2026pghynet}。这些方法为 AUV 建模提供了重要启发：已知物理关系可以作为模型结构和训练目标的一部分，而难以显式闭合的作用可以由可学习项表达。
 
-哈密顿力学以能量函数为中心描述保守机械系统 \citep{arnold1989mathematical}。设 \(q\in\R^n\) 为广义坐标，\(\dot q\) 为广义速度，系统的拉格朗日函数为 \(L(q,\dot q)=T(q,\dot q)-V(q)\)。若动能对速度的 Legendre 变换非退化，则共轭动量定义为
+不过，对 AUV 长期状态预测而言，通用的方程残差或混合项并不能自动覆盖所有关键结构。首先，姿态变量属于 \(\SO(3)\)，长期递推需要处理旋转群几何一致性。其次，水动力阻尼和非保守作用应与机械能量变化相容，耗散项不应无约束地产生能量。再次，推进器、舵面和外部扰动力矩进入机械方程时应按广义力--速度功率配对解释，而控制命令本身通常还不是功率端口变量。最后，有海流时，位置运动学与水动力广义力依赖的速度口径并不相同；总体速度和相对水速度的区分必须进入状态表示。哈密顿和端口哈密顿结构为这些能量与功率约束提供了更具体的组织方式。
+
+\subsection{哈密顿与端口哈密顿结构的可继承部分}
+
+哈密顿力学以能量函数为中心描述机械系统 \citep{arnold1989mathematical}。设 \(q\in\R^n\) 为广义坐标，\(p\in\R^n\) 为共轭动量。对典型机械系统，哈密顿量可写为
 \begin{equation}
-  p=\frac{\partial L}{\partial \dot q},
-  \label{eq:canonical-momentum}
-\end{equation}
-哈密顿量定义为
-\begin{equation}
-  H(q,p)=p^\top\dot q-L(q,\dot q),
-  \label{eq:hamiltonian-legendre}
-\end{equation}
-其中 \(\dot q\) 由 \((q,p)\) 反解得到。对典型机械系统，\(H(q,p)\) 等于动能和势能之和。若 \(M(q)\succ0\) 为质量矩阵，则常见形式为
-\begin{equation}
-  H(q,p)
-  =
-  \frac12 p^\top M(q)^{-1}p+V(q),
+  H(q,p)=\frac12 p^\top M(q)^{-1}p+V(q),
   \qquad
   \frac{\partial H}{\partial p}=M(q)^{-1}p .
   \label{eq:mechanical-hamiltonian}
 \end{equation}
-式 \eqref{eq:mechanical-hamiltonian} 说明，动量变量下的能量函数同时给出速度映射和势能梯度，这正是后文机械存储函数的基本来源。
-
-在正则坐标中，哈密顿方程为
-\begin{equation}
-  \dot q=\frac{\partial H}{\partial p},
-  \qquad
-  \dot p=-\frac{\partial H}{\partial q}.
-  \label{eq:canonical-hamilton}
-\end{equation}
-令 \(z=[q^\top,p^\top]^\top\)，可写成
+在正则坐标中，哈密顿方程具有斜对称结构
 \begin{equation}
   \dot z=J\nabla H(z),
   \qquad
-  J=
-  \begin{bmatrix}
-    0&I\\
-    -I&0
-  \end{bmatrix},
-  \qquad
-  J=-J^\top .
+  J=-J^\top ,
   \label{eq:hamiltonian-matrix-form}
 \end{equation}
-由于 \(J\) 斜对称，连续时间精确流满足
-\begin{equation}
-  \dot H
-  =
-  \nabla H(z)^\top\dot z
-  =
-  \nabla H(z)^\top J\nabla H(z)
-  =0 .
-  \label{eq:hamilton-energy-conservation}
-\end{equation}
-因此，能量守恒不是由“存在一个标量网络”单独产生的，而是由能量梯度和斜对称互连结构共同产生的。更一般地，Hamiltonian/Poisson 系统可写为
-\begin{equation}
-  \dot z=\Pi(z)\nabla H(z),
-  \qquad
-  \Pi(z)=-\Pi(z)^\top ,
-  \label{eq:poisson-hamilton}
-\end{equation}
-此时同样有 \(\dot H=0\)。非正则结构、约束系统和李群上的机械系统往往需要这种更一般的几何语言，而不仅是欧氏空间中的正则辛矩阵。
+其中 \(z=[q^\top,p^\top]^\top\)。由于 \(J\) 斜对称，连续时间精确流满足 \(\dot H=\nabla H^\top J\nabla H=0\)。因此，能量守恒不是由“存在一个标量函数”单独产生的，而是由能量梯度和斜对称互连结构共同产生的。
 
-哈密顿神经网络（Hamiltonian Neural Network, HNN）将上述结构用于神经动力学学习 \citep{greydanus2019hamiltonian}。其核心思想是不直接用网络拟合 \(\dot z\)，而是用网络拟合标量哈密顿量 \(H_\theta(z)\)，再通过结构方程生成向量场：
-\begin{equation}
-  \dot z_\theta
-  =
-  J\nabla H_\theta(z).
-  \label{eq:hnn-vector-field}
-\end{equation}
-若训练数据包含状态导数，典型导数监督目标为
-\begin{equation}
-  \mathcal{L}_{\mathrm{HNN}}(\theta)
-  =
-  \sum_i
-  \left\|
-  \dot z_i-J\nabla H_\theta(z_i)
-  \right\|^2 .
-  \label{eq:hnn-derivative-loss}
-\end{equation}
-若只比较轨迹，也可将式 \eqref{eq:hnn-vector-field} 作为 Neural ODE 的向量场并最小化积分轨迹误差。无论使用哪一种训练方式，HNN 的关键归纳偏置都在于向量场由标量能量和斜对称结构生成，从而在连续时间结构层面对保守系统的能量变化施加约束。
+哈密顿神经网络（Hamiltonian Neural Network, HNN）将这一思想用于神经动力学学习 \citep{greydanus2019hamiltonian}：模型不直接拟合任意 \(\dot z\)，而是学习标量能量函数 \(H_\theta(z)\)，再由结构方程生成向量场。后续 SymODEN 和 Dissipative SymODEN 进一步把控制、耗散和不可直接观测动量纳入结构化学习框架 \citep{zhong2020symoden,zhong2020dissipativesymoden}。对 AUV 建模而言，可继承的不是闭合保守系统的能量守恒假设，而是“机械存储函数 + 受限结构生成向量场”的建模原则；AUV 本身是受控开放系统，存在阻尼、推进器和舵面输入、海流影响、执行器滞后以及环境扰动。
 
-HNN 之后的相关模型进一步放宽了正则保守假设。SymODEN 将 Hamiltonian 结构与控制输入结合，并通过结构化计算图学习质量、势能和输入作用等对象 \citep{zhong2020symoden}；Dissipative SymODEN 在 Hamiltonian 动力学中加入耗散和控制，用于表达非保守机械系统 \citep{zhong2020dissipativesymoden}。这类工作说明，Hamiltonian 神经模型的发展方向并非停留在闭合保守系统，而是逐渐把控制、耗散和不可直接观测动量纳入结构化学习框架。
-
-对 AUV 建模而言，HNN 不能直接作为完整模型。AUV 是受控开放系统，存在水动力阻尼、推进器和舵面输入、海流影响、执行器滞后和深度相关恢复力；其姿态还自然位于 \(\SO(3)\) 而不是普通欧氏坐标中。因而，本文借鉴 HNN 的部分不是“能量守恒系统”这一物理假设，而是“由标量机械存储函数和受限结构矩阵生成向量场”这一建模原则。后续模型使用相对动量和正定质量矩阵定义动能，用标量势能网络定义保守部分，并用额外的耗散、零功率耦合和广义力分支描述非保守作用。这样做保留了 HNN 的能量中心思想，但不把 AUV 误写为闭合保守哈密顿系统。
-
-\subsection{端口哈密顿理论与端口哈密顿神经模型}
-
-端口哈密顿系统把 Hamiltonian 能量方法从闭合保守系统扩展到开放、耗散和受控系统 \citep{vanderschaft2014porthamiltonian,vanderschaft2017l2gain}。其基本思想是把系统状态、存储函数、功率守恒互连、耗散元件和外部端口统一写入一个功率平衡框架。有限维端口哈密顿系统常写为
+端口哈密顿系统把哈密顿能量方法扩展到开放、耗散和受控系统 \citep{vanderschaft2014porthamiltonian,vanderschaft2017l2gain}。有限维端口哈密顿系统常写为
 \begin{equation}
   \dot z=
   \bigl(J(z)-R(z)\bigr)\nabla H(z)
@@ -327,12 +202,7 @@ HNN 之后的相关模型进一步放宽了正则保守假设。SymODEN 将 Hami
   J(z)=-J(z)^\top,\quad R(z)\succeq0 .
   \label{eq:ph-template}
 \end{equation}
-其中 \(H(z)\) 是存储函数，\(J(z)\) 表示功率守恒互连，\(R(z)\) 表示耗散，\(G(z)u\) 表示外部端口作用。若定义端口输出
-\begin{equation}
-  y=G(z)^\top\nabla H(z),
-  \label{eq:ph-output}
-\end{equation}
-则存储函数满足
+若定义端口输出 \(y=G(z)^\top\nabla H(z)\)，则存储函数满足
 \begin{equation}
   \dot H
   =
@@ -341,36 +211,17 @@ HNN 之后的相关模型进一步放宽了正则保守假设。SymODEN 将 Hami
   \le y^\top u .
   \label{eq:ph-energy-template}
 \end{equation}
-该不等式是端口哈密顿理论的核心。它说明系统内部耗散不会自行增加存储能量，能量增加只能通过外部端口输入功率解释。与 HNN 的 \(\dot H=0\) 相比，端口哈密顿形式并不要求能量守恒，而是要求能量变化的来源在功率账本中可追踪。
+该不等式说明，内部耗散不会自行增加存储能量，能量增加必须通过外部端口功率解释。与 HNN 的保守情形不同，端口哈密顿形式不要求能量守恒，而要求能量变化的来源在功率账本中可追踪。
 
-端口变量必须按功率共轭关系解释。若 \(u\) 表示广义力，则 \(y\) 应与速度同量纲并满足 \(y^\top u\) 为机械功率；若 \(u\) 表示电压，则 \(y\) 可对应电流；若 \(u\) 表示流量，则 \(y\) 可对应压力。端口哈密顿理论的优势在于它不依赖单一物理域，而是用能量、努力变量和流变量描述跨域耦合。这也使其适合多物理系统建模、被动性分析和模块化互连。对 AUV 而言，推进器、舵面和外部扰动力矩进入机械方程时应首先被解释为广义力或广义力矩；控制器命令 \(u_c\) 只有经过执行器和流体作用映射为广义力后，才具有直接的机械功率端口意义。
+机械系统的端口哈密顿形式与 Fossen 型功率结构存在自然联系：动量变量下的机械存储函数给出速度映射，Coriolis/向心项可解释为零功率互连的一部分，阻尼对应耗散，推进器和舵面产生的广义力对应外部机械端口。因此，式 \eqref{eq:fossen-energy-balance} 可理解为海洋航行器动力学中的端口哈密顿风格功率平衡。但这一联系具有明确边界：实际 AUV 模型还包含经验舵桨项、执行器限幅、控制器闭环、海流外源和未建模环境扰动。若没有为这些部分引入额外状态、端口和储能定义，就不能把完整航行器--执行器--环境增强系统声称为闭合标准端口哈密顿系统。
 
-机械系统的端口哈密顿形式与 Fossen 方程之间存在明确对应。若取 \(z=(q,p)\)，并令 \(H(q,p)=\frac12p^\top M^{-1}p+V(q)\)，则 \(\partial H/\partial p=M^{-1}p=\nu\) 是广义力的功率共轭速度。Coriolis/向心项可视为零功率互连的一部分，阻尼对应 \(R\succeq0\)，推进器和舵面产生的广义力对应外部端口。由此，式 \eqref{eq:fossen-energy-balance} 可理解为海洋航行器动力学中的端口哈密顿风格功率平衡。这个解释同时给出了边界：若模型中存在海流外源、执行器滞后、经验舵桨项和未建模控制器闭环，就不能在没有额外状态、端口和储能定义的情况下声称整个增强系统是闭合标准端口哈密顿系统。
+端口哈密顿神经模型或 pH 风格神经模型把 \(H\)、\(J\)、\(R\) 或 \(G\) 中的部分对象参数化为神经网络，同时保留斜对称、正定耗散和端口功率结构。相关综述指出，机器学习与端口哈密顿系统的结合主要围绕哈密顿学习、结构保持降阶、pH 实现和控制展开 \citep{cherifi2020overviewphml}。已有 pHNN 和伪哈密顿神经模型还强调了外部力与内部结构的分离：显式时变受迫系统和状态相关外部力都可以在哈密顿/pH 风格框架中建模 \citep{desai2021porthamiltonian,eidnes2023pseudohamiltonian}。本文采用这些思想构造结构化连续时间假设空间，但只把可证明的端口语义限定在开放式机械核心及其广义力--速度功率配对上；执行器状态、海流外源和由上下文驱动的非线性广义力分支将在后文作为受控开放系统的一部分处理。
 
-端口哈密顿神经模型或 pH（port-Hamiltonian）风格神经模型把 \(H\)、\(J\)、\(R\) 和 \(G\) 中的部分对象参数化为神经网络，同时保留式 \eqref{eq:ph-template}--\eqref{eq:ph-energy-template} 的结构约束。相关综述指出，机器学习与 pH 系统的结合主要围绕 Hamiltonian 学习、结构保持降阶、pH 实现和控制展开 \citep{cherifi2020overviewphml}。典型神经参数化可写为
-\begin{equation}
-  H_\theta(z)\in\R,\qquad
-  J_\theta(z)=A_\theta(z)-A_\theta(z)^\top,\qquad
-  R_\theta(z)=L_\theta(z)L_\theta(z)^\top ,
-  \label{eq:phnn-parameterization}
-\end{equation}
-从而保证 \(J_\theta=-J_\theta^\top\) 和 \(R_\theta\succeq0\)。在导数监督下，可使用
-\begin{equation}
-  \mathcal{L}_{\mathrm{pH}}(\theta)
-  =
-  \sum_i
-  \left\|
-  \dot z_i-
-  \bigl(J_\theta(z_i)-R_\theta(z_i)\bigr)\nabla H_\theta(z_i)
-  -G_\theta(z_i)u_i
-  \right\|^2 ,
-  \label{eq:phnn-derivative-loss}
-\end{equation}
-也可将该结构作为 Neural ODE 向量场，通过积分轨迹误差训练。与普通 Neural ODE 相比，pHNN 的表达能力受到能量、耗散和端口结构限制；其目的不是无约束提高函数容量，而是在可学习对象中保留可解释的功率结构。
+\subsection{从基础到本文方法的落点}
 
-已有 pHNN 和伪哈密顿神经模型进一步强调了外部力与内部结构的分离。Desai 等将端口哈密顿形式用于显式时变受迫系统的学习 \citep{desai2021porthamiltonian}；Eidnes 等通过伪哈密顿神经网络学习状态相关外部力，说明 Hamiltonian/pH 风格结构可以帮助区分内部动力学和外部作用 \citep{eidnes2023pseudohamiltonian}。这些工作与本文目标相近之处在于，二者都试图避免把所有状态导数都交给黑箱网络；不同之处在于，本文还必须处理 \(\SE(3)\) 姿态、相对水速度、执行器滞后和 AUV 六自由度功率口径。
+上述基础给出本文方法的三个落点。首先，Fossen 型六自由度动力学提供了 AUV 运动中的功率账本，但复杂水动力、执行器作用和环境扰动使完整参数化模型难以在所有工况下闭合。其次，神经常微分方程将轨迹预测表述为受控连续时间初值问题，适合长期递推和不同控制块长度下的动力学学习，但非结构化向量场本身不保证姿态几何、能量耗散和功率配对的一致性。最后，哈密顿和端口哈密顿思想提供了机械存储、耗散、零功率互连和外部功率端口的组织方式，但这些结构必须限定在可定义、可分析的机械核心内使用。
 
-本文采用端口哈密顿思想构造结构化连续时间假设空间，但不把完整增强系统写成式 \eqref{eq:ph-template} 的标准仿射输入闭合系统。原因在于本文模型包含执行器一阶滞后、海流外源携带通道和由执行器状态及上下文驱动的非线性广义力分支。该分支在功能上承担外部广义力和未建模非保守效应，不等同于固定的 \(G(q)u\) 端口矩阵；本文所说的端口语义更接近广义力--速度之间的功率配对，而不是把控制命令本身直接当作端口变量。因此，本章使用“开放式端口哈密顿风格机械核心”来描述可证明的功率平衡范围，并用长期递推、结构消融和物理诊断检验这种结构化假设空间是否服务于 AUV 运动状态预测。
+因此，后文首先定义数据态与模型态之间的速度口径，特别是海流条件下总体速度和相对水速度的关系；随后构造融合 \(\SE(3)\) 运动学、相对动量、机械存储函数、耗散和非保守广义力的连续时间模型；最后在限定条件下分析机械核心的能量平衡，并用训练和长期递推验证协议检验结构约束是否服务于 AUV 运动状态预测。
 
 \section{受控状态表示与海流速度约定}
 \label{sec:state-current-contract}
