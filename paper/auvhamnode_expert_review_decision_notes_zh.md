@@ -5,6 +5,7 @@
 > 复核依据：`README.md`、`AUVHamNODE.py`、`train_utils.py`、`auv_model_registry.py`、`EXPERIMENT_PROGRESS_TRACKER.md`、`docs/oc_result_selection_policy.md`、`docs/provenance_audit_phnode_full_clean.md`、`docs/phase1a_oc_v4lite_cleanrun_v1_report.md` 以及 `paper/` 下两份既有写作指南。
 > 2026-05-20 更新：当前正式主稿已采用正文骨架 v2，主标题不再使用 `AUVHamNODE` 作为中心词，而是在正文中将其作为方法简称和实验标识使用。  
 > 2026-05-21 更新：第 1 节已按引言功能重新组织；本章定位应表述为“AUV 结构化运动建模方法”，长期状态预测是任务与验证场景。第 1 节不得用后文概念清单替代问题递进和研究缺口论证。
+> 2026-05-22 更新：第 3 节已扩写为数据态、模型态和输出态的状态契约，并接入三层速度变量关系图；后续复核重点应转向第 4--5 节的机械核心、能量边界和符号一致性。
 
 ---
 

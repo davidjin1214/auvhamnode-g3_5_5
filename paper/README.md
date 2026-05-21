@@ -91,12 +91,12 @@
 | 理论到参数化映射 | done | 开写前材料包第 5 节 | 转化为“可训练参数化”表述 |
 | claim-evidence 表 | ready | 开写前材料包第 4 节 | 写结果章前按最新 catalog 再校验一次 |
 | 实验矩阵 | ready | 开写前材料包第 6 节 | 根据实际可用结果确定主表和附表 |
-| 图表清单 | ready | 开写前材料包第 7 节 | 优先制作速度变量关系图和机械核心图 |
+| 图表清单 | ready | 开写前材料包第 7 节 | 速度变量关系图已完成并接入第 3 节；下一步优先制作机械核心图 |
 | 旧中间稿审查与降级 | done | 审查意见文档 + deprecated 旧稿 | 旧稿只作素材库，不再逐句修改 |
 | 旧框架稿降级 | done | `drafts/deprecated/auvhamnode_thesis_chapter_zh_framework_20260520.tex` | 旧 10 节框架只作历史快照和素材备份 |
 | 正文草稿 | in_progress | `drafts/auvhamnode_thesis_chapter_zh.tex` 8 节重写骨架 | 按当前目录继续扩写推导、协议和讨论 |
 | 第 1--2 节文献支撑返工 | done | 第 1 节已重写为以 AUV 运动建模为中心、长期状态预测为任务场景的 introduction v4；第 2 节已扩写为长论文级“相关建模基础”v1，并补强 Fossen 功率边界、受控时序预测、Neural ODE、科学机器学习、哈密顿/端口哈密顿神经模型和文献角色归纳 | 后续仅随方法章符号和引用调整做一致性修订 |
-| 问题定义正文 | done | 当前主稿第 3 节已扩写为完整正文 v1，并加入速度变量关系图 | 后续仅随模型章符号调整做一致性修订 |
+| 问题定义正文 | done | 当前主稿第 3 节已扩写为完整正文 v1，并加入三层速度变量关系图 | 后续仅随模型章符号调整做一致性修订 |
 | 方法正文 | in_progress | 当前主稿第 4--5 节已有 SE(3)、能量、非保守力结构和能量命题 | 继续扩写第 4 节模型构造，并检查与第 2 节符号和功率边界一致性 |
 | 评估设置正文 | ready | 当前主稿第 6 节已有训练目标、长期递推和结构消融设置 | P4/P5 后按 current evidence 扩写协议和结果章 |
 | 结果主表导出 | pending | catalog 已有 canonical views | 导出 current evidence 主表，标注 evidence status |
@@ -166,7 +166,7 @@
 | P1d | 降级 10 节旧框架并重开 8 节主稿 | `paper/drafts/deprecated/auvhamnode_thesis_chapter_zh_framework_20260520.tex` + 当前主稿 | done |
 | P1e | 重写第 1 节 introduction 论证 | 以 AUV 运动建模为中心、避免后文概念清单化的“研究问题与方法概述”v4 | done |
 | P1f | 扩写第 2 节 preliminaries | 长论文级“相关建模基础”v1 + 核心参考文献 | done |
-| P2 | 扩写“受控状态表示与海流速度约定” | 正文第 3 节完整正文 v1 + 速度变量关系图 | done |
+| P2 | 扩写“受控状态表示与海流速度约定” | 正文第 3 节完整正文 v1 + 三层速度变量关系图 | done |
 | P3 | 扩写“结构化连续时间动力学模型” | 正文第 4 节完整正文 v1 | in_progress |
 | P4 | 扩写“能量平衡与理论边界” | 正文第 5 节命题、证明和边界完整版本 | ready |
 | P5 | 扩写“训练目标与验证协议” | 正文第 6 节参数化、损失、rollout 和消融完整版本 | ready |

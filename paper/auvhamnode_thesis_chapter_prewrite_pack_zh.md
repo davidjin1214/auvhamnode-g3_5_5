@@ -5,6 +5,7 @@
 > 使用原则：学位论文不以篇幅压缩为优先，应完整保留理论背景、问题定义、方法推导、实现映射、实验协议、结果边界和局限性。正式正文中仍需避免保留“建议如何写”“后续再处理”等内部备忘录语气。
 > 2026-05-20 更新：当前正式主稿采用正文骨架 v2；本材料包中的正文落点应映射到 v2 的 8 节结构。
 > 2026-05-22 更新：第 1--2 节已完成引言式和相关建模基础返工。以下材料可继续作为方法章、理论章、验证协议和结果章的素材库，但不能把后文技术部件压缩成引言中的概念清单，也不能把旧的待办语气带入正式正文。
+> 2026-05-22 图表更新：第 3 节已接入三层速度变量关系图 `drafts/figures/velocity_state_contract.pdf`；后续图表制作应优先转向机械核心和能量/功率关系图。
 
 ---
 
@@ -314,16 +315,16 @@ R^\top v_c^n\\0
 
 ### 7.1 核心图
 
-| 图号 | 图名 | 内容 | 目的 |
-|---|---|---|---|
-| Fig. 1 | 总体框架图 | 数据态、模型态、ODE solve、输出评估 | 建立全章结构 |
-| Fig. 2 | 速度变量关系图 | \(\nu_b\)、\(\nu_r\)、\(v_c^n\)、\(R^\top v_c^n\)、\(\dot x=Rv_b\) | 解释海流下变量契约 |
-| Fig. 3 | AUVHamNODE 机械核心图 | \(M,V,D,J,\tau,u_c\to u_a\) | 解释能量流和非保守力分解 |
-| Fig. 4 | 模型结构阶梯图 | full-state blackbox 到 pH full | 展示结构逐级增强 |
-| Fig. 5 | 长期 rollout 误差增长图 | position, rotation, total velocity median/p90 | 展示长期稳定性 |
-| Fig. 6 | failure reason 统计图 | completed, pred divergence, solver failure, NaN/Inf, velocity/depth violation | 防止只看完成样本误差 |
-| Fig. 7 | 噪声初值鲁棒性图 | clean/nominal/degraded/heading-biased degradation | 展示鲁棒性 |
-| Fig. 8 | 能量和 SO(3) 诊断图 | \(H(t)\), \(P_D\), \(P_J\), determinant/orthogonality | 内部物理一致性 |
+| 图号 | 图名 | 内容 | 目的 | 当前状态 |
+|---|---|---|---|---|
+| Fig. 1 | 总体框架图 | 数据态、模型态、ODE solve、输出评估 | 建立全章结构 | 可与 Fig. 2 合并或后续单独制作 |
+| Fig. 2 | 速度变量关系图 | \(\nu_b\)、\(\nu_r\)、\(v_c^n\)、\(R^\top v_c^n\)、\(\dot x=Rv_b\) | 解释海流下变量契约 | 已完成：`drafts/figures/velocity_state_contract.pdf`，已接入主稿第 3 节 |
+| Fig. 3 | AUVHamNODE 机械核心图 | \(M,V,D,J,\tau,u_c\to u_a\) | 解释能量流和非保守力分解 | 下一张优先制作 |
+| Fig. 4 | 模型结构阶梯图 | full-state blackbox 到 pH full | 展示结构逐级增强 | 待制作 |
+| Fig. 5 | 长期 rollout 误差增长图 | position, rotation, total velocity median/p90 | 展示长期稳定性 | 待 current evidence 表导出后制作 |
+| Fig. 6 | failure reason 统计图 | completed, pred divergence, solver failure, NaN/Inf, velocity/depth violation | 防止只看完成样本误差 | 待 current evidence 表导出后制作 |
+| Fig. 7 | 噪声初值鲁棒性图 | clean/nominal/degraded/heading-biased degradation | 展示鲁棒性 | 待 current evidence 表导出后制作 |
+| Fig. 8 | 能量和 SO(3) 诊断图 | \(H(t)\), \(P_D\), \(P_J\), determinant/orthogonality | 内部物理一致性 | 待模型诊断口径确认后制作 |
 
 ### 7.2 核心表
 
@@ -363,7 +364,7 @@ R^\top v_c^n\\0
 2. 为 `phnode_full clean` 统一使用 current-main / cleanrun v1 对齐口径，避免旧 `seed42/46` 异常进入主结论。
 3. 决定 `ablate_no_lift clean seed43` 是重跑、剔除说明，还是在正文中标注 needs recheck。
 4. 将 `v4_lite` 结果定位为 protocol sensitivity diagnostic，不并入主 canonical 结论表，除非后续补齐 provenance 和异常修复。
-5. 生成或手绘速度变量关系图和机械核心图，这两张图应早于实验结果图完成。
+5. 速度变量关系图已完成并接入第 3 节；下一步生成机械核心图，这张图仍应早于实验结果图完成。
 6. 为每个结果图记录数据来源、过滤条件、eval profile、horizon 和 metric key，避免后续图表不可追溯。
 7. 若计划把离散 RNN/TCN/MLP 作为额外基线，需要先确认是否已有实现和结果；没有结果时不要在正文主实验中承诺。
 

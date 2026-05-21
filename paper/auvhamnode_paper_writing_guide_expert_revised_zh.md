@@ -1109,6 +1109,8 @@ P_\tau(t)=\nu_r^\top\tau_\theta.
 
 ### 图 2：状态与速度约定
 
+当前主稿已采用三层流程图版本 `drafts/figures/velocity_state_contract.pdf`，并以 `\includegraphics[width=138mm]` 接入第 3 节。后续修订应优先保持这张图与正文中的数据态、模型态和输出态定义一致。
+
 展示：
 
 \[
