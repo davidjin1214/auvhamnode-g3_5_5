@@ -290,13 +290,6 @@ Fossen 型海洋航行器动力学把 AUV 的惯性、水动力、恢复力和�
 \end{equation}
 式 \eqref{eq:position-total-relative} 只说明线速度口径的转换；完整的姿态运动学和相对动量动力学在下一节的模型构造中给出。
 
-\begin{figure}[htbp]
-  \centering
-  \includegraphics[width=138mm]{figures/velocity_state_contract.pdf}
-  \caption{海流条件下数据态、模型态与输出态之间的三层速度变量关系。数据空间保留总体速度，ODE 模型空间使用相对水速度；训练中的速度监督可在模型空间进行，输出报告和外部任务评估前再恢复总体速度。}
-  \label{fig:velocity-state-contract}
-\end{figure}
-
 \subsection{数据态、模型态与受控初值问题}
 
 训练数据保存总体速度口径下的状态
@@ -335,7 +328,14 @@ ODE 求解器内部使用相对水速度口径下的增强状态
   [x,R,\nu_r+\Delta_c(R,v_c^n),u_a,u_c,v_c^n,z_{\mathrm{ref}}].
   \label{eq:model-to-data-state}
 \end{equation}
-图~\ref{fig:velocity-state-contract} 概括了这两个映射及其物理使用口径。
+图~\ref{fig:velocity-state-contract} 概括了这两个状态空间、双向映射及相应速度变量的使用口径。
+
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=138mm]{figures/velocity_state_contract.pdf}
+  \caption{海流条件下数据/评估空间与 ODE 模型空间之间的速度口径转换。数据/评估空间保留总体速度，ODE 模型空间使用相对水速度；训练中的速度监督在模型空间进行，输出报告和外部任务评估前再恢复总体速度。}
+  \label{fig:velocity-state-contract}
+\end{figure}
 
 由此，受控轨迹预测任务可表述为一个带状态转换的连续时间初值问题。给定初始数据态 \(s_0\)，控制块内的命令和外源上下文作为增强状态中的携带通道写入 \(u_c\)、\(v_c^n\) 和 \(z_{\mathrm{ref}}\)，并在该积分窗口内按分段常值处理。先将初值转换为模型态
 \begin{equation}
