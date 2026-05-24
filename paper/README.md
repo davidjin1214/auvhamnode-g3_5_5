@@ -67,6 +67,14 @@
 
 2026-05-23 第 1--5 节审稿式复核与修订后的补充规则：以高水平审稿和资深中文编辑视角对第 1--5 节做了一次独立复核与修订。主要改动：第 2 节与第 4 节去除 Fossen 功率平衡和端口哈密顿桥梁的重复推导，第 4 节改为回指第 2 节并只保留相对水速度特化；第 2.5 节增补与 SE(3) 哈密顿/端口哈密顿 Neural ODE 及拉格朗日神经网络的对标差异段，并补充李群与结构保持几何积分文献；第 5 节在首次使用处给出与第 6 节正式定义一致的“机械核心”工作定义（含正定耗散项），统一 \(c_\tau\) 记号、执行器时间常数与 coadjoint 约定表述；第 1 节增补四点概念性贡献清单。新增对标文献 `duong2021se3hamnode`（RSS 2021）与 `duong2024liegroupphnode`（IEEE T-RO 2024）的著录细节已于 2026-05-23 核实补全：前者补 `volume = {XVII}` 与 `doi = 10.15607/RSS.2021.XVII.086`；后者确认作者列表（Duong, Altawaitan, Stanley, Atanasov）并补 `volume = {40}`、`pages = {3695--3715}`、`doi = 10.1109/TRO.2024.3428433`，`% NOTE` 已清除，bibtex 编译无 undefined citation。
 
+2026-05-25 第 8 节口径决策与 T2 当前证据重跑（与用户确认，落稿前先定口径=路径 C）：
+
+- 第 8 节六条口径已定：(1) `phnode_full clean` 用 provenance audit 对齐基线 0.6767 m，旧 ~11 m 只入方法论/局限；(2) `ablate_no_lift clean seed43` 异常采用**重跑**（不剔除），由 T2 在 current-main 环境补回；(3) `v4_lite` 见下条；(4) noisy training 写“与结构强耦合、非普适增强”，证据用 `ablate_no_mass_prior`（matched 5/6 seed 受益），**绕开被 seed46 污染的 `phnode_full` clean-vs-noisy 数值**；(5) 主表 `clean+nominal_eval ×{pos_err_median@60s, completion@60s}`，degraded/heading + P95 + 能量/SO(3) 诊断进子表；(6) 真实海试只入第 9 节。
+- v4-lite **提高定位**（用户决定）：从“仅协议敏感性脚注”提升为第 8 节一个正式“噪声下结构差异响应诊断”小节，承载四点论断——①完整结构模型在噪声评估/训练下保持稳健；②去掉 lift 在噪声训练下退化 → lift 对噪声鲁棒性有贡献【条件：T2 确认非 seed44 artifact】；③`ablate_no_mass_prior`（仅去 physics-based mass 初始化、子模块仍在）噪声下受益 → 噪声下不宜盲设 mass 初值、宜让模型自学【证据最强】；④clean 与噪声下结构**响应方向相反（delta 符号相反，非排名整体翻转）**。该定位仍**不**声称 v4-lite 训练协议优于主协议，边界 #6 不变。
+- **caveat A（必须先过）**：`ablate_no_lift` 噪声退化很可能由单个 seed44 驱动（noisy nominal 3.72 m，clean 同 eval 已偏高 2.03 m；tracker 记为“noisy 下新 seed44 异常”），与 seed46/seed43 同属环境 artifact 风险。论断②在 T2 用 current evidence 确认 seed44 非 artifact 前不得写死。
+- **caveat B**：噪声鲁棒性主证据用 matched clean-train vs noisy-train（4 个 eval profile），v4-lite 差异响应作机制佐证；phnode_full 噪声叙事绕开 seed46。
+- **T2 已发起**：按模型拆 4 个 notebook（`notebook/t2_wpfrag_{phnode_full,phnode_qforce,ablate_no_lift,ablate_no_mass_prior}.ipynb`，生成器 `notebook/make_t2_notebooks.py`），矩阵=模型×{clean, iid_noisy_ic@nominal_train, v4_lite@nominal_train}×seed42-46，三套 checkpoint 跨 clean/nominal/degraded/heading_biased 评估；补 `_audit_meta` provenance 与 no-successful-batches anomaly 扫描。用户在 Colab 并行执行中。回灌 catalog 并清零 seed44 问题后方可写第 8 节。
+
 必须持续遵守的边界：
 
 1. 不写“完整闭合严格端口哈密顿 AUV 系统”。
@@ -113,11 +121,13 @@
 | 方法正文 | done | 当前主稿第 5 节“结构化连续时间动力学模型”v1 已完成，补强增强模型态、SE(3) 运动学、相对动量、势能广义力、非保守广义力、执行器通道和相对速度动力学 | 后续只随第 6 节功率边界和符号一致性做局部修订 |
 | 能量性质正文 | done | 2026-05-24 将第 6 节按 4 子节展开（六自由度机械子系统与存储函数 / 耗散、零功率耦合与广义力功率 / 静水条件下的功率平衡命题和证明 / 海流、执行器与增强状态的适用范围），保留并复用第 5 节定义与公式、不重复推导，命题加 `\label` 可交叉引用，PDF 已重新编译 | 后续只随第 5/7 节符号与边界一致性做局部修订 |
 | 评估设置正文 | done | 2026-05-24 将第 7 节补强为 5 子节，把原合并子节拆为“基线模型与结构消融链条”（含模型比较表）与“结构消融设置”（4 项消融逐项映射到第 6 节结构性质），并明确结果留待第 8 节、不提前写性能结论 | 后续只随第 6 节性质和第 8 节结果口径做一致性修订 |
-| 结果主表导出 | pending | catalog 已有 canonical views | 导出 current evidence 主表，标注 evidence status |
-| `phnode_full clean` 结果口径 | watch | provenance audit 已给 0.6767 m 对齐基线 | 正文避免旧 11 m 脆弱性叙事 |
-| `ablate_no_lift clean` 结论 | blocked | seed43 clean 异常需处理 | 用户决定重跑、剔除说明或标注 needs recheck |
-| noisy training 结论 | watch | 当前只能写结构相关性 | 避免写成普适增强 |
-| `v4_lite` 结论 | watch | 当前是 protocol sensitivity diagnostic | 不并入主胜利，除非后续补证据 |
+| T2 当前证据重跑 | in_progress | 4 个按模型 notebook + 生成器（`notebook/t2_wpfrag_*.ipynb`, `make_t2_notebooks.py`），2026-05-25 提交；矩阵=4 模型×{clean, iid_noisy_ic@nominal_train, v4_lite@nominal_train}×seed42-46，跨 4 eval profile，含 `_audit_meta` provenance 与 anomaly 扫描 | 用户 Colab 并行执行中；回灌后本地重建 catalog、导出 §8 主表、复核 seed44 |
+| 结果主表导出 | pending（待 T2） | catalog 已有 canonical views（catalog era）；current evidence 待 T2 回灌 | T2 回灌后导出 current evidence 主表，标注 evidence status |
+| `phnode_full clean` 结果口径 | decided | 口径=0.6767 m 对齐基线；旧 ~11 m 只入方法论/局限；T2 重跑回灌当前数字 | 写 §8 时用 0.6767 m，并核对校正后家族排名 |
+| `ablate_no_lift clean` 结论 | decided（重跑）→ in_progress | 口径=重跑（非剔除）；seed43 由 T2 在 current-main 补回 | T2 回灌后用干净 seed43 重判家族 clean 最稳；并清零 seed44（见 caveat A） |
+| noisy training 结论 | decided | 口径=结构强耦合、非普适；证据用 `ablate_no_mass_prior`，绕开 seed46 污染的 phnode_full | 主轴用 matched clean-vs-noisy；写 §8 时按此口径 |
+| `v4_lite` 结论 | decided（提高定位） | 升为 §8“噪声下结构差异响应诊断”小节承载四点论断，但仍不声称协议胜利（#6 不变）；论断②条件于 caveat A | T2 确认 seed44 非 artifact 后写入四点论断 |
+| caveat A：ablate_no_lift seed44 | open（待 T2） | 噪声退化疑由 seed44 单 seed 驱动（与 seed46/43 同 artifact 风险） | T2 用 current evidence 确认 seed44 非 artifact，否则论断②降级 |
 | 真实海试泛化 | blocked | 当前无真实海试主证据 | 只能写为局限性和未来工作 |
 
 ---
