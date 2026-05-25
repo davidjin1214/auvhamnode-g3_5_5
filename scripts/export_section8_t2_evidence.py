@@ -26,6 +26,16 @@ dropped: ``aggregate.csv`` records ``n_seeds_total``, ``n_anomaly_excluded``,
 collapse stays visible as a transparency note rather than a quantified fragility
 claim. ``per_seed_long.csv`` keeps every seed with its ``train_nbad`` /
 ``train_anomaly`` flag.
+
+Rollout divergence (orthogonal to B1): a seed that trained fine (nbad == 0) but
+whose 60 s rollout blew up -- NaN, missing, or > ROLLOUT_COLLAPSE_THRESHOLD_M --
+is flagged ``rollout_diverged`` and likewise excluded from the quantitative
+aggregate, recorded via ``n_rollout_diverged`` / ``diverged_seeds`` /
+``diverged_seed_posmed`` / ``diverged_completion``. A model that diverges on every
+seed (the fully black-box ``blackbox_fullstate`` baseline diverges on all five
+clean seeds: ~83-89 m and NaN) reports NO finite median -- it is recorded as a
+long-horizon stability failure rather than a misleading number. This is the
+clean-mirror evidence that SE(3) geometric structure is required for stability.
 """
 
 from __future__ import annotations
@@ -34,6 +44,7 @@ import argparse
 import csv
 import glob
 import json
+import math
 import statistics
 from pathlib import Path
 
@@ -42,7 +53,18 @@ CHECKPOINTS = REPO_ROOT / "checkpoints"
 DEFAULT_OUT = REPO_ROOT / "analysis" / "section8_current_evidence"
 
 TRAIN_PROTOCOLS = ("clean", "iid", "v4lite")
-MODELS = ("phnode_full", "phnode_qforce", "ablate_no_lift", "ablate_no_mass_prior")
+MODELS = (
+    "phnode_full",
+    "phnode_qforce",
+    "ablate_no_lift",
+    "ablate_no_mass_prior",
+    # Black-box / semi-structured baselines (Path B): clean-mirror current-evidence
+    # anchor for the structured-vs-black-box comparison. Trained clean-only, so only
+    # the clean-protocol suites exist; the iid/v4lite discovery globs return empty.
+    "blackbox_fullstate",
+    "se3_momentum_blackbox",
+    "se3_accel_blackbox",
+)
 HORIZON = "60.0"
 ROLLOUT_COLLAPSE_THRESHOLD_M = 10.0
 
@@ -108,6 +130,25 @@ def metric(summary: dict, name: str, stat: str) -> float | None:
     return m.get(stat)
 
 
+def is_diverged(pos: float | None) -> bool:
+    """A 60 s rollout 'diverged' if its median is missing, NaN, or beyond the
+    collapse threshold -- i.e. the model trained (no nbad) but the long-horizon
+    free rollout blew up. Distinct from a training anomaly (train_anomaly/nbad)."""
+    if pos is None:
+        return True
+    if isinstance(pos, float) and math.isnan(pos):
+        return True
+    return pos > ROLLOUT_COLLAPSE_THRESHOLD_M
+
+
+def _fmt(value: float | None) -> str:
+    if value is None:
+        return "NA"
+    if isinstance(value, float) and math.isnan(value):
+        return "nan"
+    return f"{value:.4f}"
+
+
 def collect_rows() -> list[dict]:
     rows: list[dict] = []
     for model in MODELS:
@@ -146,8 +187,11 @@ def collect_rows() -> list[dict]:
                         "train_nbad": nbad,
                         "train_anomaly": int(nbad > 0),
                         "rollout_collapse": int(
-                            pos_med is not None and pos_med > ROLLOUT_COLLAPSE_THRESHOLD_M
+                            pos_med is not None
+                            and not (isinstance(pos_med, float) and math.isnan(pos_med))
+                            and pos_med > ROLLOUT_COLLAPSE_THRESHOLD_M
                         ),
+                        "rollout_diverged": int(is_diverged(pos_med)),
                         "source": str(path.relative_to(REPO_ROOT)),
                     }
                 )
@@ -171,43 +215,70 @@ def aggregate(rows: list[dict]) -> list[dict]:
 
     agg: list[dict] = []
     for key, members in groups.items():
-        members = [m for m in members if m["pos_err_median_60s"] is not None]
         if not members:
             continue
 
-        # B1 selection policy: exclude flagged training failures (nbad > 0) from the
-        # quantitative aggregate, applying the same uniform anomaly criterion to every
-        # model. The excluded seeds are surfaced in dedicated columns, never hidden.
-        excluded = [m for m in members if m["train_anomaly"]]
-        used = [m for m in members if not m["train_anomaly"]]
-        if not used:  # degenerate guard: every seed flagged -> report raw, exclude none
-            used, excluded = members, []
+        # Two selection policies, applied uniformly to every model:
+        #   * B1 training anomaly (train_anomaly / nbad>0): training itself failed.
+        #   * rollout divergence (rollout_diverged: NaN / missing / >threshold at 60 s):
+        #     the model trained but the long-horizon free rollout blew up.
+        # Both are excluded from the quantitative aggregate and surfaced in dedicated
+        # columns. A model that diverges on every seed (e.g. the fully black-box baseline)
+        # therefore reports NO finite median -- it is recorded as a stability failure
+        # (n_rollout_diverged == n_seeds_total) rather than a misleading number.
+        train_excluded = [m for m in members if m["train_anomaly"]]
+        survivors = [m for m in members if not m["train_anomaly"]]
+        diverged = [m for m in survivors if m["rollout_diverged"]]
+        used = [m for m in survivors if not m["rollout_diverged"]]
 
-        medians = [m["pos_err_median_60s"] for m in used]
-        completions = [m["completion_60s"] for m in used if m["completion_60s"] is not None]
-        worst = max(used, key=lambda m: m["pos_err_median_60s"])
-        agg.append(
+        row = {
+            "model_type": key[0],
+            "train_protocol": key[1],
+            "eval_profile": key[2],
+            "eval_protocol": key[3],
+            "n_seeds_total": len(members),
+            "n_anomaly_excluded": len(train_excluded),
+            "n_rollout_diverged": len(diverged),
+            "n_seeds_used": len(used),
+        }
+        if used:
+            medians = [m["pos_err_median_60s"] for m in used]
+            completions = [m["completion_60s"] for m in used if m["completion_60s"] is not None]
+            worst = max(used, key=lambda m: m["pos_err_median_60s"])
+            row.update(
+                {
+                    "posmed_mean_of_seed_medians": round(statistics.mean(medians), 4),
+                    "posmed_median_of_seed_medians": round(statistics.median(medians), 4),
+                    "posmed_min": round(min(medians), 4),
+                    "posmed_max": round(max(medians), 4),
+                    "worst_seed": worst["seed"],
+                    "completion_mean": round(statistics.mean(completions), 4) if completions else None,
+                }
+            )
+        else:
+            # No usable seed: diverged/failed everywhere in this condition. Report the
+            # failure transparently instead of a misleading finite number.
+            row.update(
+                {
+                    "posmed_mean_of_seed_medians": None,
+                    "posmed_median_of_seed_medians": None,
+                    "posmed_min": None,
+                    "posmed_max": None,
+                    "worst_seed": None,
+                    "completion_mean": None,
+                }
+            )
+        row.update(
             {
-                "model_type": key[0],
-                "train_protocol": key[1],
-                "eval_profile": key[2],
-                "eval_protocol": key[3],
-                "n_seeds_total": len(members),
-                "n_anomaly_excluded": len(excluded),
-                "n_seeds_used": len(used),
-                "posmed_mean_of_seed_medians": round(statistics.mean(medians), 4),
-                "posmed_median_of_seed_medians": round(statistics.median(medians), 4),
-                "posmed_min": round(min(medians), 4),
-                "posmed_max": round(max(medians), 4),
-                "worst_seed": worst["seed"],
                 "n_rollout_collapsed_all_seeds": sum(m["rollout_collapse"] for m in members),
-                "excluded_seeds": ";".join(str(m["seed"]) for m in excluded),
-                "excluded_seed_posmed": ";".join(
-                    f"{m['pos_err_median_60s']:.4f}" for m in excluded
-                ),
-                "completion_mean": round(statistics.mean(completions), 4) if completions else None,
+                "excluded_seeds": ";".join(str(m["seed"]) for m in train_excluded),
+                "excluded_seed_posmed": ";".join(_fmt(m["pos_err_median_60s"]) for m in train_excluded),
+                "diverged_seeds": ";".join(str(m["seed"]) for m in diverged),
+                "diverged_seed_posmed": ";".join(_fmt(m["pos_err_median_60s"]) for m in diverged),
+                "diverged_completion": ";".join(_fmt(m["completion_60s"]) for m in diverged),
             }
         )
+        agg.append(row)
     agg.sort(
         key=lambda r: (r["model_type"], r["train_protocol"], r["eval_protocol"], r["eval_profile"])
     )

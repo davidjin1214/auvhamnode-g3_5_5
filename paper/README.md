@@ -96,6 +96,27 @@
 - **catalog 重建非 §8 路径，且已加护栏**：builder（`derive_experiment_bucket`/`iter_suite_dirs`）不识别 `sweep_oc_phase1a_*` 命名，会把单 seed smoke1 默认当 primary/canonical 污染（实测污染 126 decision + 48 smoke1 行）。已在 `iter_suite_dirs` 加 `sweep_oc_phase1a_*` 跳过护栏并重建，本地 canonical 已洗净（phase1a=0、smoke1=0）且永久防复发。§8 证据仍只读定向导出 `analysis/section8_current_evidence/`，**不读 canonical**。
 - **B1 clean/clean 主表头**（pos 60s 中位、seed 间均值）：`phnode_full` 0.677(N=5) ≈ `ablate_no_lift` 0.829(N=4, 剔 seed43@44.38) < `ablate_no_mass_prior` 1.297(N=5) < `phnode_qforce` 3.756(N=5)。§8 可据此写作。
 
+2026-05-25 第四条（§8 主表口径细化 + 黑箱当前证据补齐 Path B；与用户确认）：
+
+- **主表/读法三取舍（用户拍板）**：① co-primary 指标改 {pos_err_median@60s, pos_P95@60s}，completion@60s 降为健全性脚注；② §8 头号证据放**整体结构**而非单个消融；③ seed43 推进 N=1、强 hedge 的"lift 有助训练稳定"读法（不量化）。
+- **事实核准（§7 术语对齐）**：`phnode_qforce` = **去标量势能 V(q)/能量核心**基线（`auv_baselines.py:411`，保留 SE(3)+动量+co-adjoint+D/J/B，仅把 −dV/dq 换成通用位形广义力 → 能量跨度 nan 是结构性后果）。§7 已把它归为"结构化 pH 基线"测"能量核心"，与 No Lift/No Mass Prior（消融、查组件边际）分列。故 §8 头号命题精确锚定为**"保守势能/能量核心是长程精度头号承重先验"**；消融阶梯：去能量核心(qforce)×5.5 ≫ 去 mass 先验×1.9 > 去 lift×1.2。
+- **旧 catalog 黑箱不可跨表采纳（regime 不可比，非数据问题）**：同数据集 `d0be9434`、同 300ep，但旧 `sweep_oc_core_default_…20260404` suite 里 `phnode_full` clean 3/6 seed 坍缩（s43/44/46）、s42 抬到 4.2，而 T2 干净镜像 0/5 全健康(0.68)；`phnode_qforce` clean 旧=0.57(最好) ↔ T2=3.76(最差)——排名反转、环境漂移（只会变差）无法解释。**qforce builder git 历史已查**：自 `a2ca101`（2026-04-03 21:28 新建 qforce）以来 `auv_baselines.py`/`auv_model_registry.py` 逐字未变，旧 suite（04-04）即用该版；翻转来自 builder 之外（04-04 后 train_utils.py ~10 次提交、噪声/eval 引擎大改）→ 坐实旧 catalog 与 T2 非同一 regime，不能混表。
+- **Path B（用户选 B）= 在 T2 regime 廉价重生成黑箱**：把 `blackbox_fullstate`/`se3_momentum_blackbox`/`se3_accel_blackbox` 在 g3_5_7 镜像跑 **clean-only × seed42-46**（每模型 5 run），eval 契约与 T2 clean 套件一致（iid_noisy_ic×4 profile + v4_lite×nominal_eval），得到与 T2 直接可比的黑箱锚点 → §8 可写"结构化 ≫ 黑箱"头号命题（两级故事：结构化≫黑箱；结构化内部 能量核心≫mass≫lift）。
+- **driver 增强（向后兼容，已 smoke-test）**：`scripts/run_phase1a_oc_v4lite.sh` 加 `PHASE1A_PROTOCOLS`（默认 `clean iid v4lite`，行为逐字不变；设 `clean` 则只跑 clean）。参数化 train/audit/validate_v4/eval/register 五处；本地桩测确认默认仍三协议、`clean` 时只动 clean 套件且 validate_v4 跳过。**T2 可复现性不受影响**。
+- **交付物**：生成器 `notebook/make_t2_blackbox_notebook.py` → 3 个 `notebook/t2_wpfrag_{blackbox_fullstate,se3_momentum_blackbox,se3_accel_blackbox}.ipynb`（22 cell，含 anomaly 扫描，黑箱 collapse-prone 若再坍缩按 B1 同口径处理）。`scripts/export_section8_t2_evidence.py` 的 MODELS 已加 3 黑箱（clean-only，iid/v4lite 发现 glob 自动为空）。
+- **待办**：用户在 Colab 跑 3 个黑箱 notebook → 同步 `checkpoints/sweep_oc_phase1a_decision_clean_t2_wpfrag_{黑箱}` → 本地重跑 export，黑箱 clean 行自动汇入 `aggregate.csv`。无需重建共享 catalog。
+
+2026-05-25 第五条（黑箱当前证据回灌 + 两级叙事定案；与用户确认）：Path B 三黑箱 clean×seed42-46 已回灌（各 5 run）、export 已重跑。
+
+- **回灌结果**：3 黑箱**训练全部成功（0/5 nbad）**——与旧 catalog 的 `blackbox_fullstate` nan/86.8 截然不同，说明那是旧 regime 伪迹。但 **`blackbox_fullstate` 长程 rollout 在全部 5 seed 发散**（60s 中位 = 85.5/89.0/nan/83.0/nan，completion = 0.57/0.87/**0**/0.28/**0**）。
+- **决策 A（rollout 发散口径）**：这是**有别于 B1 的第二类异常**——训练收敛(nbad=0)但自由递推发散，B1 的 nbad 判据不覆盖。已在 `export_section8_t2_evidence.py` 加 `rollout_diverged` 标记（pos 60s 为 NaN/缺失/>10m），发散 seed 与 train_anomaly 一样**移出定量聚合**并单列（`n_rollout_diverged`/`diverged_seeds`/`diverged_seed_posmed`/`diverged_completion`）；全 seed 发散的模型（`blackbox_fullstate`）**不报裸中位数**，记为"5/5 长程稳定性失败"。其余模型不受影响、无双计。
+- **决策 B（两级叙事，取代"结构化≫黑箱"单调命题）**：clean/clean 排名**非单调**，真实故事分两级——
+  - **几何层（稳定性命门）**：全黑箱 `blackbox_fullstate` 5/5 发散，而 `se3_momentum_blackbox`（保 SE(3)+常质量、动量黑箱）=1.49 完全稳定 → **SE(3) 流形结构是长程稳定性的必要条件**。
+  - **能量层（精度驱动）**：`phnode_full`=0.68 夺冠；去标量势能 V 的 `phnode_qforce`=3.76 是**最差的结构化模型**，甚至不如半结构化黑箱 se3_momentum(1.49)/se3_accel(2.46) → 势能/能量核心是承重件（去 V 比"整段动量换黑箱"更伤，前提保住 SE(3)+质量）。消融阶梯：去能量核心×5.5 ≫ 去 mass×1.9 > 去 lift×1.2。
+- **clean/clean 全表**（pos 60s 中位均值, N；P95 见 per_seed）：`phnode_full` 0.68(5) < `ablate_no_lift` 0.83(4,剔s43) < `ablate_no_mass_prior` 1.30(5) < `se3_momentum_blackbox` 1.49(5) < `se3_accel_blackbox` 2.46(5,中位1.64) < `phnode_qforce` 3.76(5,P95~13) < `blackbox_fullstate` **5/5 发散**。
+- **qforce hedge 不变**：3.76 与旧 regime 0.57 冲突，但 T2 内部 5 seed 一致[2–4.5]无坍缩，合法 T2 数；"垫底结构化模型"定位带 regime hedge。
+- **§8 证据已完整**：可按 B1 + 三取舍（co-primary {pos中位,P95}@60s、completion 脚注）+ 两级框架撰写，等用户说"写"。
+
 必须持续遵守的边界：
 
 1. 不写“完整闭合严格端口哈密顿 AUV 系统”。
@@ -144,6 +165,9 @@
 | 评估设置正文 | done | 2026-05-24 将第 7 节补强为 5 子节，把原合并子节拆为“基线模型与结构消融链条”（含模型比较表）与“结构消融设置”（4 项消融逐项映射到第 6 节结构性质），并明确结果留待第 8 节、不提前写性能结论 | 后续只随第 6 节性质和第 8 节结果口径做一致性修订 |
 | T2 当前证据重跑 | done | 4 模型×{clean,iid,v4lite}×seed42-46 已回灌并分析；定向导出 `scripts/export_section8_t2_evidence.py` → `analysis/section8_current_evidence/{per_seed_long,aggregate}.csv`（builder 已加 `sweep_oc_phase1a_*` 护栏、本地 canonical 已洗净；§8 仍只读定向导出） | 见 §3 决策块 2026-05-25 第二/三条；结论触发 §8 叙事重定 |
 | 结果主表导出 | done（current evidence, B1） | per_seed_long.csv（300 行，含 `train_nbad`/`train_anomaly`）+ aggregate.csv（60 行，B1：剔 flagged seed 后 mean+median of seed-medians，留 `excluded_seeds`/`excluded_seed_posmed`）已出；clean phnode_full=0.68m(N=5)、no_lift=0.83m(N=4) | §8 叙事定稿后据此排版主表/子表 |
+| 结构化 vs 黑箱证据（Path B） | done（已回灌+分析） | 3 黑箱 clean×seed42-46 已回灌、export 已纳入；全部 0/5 nbad（训练成功）。**`blackbox_fullstate` 5/5 rollout 发散**（85-89m/nan），`se3_momentum_blackbox`=1.49、`se3_accel_blackbox`=2.46 稳定。结论：两级叙事（SE(3) 几何→稳定性；能量核心→精度），非单调（qforce 3.76>se3 黑箱） | §8 据此写两级框架；blackbox_fullstate 走 rollout_diverged 口径（决策 A） |
+| rollout 发散口径（决策 A） | done | `export_section8_t2_evidence.py` 加 `rollout_diverged`（NaN/缺失/>10m），与 train_anomaly 同样移出聚合并单列；全 seed 发散模型不报裸中位数、记"长程稳定性失败" | §8 报 blackbox_fullstate 为 5/5 发散失败，不放有限数 |
+| driver 协议开关 | done（已 smoke-test） | `run_phase1a_oc_v4lite.sh` 加向后兼容 `PHASE1A_PROTOCOLS`（默认三协议不变，设 `clean` 只跑 clean）；参数化 train/audit/validate/eval/register | 供 Path B clean-only 复用；T2 可复现性不受影响 |
 | `phnode_full clean` 结果口径 | confirmed by T2 | T2 5 seed 全健康，clean 60s=0.68m，与对齐基线 0.6767m 吻合；旧 11m 不复现 | 写 §8 时用 0.68m current evidence，家族 clean 稳健夺冠 |
 | `ablate_no_lift clean` 结论 | done（B1 定案） | seed43 落标准 5 seed 内、唯一 flagged（nbad=276）；按统一 anomaly 判据移出聚合 → no_lift clean=0.83m(N=4) ≈ phnode_full，seed43 作透明注记不量化为脆弱性；base-rate 补测已作废（见第三条） | §8 主表用 N=4 数 + seed43 注记；lift 价值靠含噪 rollout 退化承载 |
 | noisy training 结论 | **改写**（旧口径证据不复现） | 旧"ablate_no_mass_prior 5/6 受益"在 matched T2 不复现（仅 2/5、净略损）；当前证据：噪声获益≈救援环境脆弱 clean seed，结构化模型无净收益，仅弱基线 qforce 明显获益 | 据当前证据重写为"非普适、主要救援脆弱 clean seed"；不再用旧 5/6 叙事 |
@@ -236,17 +260,21 @@
 | P4 | 扩写“结构化模型的能量性质与功率关系” | 正文第 6 节命题、证明和适用范围完整版本（4 子节） | done |
 | P5 | 扩写“训练目标、基线体系与验证协议” | 正文第 7 节参数化、损失、rollout、基线和消融完整版本（5 子节） | done |
 | P6 | 导出 current evidence 结果表 | 论文结果表底稿 | done（`analysis/section8_current_evidence/`） |
-| P7 | 写“实验结果与结构证据分析” | current evidence 主表和图 | ready（§8 口径 B1 已定、补实验作废，见 §3 第三条） |
+| P7 | 写“实验结果与结构证据分析” | current evidence 主表和图 | **证据就绪可写**：B1+三取舍+两级框架（SE(3)几何→稳定/能量核心→精度）已定，黑箱已回灌（见 §3 第三/四/五条）；等用户说“写” |
 | P8 | 扩写“讨论”并同步结果口径 | 正文第 9 节完整正文 v1 | blocked until P7 |
 | P9 | 写本章小结并回修摘要/第 1 节收束段 | 完整章节初稿 | pending |
 
-### 6.1 当前下一步：按 B1 口径写 §8（补实验已作废）
+### 6.1 当前下一步：§8 证据已齐，按 B1+三取舍+两级框架写 §8
 
 第 1--7 节已形成完整论证链并完成阶段性正文：第 1 节建立 AUV 运动建模和长期状态预测任务，第 2 节给出相关建模基础，第 3 节固定数据态--模型态和海流速度契约，第 4 节完成 Fossen 能量结构到结构保持学习模型的桥梁，第 5 节给出结构化连续时间动力学模型，第 6 节（2026-05-24，P4）按 4 子节给出机械核心定义、功率角色分析、静水功率平衡命题与证明、适用范围，第 7 节（2026-05-24，P5）按 5 子节给出结构保持参数化、控制块训练目标、长期递推与证据口径、基线模型与结构消融链条、结构消融设置。§6 严格定位为 §5 主方法的结构性质分析，引用 §5 公式而非重复推导；§7 各消融逐项映射到 §6 结构性质，并明确性能结论留待 §8。
 
 P6（current evidence 导出）已完成（`analysis/section8_current_evidence/`，已按 B1 重导出）。分析结果**推翻了基于旧 oc_followup 的 §8 叙事计划**（详见 §3 决策块 2026-05-25 第二条）：噪声训练"获益"实为救援环境脆弱 clean seed、v4-lite 论断 ②③ 在 matched 当前证据不复现、`ablate_no_lift` clean seed43 出现可复现坍缩。
 
 **§8 已解除暂缓（2026-05-25 第三条）**：seed43 经核实落标准 5 seed 内、是全 60-run 矩阵唯一 anomaly（nbad=276），口径定为 **B1**——按统一 anomaly 判据移出定量聚合（no_lift clean=0.83m，N=4），seed43 作透明注记、不量化为脆弱性；非对称 base-rate 补测因公平性问题作废。`phnode_full` clean seed42/46 在干净镜像恢复正常，红线 #5 获独立验证。故 §8 可按当前证据直接撰写：四点论断据 matched 证据重写（不得照旧写 ②③），主表用 B1 口径。§8 定稿后再回修 §9/§10 与摘要口径。当前已确定的 §8 正向材料：`phnode_full clean=0.68m(N=5)` 稳健夺冠（印证 provenance、红线 #5）、`ablate_no_lift clean=0.83m(N=4)` 典型情形与完整模型相当但有 1/5 训练不稳注记。
+
+**§8 主表口径细化 + 黑箱补齐（2026-05-25 第四条）**：三取舍已定（co-primary={pos_median,pos_P95}@60s、completion 降脚注；头号证据放整体结构；seed43 走强 hedge "lift 助训练稳定"）。`phnode_qforce` 经核实是"去能量核心"基线，故头号命题锚定"保守势能/能量核心是头号承重先验"，消融阶梯 能量核心×5.5≫mass×1.9>lift×1.2。旧 catalog 黑箱因 regime 不可比（同数据但 full 旧环境 3/6 坍缩、qforce 0.57↔3.76 反转；builder 自 a2ca101 冻结未变）不可跨表采纳，改走 **Path B**：在 g3_5_7 regime 重生成 3 黑箱 clean-only×seed42-46（已回灌，见第五条）。
+
+**第五条（黑箱已回灌，§8 证据齐）**：黑箱训练全成功(0/5 nbad)；`blackbox_fullstate` 5/5 rollout 发散（走 `rollout_diverged` 口径=决策 A），`se3_momentum_blackbox`=1.49/`se3_accel_blackbox`=2.46 稳定。**两级叙事定案（决策 B，取代"结构化≫黑箱"单调命题）**：① 几何层——SE(3) 结构是长程稳定性命门（全黑箱发散 vs se3_momentum_bb 稳）；② 能量层——能量核心是精度头号驱动（full 0.68 夺冠，去 V 的 qforce 3.76 最差结构化、连半结构化黑箱都不如），消融阶梯 能量核心×5.5≫mass×1.9>lift×1.2。**§8 现可撰写**：按 B1 + 三取舍（co-primary {pos中位,P95}@60s、completion 脚注）+ 两级框架，blackbox_fullstate 报 5/5 发散失败（不放有限数）；等用户说"写"。
 
 ---
 

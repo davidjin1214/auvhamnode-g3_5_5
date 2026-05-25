@@ -46,7 +46,19 @@ V4_EVAL_PROFILES="${V4_EVAL_PROFILES:-nominal_eval}"
 STRICT_ZERO_NOISE_AUDIT="${STRICT_ZERO_NOISE_AUDIT:-1}"
 SOFT_MIN_EPOCH_SCALE="${SOFT_MIN_EPOCH_SCALE:-0.05}"
 
+# Which training protocols to run. Default reproduces the original clean/iid/v4lite
+# triple (so existing T2 runs are unaffected); set e.g. PHASE1A_PROTOCOLS="clean"
+# to run a clean-only sweep (used by the black-box current-evidence notebook).
+PHASE1A_PROTOCOLS="${PHASE1A_PROTOCOLS:-clean iid v4lite}"
+for _proto in ${PHASE1A_PROTOCOLS}; do
+  case "${_proto}" in
+    clean|iid|v4lite) ;;
+    *) echo "Invalid PHASE1A_PROTOCOLS token: ${_proto} (allowed: clean iid v4lite)" >&2; exit 2 ;;
+  esac
+done
+
 export RUN_TAG DATASET DEVICE LOCAL_PROXY_ROOT PHASE1A_LOG_DIR PHASE1A_METADATA_DIR
+export PHASE1A_PROTOCOLS
 export NOISE_REFERENCE PHASE1A_MODELS SMOKE1_MODELS SMOKE_SEEDS DECISION_SEEDS
 export SMOKE_EVAL_NUM_TRAJ_PER_SCENARIO DECISION_EVAL_NUM_TRAJ_PER_SCENARIO
 export EVAL_TIMES EVAL_SCENARIOS EVAL_BASE_SEED EVAL_NOISE_SEED EVAL_PROGRESS_EVERY
@@ -125,6 +137,7 @@ print_config() {
   echo "DATASET=${DATASET}"
   echo "DEVICE=${DEVICE:-auto}"
   echo "PHASE1A_MODELS=${PHASE1A_MODELS}"
+  echo "PHASE1A_PROTOCOLS=${PHASE1A_PROTOCOLS}"
   echo "SMOKE1_MODELS=${SMOKE1_MODELS}"
   echo "SMOKE_SEEDS=${SMOKE_SEEDS}"
   echo "DECISION_SEEDS=${DECISION_SEEDS}"
@@ -188,20 +201,40 @@ resume_train_suite() {
   "${cmd[@]}"
 }
 
+train_one_protocol() {
+  local phase="$1"
+  local models="$2"
+  local seeds="$3"
+  local protocol="$4"
+
+  case "${protocol}" in
+    clean)  train_suite "$(phase_suite "${phase}" clean)"  "${models}" "${seeds}" clean         auto ;;
+    iid)    train_suite "$(phase_suite "${phase}" iid)"    "${models}" "${seeds}" nominal_train iid_noisy_ic ;;
+    v4lite) train_suite "$(phase_suite "${phase}" v4lite)" "${models}" "${seeds}" nominal_train v4_lite ;;
+    *) echo "Unknown protocol token: ${protocol}" >&2; exit 2 ;;
+  esac
+}
+
 train_protocol_triple() {
   local phase="$1"
   local models="$2"
   local seeds="$3"
+  local protocol
 
-  train_suite "$(phase_suite "${phase}" clean)" "${models}" "${seeds}" clean auto
-  train_suite "$(phase_suite "${phase}" iid)" "${models}" "${seeds}" nominal_train iid_noisy_ic
-  train_suite "$(phase_suite "${phase}" v4lite)" "${models}" "${seeds}" nominal_train v4_lite
+  for protocol in ${PHASE1A_PROTOCOLS}; do
+    train_one_protocol "${phase}" "${models}" "${seeds}" "${protocol}"
+  done
 }
 
 resume_v4lite_train() {
   local phase="$1"
   local models="$2"
   local seeds="$3"
+
+  if [[ " ${PHASE1A_PROTOCOLS} " != *" v4lite "* ]]; then
+    echo "[resume_v4lite_train] skipped: v4lite not in PHASE1A_PROTOCOLS=${PHASE1A_PROTOCOLS}"
+    return 0
+  fi
 
   resume_train_suite "$(phase_suite "${phase}" v4lite)" "${models}" "${seeds}" nominal_train v4_lite
   audit_triple "${phase}"
@@ -211,13 +244,12 @@ resume_v4lite_train() {
 audit_triple() {
   local phase="$1"
   local output_path="${2:-}"
-  local cmd=(
-    audit
-    --suite-name "$(phase_suite "${phase}" clean)"
-    --suite-name "$(phase_suite "${phase}" iid)"
-    --suite-name "$(phase_suite "${phase}" v4lite)"
-    --soft-min-epoch-scale "${SOFT_MIN_EPOCH_SCALE}"
-  )
+  local cmd=(audit)
+  local protocol
+  for protocol in ${PHASE1A_PROTOCOLS}; do
+    cmd+=(--suite-name "$(phase_suite "${phase}" "${protocol}")")
+  done
+  cmd+=(--soft-min-epoch-scale "${SOFT_MIN_EPOCH_SCALE}")
   if [[ "${STRICT_ZERO_NOISE_AUDIT}" == "1" || "${STRICT_ZERO_NOISE_AUDIT}" == "true" ]]; then
     cmd+=(--strict-zero-noise)
   fi
@@ -229,6 +261,10 @@ audit_triple() {
 
 validate_v4() {
   local phase="$1"
+  if [[ " ${PHASE1A_PROTOCOLS} " != *" v4lite "* ]]; then
+    echo "[validate_v4] skipped: v4lite not in PHASE1A_PROTOCOLS=${PHASE1A_PROTOCOLS}"
+    return 0
+  fi
   utils_cmd validate --suite-name "$(phase_suite "${phase}" v4lite)"
 }
 
@@ -281,10 +317,10 @@ eval_protocol_triple() {
   local iid_run_name="phase1a_iideval_traj${num_traj}_seed${EVAL_BASE_SEED}"
   local v4_run_name="phase1a_v4eval_traj${num_traj}_seed${EVAL_BASE_SEED}"
 
-  for protocol in clean iid v4lite; do
+  for protocol in ${PHASE1A_PROTOCOLS}; do
     eval_suite "$(phase_suite "${phase}" "${protocol}")" iid_noisy_ic "${iid_run_name}" "${IID_EVAL_PROFILES}" "${num_traj}" "${num_plots}"
   done
-  for protocol in clean iid v4lite; do
+  for protocol in ${PHASE1A_PROTOCOLS}; do
     eval_suite "$(phase_suite "${phase}" "${protocol}")" v4_lite "${v4_run_name}" "${V4_EVAL_PROFILES}" "${num_traj}" "${num_plots}"
   done
 }
@@ -304,10 +340,11 @@ register_proxy() {
   cmd=(
     register-proxy
     --proxy-suite-name "${proxy_name}"
-    --suite-name "$(phase_suite "${phase}" clean)"
-    --suite-name "$(phase_suite "${phase}" iid)"
-    --suite-name "$(phase_suite "${phase}" v4lite)"
   )
+  local protocol
+  for protocol in ${PHASE1A_PROTOCOLS}; do
+    cmd+=(--suite-name "$(phase_suite "${phase}" "${protocol}")")
+  done
   if [[ -n "${audit_path}" ]]; then
     cmd+=(--audit-path "${audit_path}")
   fi
