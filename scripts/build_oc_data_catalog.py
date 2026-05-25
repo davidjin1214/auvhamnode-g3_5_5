@@ -112,6 +112,13 @@ def iter_suite_dirs(checkpoints_dir: Path, include_unused: bool) -> Iterable[Pat
         suite_name = suite_dir.name
         if not suite_name.startswith("sweep_oc_"):
             continue
+        # phase1a is a separate current-evidence track (T2 decision + smoke1/smoke3
+        # gates). The bucket classifier does not recognize these names and would
+        # default them to primary/canonical, leaking single-seed smoke gates into
+        # the canonical views. Their results live in analysis/section8_current_evidence/
+        # via scripts/export_section8_t2_evidence.py, so exclude them from the catalog.
+        if suite_name.startswith("sweep_oc_phase1a_"):
+            continue
         if not include_unused and "unused" in suite_dir.parts:
             continue
         yield suite_dir

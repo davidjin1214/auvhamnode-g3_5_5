@@ -69,13 +69,13 @@
 
 2026-05-25 第 8 节口径决策与 T2 当前证据重跑（与用户确认，落稿前先定口径=路径 C）：
 
-- 第 8 节六条口径已定：(1) `phnode_full clean` 用 provenance audit 对齐基线 0.6767 m，旧 ~11 m 只入方法论/局限；(2) `ablate_no_lift clean seed43` 异常采用**重跑**（不剔除），由 T2 在 current-main 环境补回；(3) `v4_lite` 见下条；(4) noisy training 写“与结构强耦合、非普适增强”，证据用 `ablate_no_mass_prior`（matched 5/6 seed 受益），**绕开被 seed46 污染的 `phnode_full` clean-vs-noisy 数值**；(5) 主表 `clean+nominal_eval ×{pos_err_median@60s, completion@60s}`，degraded/heading + P95 + 能量/SO(3) 诊断进子表；(6) 真实海试只入第 9 节。
+- 第 8 节六条口径已定：(1) `phnode_full clean` 用 provenance audit 对齐基线 0.6767 m，旧 ~11 m 只入方法论/局限；(2) `ablate_no_lift clean seed43` 异常采用 **B1：按统一 anomaly 判据移出定量聚合（N=4）+ 透明注记**（详见下方第三条，取代原"重跑"口径）；(3) `v4_lite` 见下条；(4) noisy training 写“与结构强耦合、非普适增强”，证据用 `ablate_no_mass_prior`（matched 5/6 seed 受益），**绕开被 seed46 污染的 `phnode_full` clean-vs-noisy 数值**；(5) 主表 `clean+nominal_eval ×{pos_err_median@60s, completion@60s}`，degraded/heading + P95 + 能量/SO(3) 诊断进子表；(6) 真实海试只入第 9 节。
 - v4-lite **提高定位**（用户决定）：从“仅协议敏感性脚注”提升为第 8 节一个正式“噪声下结构差异响应诊断”小节，承载四点论断——①完整结构模型在噪声评估/训练下保持稳健；②去掉 lift 在噪声训练下退化 → lift 对噪声鲁棒性有贡献【条件：T2 确认非 seed44 artifact】；③`ablate_no_mass_prior`（仅去 physics-based mass 初始化、子模块仍在）噪声下受益 → 噪声下不宜盲设 mass 初值、宜让模型自学【证据最强】；④clean 与噪声下结构**响应方向相反（delta 符号相反，非排名整体翻转）**。该定位仍**不**声称 v4-lite 训练协议优于主协议，边界 #6 不变。
 - **caveat A（必须先过）**：`ablate_no_lift` 噪声退化很可能由单个 seed44 驱动（noisy nominal 3.72 m，clean 同 eval 已偏高 2.03 m；tracker 记为“noisy 下新 seed44 异常”），与 seed46/seed43 同属环境 artifact 风险。论断②在 T2 用 current evidence 确认 seed44 非 artifact 前不得写死。
 - **caveat B**：噪声鲁棒性主证据用 matched clean-train vs noisy-train（4 个 eval profile），v4-lite 差异响应作机制佐证；phnode_full 噪声叙事绕开 seed46。
 - **T2 已发起**：按模型拆 4 个 notebook（`notebook/t2_wpfrag_{phnode_full,phnode_qforce,ablate_no_lift,ablate_no_mass_prior}.ipynb`，生成器 `notebook/make_t2_notebooks.py`），矩阵=模型×{clean, iid_noisy_ic@nominal_train, v4_lite@nominal_train}×seed42-46，三套 checkpoint 跨 clean/nominal/degraded/heading_biased 评估；补 `_audit_meta` provenance 与 no-successful-batches anomaly 扫描。用户在 Colab 并行执行中。回灌 catalog 并清零 seed44 问题后方可写第 8 节。
 
-2026-05-25 T2 当前证据回灌与分析结果（§8 据此**暂缓**，先补实验后再定叙事；与用户确认）：
+2026-05-25 T2 当前证据回灌与分析结果（**本块的 base-rate 补测与"§8 暂缓"前瞻结论已被下方第三条取代，仅留作历史记录**；与用户确认）：
 
 - **数据已回灌并分析**：4 模型 × 3 训练协议（clean/iid_noisy_ic@nominal_train/v4_lite@nominal_train）× seed42-46 全部回灌（`checkpoints/sweep_oc_phase1a_decision_{clean,iid,v4lite}_t2_wpfrag_*`）。因 catalog builder 未识别 `sweep_oc_phase1a_decision_*`/`smoke1_*` 命名（会把单 seed smoke1 误当 primary 污染 canonical），改用**定向导出**（不重建共享 catalog）：脚本 `scripts/export_section8_t2_evidence.py` → `analysis/section8_current_evidence/{per_seed_long,aggregate}.csv`。
 - **口径核实**：跨 seed 聚合 = per-seed median → seed 间**取 MEAN**（复现 oc_followup §3.2 的 9.2746 = mean({4.20,0.84,0.73,1.16,47.85,0.87})，对离群 seed 敏感）；旧 noisy training 协议确认 = `nominal_train@iid_noisy_ic`（41 run），故 T2 iid-train 为正确 matched 对照。
@@ -86,6 +86,15 @@
 - **用户决策**：seed43 **已确定性复现**（44.5m / loss0.217@epoch19，T2 与补实验首跑逐位一致），故从补实验中**剔除**；补实验改为只测 **base-rate**：clean-only 训 `ablate_no_lift` seeds{47-51}（notebook `notebook/t2supp_nolift_seedscan.ipynb` + 生成器 `notebook/make_t2supp_nolift_notebook.py`，直调 `train_all_models_noise_profile.sh`+`batch_eval_models.sh`，零 driver 改动，suite=`sweep_oc_phase1a_decision_clean_t2supp_nolift`）。§8 → **暂缓**，待 base-rate 定后按当前证据重定四点论断（不得照旧写 ②③）。
 - **补实验脚本坑（已修）**：训练须传 `--noise-protocol auto` 而非 `clean`——`clean` 会让训练后多 profile held-out 评估在 `resolve_noise_protocol('clean', profile=nominal_eval)` 处崩溃（train_utils.py:180）并中止整个 sweep（首跑即因此只产出失败的 seed43）。`auto` 对 clean profile=无噪声训练、对 eval profile=iid_noisy_ic，与 phase1a driver 的 `clean auto` 一致。
 - **待补实验回答**：去-lift 在 clean 训练下的坍缩 base-rate（seed47-51 有几个 >10m）。≥1 个坍缩 → 真实（罕见）no-lift clean 训练脆弱；全部健康 → seed43 为孤立 环境×seed artifact（seed46 类），§8 按红线 #5 处理、不作模型脆弱性证据。
+
+2026-05-25 第三条（§8 口径定案，base-rate 补实验作废，§8 解除暂缓；与用户确认）：本条取代第二条中"base-rate 待回灌""§8 暂缓"等所有前瞻条目。
+
+- **放弃非对称 base-rate 补测**（用户决定）：原计划只给 `ablate_no_lift` 补 clean seed47-51 测坍缩 base-rate，但只给单一模型加测会与其余 3 模型在不同样本量/不同待遇下比较，破坏 T2「4 模型 × 3 协议 × seed42-46」唯一公平基准（与红线 #5 同属"选择性举证"的反面）。补实验 notebook/suite 作废，`notebook/t2supp_nolift_seedscan.ipynb` 不再执行。
+- **seed43 落标准 5 seed 内**：核 4 个 `t2_wpfrag_*_completed.ipynb` 确认 T2 标准 seed = `42 43 44 45 46`，seed43、seed44 均在标准集内（非额外 seed）。
+- **§8 口径 = B1（用户拍板）**：seed43 按**统一 anomaly 判据**（`no successful training batches` / nbad>0，与 notebook 对 4 模型一致的扫描）标为 flagged 训练失败，**移出定量聚合**（`no_lift` clean → N=4，over seed{42,44,45,46}），并以透明注记保留——`aggregate.csv` 记 `n_seeds_total`/`n_anomaly_excluded`/`excluded_seeds`/`excluded_seed_posmed`，正文写"5 个 clean seed 中 1 个（seed43）灾难性梯度训练失败、签名同已知数值伪迹类、无 base-rate 故不量化为脆弱性结论"。**不**与 `phnode_full` seed42/46 处置双标（同签名同默认处置）。lift 结构价值改由含噪 rollout 退化承载，不靠 seed43。导出脚本已落实 B1（`scripts/export_section8_t2_evidence.py`，nbad 逐 run 从 `training.log` 计）。
+- **全矩阵 anomaly scan 结论（60 run）**：唯一 flagged = `no_lift` clean seed43（nbad=276）。`phnode_full`/`phnode_qforce`/`ablate_no_mass_prior` 全 0/15；`phnode_full` clean seed42/46 在干净镜像恢复正常（0/5）→ 旧 ~11m 确认环境漂移、红线 #5 获独立验证。`no_lift` seed44 在 clean/iid/v4lite 全 nbad=0 → caveat A 训练崩溃面排除（与第二条"②方向相反"一致）。
+- **catalog 重建非 §8 路径，且已加护栏**：builder（`derive_experiment_bucket`/`iter_suite_dirs`）不识别 `sweep_oc_phase1a_*` 命名，会把单 seed smoke1 默认当 primary/canonical 污染（实测污染 126 decision + 48 smoke1 行）。已在 `iter_suite_dirs` 加 `sweep_oc_phase1a_*` 跳过护栏并重建，本地 canonical 已洗净（phase1a=0、smoke1=0）且永久防复发。§8 证据仍只读定向导出 `analysis/section8_current_evidence/`，**不读 canonical**。
+- **B1 clean/clean 主表头**（pos 60s 中位、seed 间均值）：`phnode_full` 0.677(N=5) ≈ `ablate_no_lift` 0.829(N=4, 剔 seed43@44.38) < `ablate_no_mass_prior` 1.297(N=5) < `phnode_qforce` 3.756(N=5)。§8 可据此写作。
 
 必须持续遵守的边界：
 
@@ -133,12 +142,12 @@
 | 方法正文 | done | 当前主稿第 5 节“结构化连续时间动力学模型”v1 已完成，补强增强模型态、SE(3) 运动学、相对动量、势能广义力、非保守广义力、执行器通道和相对速度动力学 | 后续只随第 6 节功率边界和符号一致性做局部修订 |
 | 能量性质正文 | done | 2026-05-24 将第 6 节按 4 子节展开（六自由度机械子系统与存储函数 / 耗散、零功率耦合与广义力功率 / 静水条件下的功率平衡命题和证明 / 海流、执行器与增强状态的适用范围），保留并复用第 5 节定义与公式、不重复推导，命题加 `\label` 可交叉引用，PDF 已重新编译 | 后续只随第 5/7 节符号与边界一致性做局部修订 |
 | 评估设置正文 | done | 2026-05-24 将第 7 节补强为 5 子节，把原合并子节拆为“基线模型与结构消融链条”（含模型比较表）与“结构消融设置”（4 项消融逐项映射到第 6 节结构性质），并明确结果留待第 8 节、不提前写性能结论 | 后续只随第 6 节性质和第 8 节结果口径做一致性修订 |
-| T2 当前证据重跑 | done | 4 模型×{clean,iid,v4lite}×seed42-46 已回灌并分析；定向导出 `scripts/export_section8_t2_evidence.py` → `analysis/section8_current_evidence/{per_seed_long,aggregate}.csv`（未重建共享 catalog，避免 smoke1 污染） | 见 §3 决策块 2026-05-25 第二条；结论触发 §8 叙事重定 |
-| 结果主表导出 | done（current evidence） | per_seed_long.csv（300 行）+ aggregate.csv（60 行，mean+median of seed-medians）已出；clean phnode_full=0.68m | §8 叙事定稿后据此排版主表/子表 |
+| T2 当前证据重跑 | done | 4 模型×{clean,iid,v4lite}×seed42-46 已回灌并分析；定向导出 `scripts/export_section8_t2_evidence.py` → `analysis/section8_current_evidence/{per_seed_long,aggregate}.csv`（builder 已加 `sweep_oc_phase1a_*` 护栏、本地 canonical 已洗净；§8 仍只读定向导出） | 见 §3 决策块 2026-05-25 第二/三条；结论触发 §8 叙事重定 |
+| 结果主表导出 | done（current evidence, B1） | per_seed_long.csv（300 行，含 `train_nbad`/`train_anomaly`）+ aggregate.csv（60 行，B1：剔 flagged seed 后 mean+median of seed-medians，留 `excluded_seeds`/`excluded_seed_posmed`）已出；clean phnode_full=0.68m(N=5)、no_lift=0.83m(N=4) | §8 叙事定稿后据此排版主表/子表 |
 | `phnode_full clean` 结果口径 | confirmed by T2 | T2 5 seed 全健康，clean 60s=0.68m，与对齐基线 0.6767m 吻合；旧 11m 不复现 | 写 §8 时用 0.68m current evidence，家族 clean 稳健夺冠 |
-| `ablate_no_lift clean` 结论 | base-rate 实验中 | seed43 **确定性复现坍缩**（44.5m，旧 catalog 同 seed 0.66m=环境分歧）已定、剔除出补实验；补实验 `notebook/t2supp_nolift_seedscan.ipynb` 只测 seed47-51 clean 坍缩 base-rate（protocol 已修为 auto） | base-rate 回灌后判定 seed43 是真实脆弱还是孤立 artifact，再定家族 clean 排名与措辞 |
+| `ablate_no_lift clean` 结论 | done（B1 定案） | seed43 落标准 5 seed 内、唯一 flagged（nbad=276）；按统一 anomaly 判据移出聚合 → no_lift clean=0.83m(N=4) ≈ phnode_full，seed43 作透明注记不量化为脆弱性；base-rate 补测已作废（见第三条） | §8 主表用 N=4 数 + seed43 注记；lift 价值靠含噪 rollout 退化承载 |
 | noisy training 结论 | **改写**（旧口径证据不复现） | 旧"ablate_no_mass_prior 5/6 受益"在 matched T2 不复现（仅 2/5、净略损）；当前证据：噪声获益≈救援环境脆弱 clean seed，结构化模型无净收益，仅弱基线 qforce 明显获益 | 据当前证据重写为"非普适、主要救援脆弱 clean seed"；不再用旧 5/6 叙事 |
-| `v4_lite` 结论 | **暂挂起**（②③不复现） | 论断②（去 lift 噪声退化）与③（去 mass 初值噪声受益）matched 当前证据均不支持；④退化为"弱基线获益" | 待补实验定 seed43 后据当前证据重定四点论断；边界 #6 仍守 |
+| `v4_lite` 结论 | 据当前证据重定（②③不复现） | 论断②（去 lift 噪声退化）与③（去 mass 初值噪声受益）matched 当前证据均不支持；④退化为"弱基线获益" | seed43 已 B1 定案、补实验作废；据当前证据重写四点论断；边界 #6 仍守 |
 | caveat A：ablate_no_lift seed44 | resolved（against ②） | T2 中 seed44 iid-train 健康（0.83m），旧 3.72m 噪声退化为环境伪影、不复现 → 论断②失去证据 | 不再以 seed44 噪声退化支持 lift 必要性 |
 | 真实海试泛化 | blocked | 当前无真实海试主证据 | 只能写为局限性和未来工作 |
 
@@ -227,15 +236,17 @@
 | P4 | 扩写“结构化模型的能量性质与功率关系” | 正文第 6 节命题、证明和适用范围完整版本（4 子节） | done |
 | P5 | 扩写“训练目标、基线体系与验证协议” | 正文第 7 节参数化、损失、rollout、基线和消融完整版本（5 子节） | done |
 | P6 | 导出 current evidence 结果表 | 论文结果表底稿 | done（`analysis/section8_current_evidence/`） |
-| P7 | 写“实验结果与结构证据分析” | current evidence 主表和图 | blocked until 补实验（seed43 性质）定案 |
+| P7 | 写“实验结果与结构证据分析” | current evidence 主表和图 | ready（§8 口径 B1 已定、补实验作废，见 §3 第三条） |
 | P8 | 扩写“讨论”并同步结果口径 | 正文第 9 节完整正文 v1 | blocked until P7 |
 | P9 | 写本章小结并回修摘要/第 1 节收束段 | 完整章节初稿 | pending |
 
-### 6.1 当前下一步：补实验（seed43）→ 重定 §8 叙事
+### 6.1 当前下一步：按 B1 口径写 §8（补实验已作废）
 
 第 1--7 节已形成完整论证链并完成阶段性正文：第 1 节建立 AUV 运动建模和长期状态预测任务，第 2 节给出相关建模基础，第 3 节固定数据态--模型态和海流速度契约，第 4 节完成 Fossen 能量结构到结构保持学习模型的桥梁，第 5 节给出结构化连续时间动力学模型，第 6 节（2026-05-24，P4）按 4 子节给出机械核心定义、功率角色分析、静水功率平衡命题与证明、适用范围，第 7 节（2026-05-24，P5）按 5 子节给出结构保持参数化、控制块训练目标、长期递推与证据口径、基线模型与结构消融链条、结构消融设置。§6 严格定位为 §5 主方法的结构性质分析，引用 §5 公式而非重复推导；§7 各消融逐项映射到 §6 结构性质，并明确性能结论留待 §8。
 
-P6（current evidence 导出）已完成（`analysis/section8_current_evidence/`）。但分析结果**推翻了基于旧 oc_followup 的 §8 叙事计划**（详见 §3 决策块 2026-05-25 第二条）：噪声训练"获益"实为救援环境脆弱 clean seed、v4-lite 论断 ②③ 在 matched 当前证据不复现、`ablate_no_lift` clean seed43 新出环境分歧坍缩。故 **§8 暂缓**，先跑补实验 `notebook/t2supp_nolift_seedscan.ipynb`（seed43 重跑 + no_lift 扩 seed47-51）判定 seed43 性质与坍缩 base-rate，再据当前证据重写 §8 四点论断（不得照旧写 ②③）。§8 定稿后再回修 §9/§10 与摘要口径。当前已确定的 §8 正向材料：`phnode_full clean=0.68m` 稳健夺冠（印证 provenance、红线 #5）。
+P6（current evidence 导出）已完成（`analysis/section8_current_evidence/`，已按 B1 重导出）。分析结果**推翻了基于旧 oc_followup 的 §8 叙事计划**（详见 §3 决策块 2026-05-25 第二条）：噪声训练"获益"实为救援环境脆弱 clean seed、v4-lite 论断 ②③ 在 matched 当前证据不复现、`ablate_no_lift` clean seed43 出现可复现坍缩。
+
+**§8 已解除暂缓（2026-05-25 第三条）**：seed43 经核实落标准 5 seed 内、是全 60-run 矩阵唯一 anomaly（nbad=276），口径定为 **B1**——按统一 anomaly 判据移出定量聚合（no_lift clean=0.83m，N=4），seed43 作透明注记、不量化为脆弱性；非对称 base-rate 补测因公平性问题作废。`phnode_full` clean seed42/46 在干净镜像恢复正常，红线 #5 获独立验证。故 §8 可按当前证据直接撰写：四点论断据 matched 证据重写（不得照旧写 ②③），主表用 B1 口径。§8 定稿后再回修 §9/§10 与摘要口径。当前已确定的 §8 正向材料：`phnode_full clean=0.68m(N=5)` 稳健夺冠（印证 provenance、红线 #5）、`ablate_no_lift clean=0.83m(N=4)` 典型情形与完整模型相当但有 1/5 训练不稳注记。
 
 ---
 
