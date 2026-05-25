@@ -62,6 +62,23 @@ venv.bak/
 .AppleDouble
 .LSOverride
 
+# LaTeX build artifacts
+paper/**/*.aux
+paper/**/*.bbl
+paper/**/*.blg
+paper/**/*.fdb_latexmk
+paper/**/*.fls
+paper/**/*.log
+paper/**/*.out
+paper/**/*.toc
+paper/**/*.xdv
+
+# High-resolution raster figure exports (journal-submission assets, e.g. ~16 MB TIFFs).
+# The manuscript compiles from the vector .pdf; tracked figures keep .pdf/.svg/.png.
+# Regenerate TIFFs from the tracked make_*.py scripts when a publisher requires them.
+paper/**/*.tiff
+paper/**/*.tif
+
 # Project specific
 results/
 checkpoints/
