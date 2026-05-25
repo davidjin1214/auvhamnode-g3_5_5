@@ -14,6 +14,13 @@ Cross-seed aggregation matches the convention used in
 trajectories at the 60 s horizon, and the cross-seed value is the MEAN of those
 per-seed medians.
 
+The §8 main table reports a co-primary pair {position-error median, position-error
+P95} at 60 s. Both are aggregated over the SAME surviving seed set (see the B1 and
+rollout-divergence policies below): ``posmed_*`` columns aggregate the per-seed
+medians, and ``posp95_*`` columns aggregate the per-seed P95 values
+(``posp95_mean_of_seed_p95s`` / ``posp95_median_of_seed_p95s`` / ``posp95_max``).
+Completion at 60 s is reported as a sanity-check footnote, not a co-primary metric.
+
 Selection policy (B1): a seed whose training collapsed with the catastrophic
 ``no successful training batches`` signature (nbad > 0 in training.log) is treated
 as a flagged training failure and EXCLUDED from the quantitative aggregate. This is
@@ -243,6 +250,14 @@ def aggregate(rows: list[dict]) -> list[dict]:
         }
         if used:
             medians = [m["pos_err_median_60s"] for m in used]
+            # P95 co-primary metric, aggregated over the SAME used set (B1 + rollout
+            # divergence excluded). Guard against a None/NaN P95 slipping through.
+            p95s = [
+                m["pos_err_p95_60s"]
+                for m in used
+                if m["pos_err_p95_60s"] is not None
+                and not (isinstance(m["pos_err_p95_60s"], float) and math.isnan(m["pos_err_p95_60s"]))
+            ]
             completions = [m["completion_60s"] for m in used if m["completion_60s"] is not None]
             worst = max(used, key=lambda m: m["pos_err_median_60s"])
             row.update(
@@ -251,6 +266,9 @@ def aggregate(rows: list[dict]) -> list[dict]:
                     "posmed_median_of_seed_medians": round(statistics.median(medians), 4),
                     "posmed_min": round(min(medians), 4),
                     "posmed_max": round(max(medians), 4),
+                    "posp95_mean_of_seed_p95s": round(statistics.mean(p95s), 4) if p95s else None,
+                    "posp95_median_of_seed_p95s": round(statistics.median(p95s), 4) if p95s else None,
+                    "posp95_max": round(max(p95s), 4) if p95s else None,
                     "worst_seed": worst["seed"],
                     "completion_mean": round(statistics.mean(completions), 4) if completions else None,
                 }
@@ -264,6 +282,9 @@ def aggregate(rows: list[dict]) -> list[dict]:
                     "posmed_median_of_seed_medians": None,
                     "posmed_min": None,
                     "posmed_max": None,
+                    "posp95_mean_of_seed_p95s": None,
+                    "posp95_median_of_seed_p95s": None,
+                    "posp95_max": None,
                     "worst_seed": None,
                     "completion_mean": None,
                 }
