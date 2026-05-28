@@ -1,112 +1,70 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+Guidance for Claude Code working in this repo.
 
 ## Project Overview
 
-Research codebase for AUV (Autonomous Underwater Vehicle) dynamics modeling using structured port-Hamiltonian Neural ODEs on SE(3). The main focus is comparing `phnode_full` against ablations and black-box baselines, evaluated by long-horizon rollout accuracy under clean and noisy initial conditions, with ocean current (`oc`) as the primary environment.
+Research codebase for AUV dynamics modeling using structured port-Hamiltonian Neural ODEs on SE(3). Compares `phnode_full` against ablations and black-box baselines via long-horizon rollout accuracy under clean and noisy initial conditions, with ocean current (`oc`) as the primary environment. Paper writeup: `paper/drafts/auvhamnode_thesis_chapter_zh.tex` (consumes `analysis/oc_data_catalog/` and `analysis/section8_current_evidence/`).
 
-> See `AGENTS.md` for the full orientation checklist, workflow preferences, coding conventions, and commit guidelines. See `docs/repo_structure_audit.md` before using old checkpoints, smoke/probe outputs, deprecated scripts, or delete-candidate directories.
+Orientation: `AGENTS.md` (full workflow), `EXPERIMENT_PROGRESS_TRACKER.md` (timeline), `docs/repo_structure_audit.md` (delete candidates).
 
-## Environment
+## Commands
 
-All commands require:
+All commands run under `conda activate mytorch1`.
+
 ```bash
-conda activate mytorch1
-```
-
-## Common Commands
-
-**Data generation:**
-```bash
-# oc dataset
+# Data
 python data_collection.py --num_traj 500 --blocks 150 --seed 42 --save_dir ./data/oc --workers 4 --ocean_current --current_speed_max 0.5
-```
 
-**Single training run:**
-```bash
-# Clean
+# Single training (clean / noisy IC)
 python train_auv_hamnode.py --dataset ./data/oc/<dataset>.pkl --model_type phnode_full --save_dir ./checkpoints
-
-# Noisy IC
 python train_auv_hamnode.py --dataset ./data/oc/<dataset>.pkl --model_type phnode_full --save_dir ./checkpoints \
   --noise_profile nominal_train --noise_warmup_epochs 20 --noise_ramp 80 --noise_mix_ratio 0.5
-```
 
-**Rollout evaluation:**
-```bash
+# Rollout eval
 python evaluate_rollout_benchmark.py --checkpoint ./checkpoints/<run>/best_model.pt \
   --mode resampled --noise_profiles clean nominal_eval degraded_eval heading_biased_eval \
   --output_dir ./checkpoints/<run>/rollout_benchmark
-```
 
-**Sweep workflows (preferred for multi-model runs):**
-```bash
+# Preferred sweep workflow
 bash scripts/train_all_models_noise_profile.sh --profile oc --group core --noise-profile nominal_train
 bash scripts/eval_all_models_noise_profile.sh --suite-dir ./checkpoints/<suite>
-```
 
-The older `scripts/train_all_models_noise.sh`, `scripts/eval_all_models_noise.sh`, and `--noise_level` interface are deprecated compatibility paths.
-
-**Analysis:**
-```bash
-python scripts/summarize_sweep.py --suite-dir ./checkpoints/<suite>
+# Analysis
+python scripts/summarize_sweep.py         --suite-dir ./checkpoints/<suite>
 python scripts/build_experiment_report.py --suite-dir ./checkpoints/<suite>
-python scripts/build_oc_data_catalog.py    # rebuild all catalog CSVs
+python scripts/build_oc_data_catalog.py
 ```
 
-**Validation (no tests dir — use smallest affected workflow):**
-- Model/trainer change → run one small training job
-- Evaluation change → run one rollout benchmark
-- Catalog change → rebuild `analysis/oc_data_catalog/`
+Deprecated: `scripts/{train,eval}_all_models_noise.sh` and `--noise_level`.
+
+No `tests/` dir — validate via the smallest affected workflow (one training job / one rollout / one catalog rebuild).
 
 ## Architecture
 
-The pipeline is: **Data Generation → Training → Rollout Evaluation → Catalog/Analysis**
+Pipeline: **Data → Training → Rollout Eval → Catalog/Analysis**
 
-### Data & Physics Layer
-- `remus100_core.py` — REMUS 100 AUV physics simulator (Euler angles + quaternions)
-- `data_collection.py` — wraps the simulator to produce `.pkl` trajectory datasets; `oc`/`noc` in the filename is used by the trainer to infer defaults
+- `remus100_core.py` — REMUS 100 physics simulator (Euler + quaternion).
+- `data_collection.py` — dataset generator; `oc`/`noc` in filename drives trainer defaults.
+- `AUVHamNODE.py` — main `phnode_full` SE(3) model (augmented ODE state; learnable M⁻¹, V, D, J, B, actuator τ).
+- `auv_baselines.py` — 10 variants: 3 `phnode_*`, 2 `se3_*_blackbox`, 1 `blackbox_fullstate`, 4 `ablate_*`.
+- `auv_model_registry.py` — name→class map; add new models here.
+- `train_auv_hamnode.py` / `train_utils.py` — training entrypoint and the largest support file (config, SE(3) loss, profile noise injection, eval helpers).
+- `evaluate_rollout_benchmark.py` + `rollout_benchmark_{engine,reporting}.py` — rollout eval stack.
+- `scripts/build_oc_data_catalog.py` — rebuilds the normalized catalog CSVs under `analysis/oc_data_catalog/`.
+- `scripts/{oc_catalog_templates,query_oc_catalog_examples,export_section8_t2_evidence,register_existing_runs_as_suite}.py` — catalog helpers.
+- `analysis/provenance_audit/` — investigation notes for the active `phnode_full` audit (do not delete).
 
-### Model Layer
-- `AUVHamNODE.py` — main `phnode_full` model; learnable submodules: inverse mass M⁻¹, potential energy V(q), damping D(ν_r), lift J(ν_r), actuator force B(u), and actuator time constants; augmented ODE state encodes position (3), rotation matrix (9), relative body velocity (6), actuator states, commands, and optionally ocean current (3) + depth (1)
-- `auv_baselines.py` — all 10 model variants: 3 structured (`phnode_*`), 2 semi-structured (`se3_*_blackbox`), 1 fully black-box, 4 ablations (`ablate_*`)
-- `auv_model_registry.py` — central name → class mapping used by all entry points; add new models here
+## Conventions
 
-### Training Layer
-- `train_auv_hamnode.py` — CLI entrypoint; delegates config parsing and checkpoint I/O to `train_utils.py`
-- `train_utils.py` — config dataclass, SE(3) trajectory loss, profile-based noise injection (warmup→ramp→steady mix), logging, evaluation helpers; this is the largest and most complex file
+- **Noise:** IC-only, profile-based. Profiles: `clean`, `nominal_train`, `nominal_eval`, `degraded_eval`, `heading_biased_eval`. Budgets are Remus100 DR/inertial-grounded — see `docs/noise_model_design.md`.
+- **Run artifacts:** every training run writes `config.json`, `training_history.pkl` (prefer over `.log`), `best_model.pt`, `block_evaluation.json`, `heldout_evaluation.json`. New evidence-bearing runs must also write `_audit_meta/{code_revision,environment}.txt`. Rollout outputs go under `rollout_benchmark/` in the same run dir.
+- **Catalog:** CSVs are generated — never hand-edit. The only hand-editable sidecar is `analysis/oc_data_catalog/evidence_status_overrides.csv`. Default to `canonical_rollout_*` tables; touch raw `rollout_*` only when all variants are needed.
+- **Evidence gate:** before citing any catalog row, check `evidence_status`. `phnode_full clean seed42/46` are `stale_environment_drift` — use the cleanrun v1 baseline instead (`docs/phase1a_oc_v4lite_cleanrun_v1_report.md`).
+- **Catalog deep-dives:** field defs `docs/oc_data_catalog_dictionary.md`; selection rules `docs/oc_result_selection_policy.md`; active audit `docs/provenance_audit_phnode_full_clean.md`.
 
-### Evaluation Layer
-- `evaluate_rollout_benchmark.py` — CLI entrypoint for rollout benchmarks
-- `rollout_benchmark_engine.py` — executes multi-profile rollouts from a checkpoint; handles resampled vs fixed-IC modes
-- `rollout_benchmark_reporting.py` — aggregates per-rollout results into `summary.json` and structured outputs
+## Off-limits / Stale
 
-### Analysis Layer
-- `scripts/build_oc_data_catalog.py` — ingests all `checkpoints/` artifacts and writes normalized CSVs to `analysis/oc_data_catalog/`
-- `scripts/oc_catalog_templates.py` — plotting and export helpers that read from the catalog CSVs
-
-### Key Data Flow Invariants
-- A training run writes: `config.json`, `training_history.pkl` (preferred over `.log`), `best_model.pt`, `block_evaluation.json`, `heldout_evaluation.json`
-- Rollout evaluation appends results under `rollout_benchmark/` inside the same run directory
-- Catalog CSVs are generated artifacts — never hand-edit; always regenerate via `build_oc_data_catalog.py`
-- For figures/tables, default to `canonical_rollout_*` tables; use raw `rollout_*` tables only when all rollout variants are needed
-
-## Noise System
-
-Profile-based IC-only noise (not force noise). Profiles: `clean`, `nominal_train`, `nominal_eval`, `degraded_eval`, `heading_biased_eval`. Hardware-grounded budgets based on Remus100 dead-reckoning inertial reference. See `docs/noise_model_design.md` for design rationale.
-
-## Result Catalog
-
-Normalized tables under `analysis/oc_data_catalog/`. Key files:
-- `run_inventory.csv` — all trained runs
-- `canonical_rollout_summary_long.csv` / `canonical_rollout_outcomes_long.csv` — default citation view
-- `rollout_run_registry.csv` — maps rollout benchmark folders to runs
-
-See `docs/oc_data_catalog_dictionary.md` for field definitions and `docs/oc_result_selection_policy.md` for canonical selection rules.
-
-## Reference Material
-
-- `original/bf3n/` — delete-candidate legacy reference material, not the active implementation
-- `checkpoints/unused/` — inactive experiments from an older incorrect noise design, invalid for current evidence
-- smoke/probe checkpoint directories — flow-validation-only, not current evidence for model ranking or paper conclusions
+- `original/bf3n/` — legacy reference, not active code.
+- `checkpoints/unused/` — old noise design, invalid for current evidence.
+- smoke/probe checkpoint dirs — flow-validation only, not paper evidence.
