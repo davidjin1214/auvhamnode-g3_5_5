@@ -1,6 +1,6 @@
 # AUVHamNODE 学位论文章节写作入口
 
-> 更新时间：2026-05-23
+> 更新时间：2026-05-30
 > 目的：梳理 `paper/` 下 AUVHamNODE 中文学位论文章节相关文档的定位、阅读顺序和后续写作进度。
 > 使用原则：本目录中的指南和材料包服务于正式正文写作，但它们本身不是正文。正式正文应保留定义、假设、命题、实验协议、证据边界和讨论，避免保留“建议如何写”“后续再处理”等内部备忘录语气。
 
@@ -15,7 +15,7 @@
 | [auvhamnode_expert_review_decision_notes_zh.md](auvhamnode_expert_review_decision_notes_zh.md) | 专家复核与落稿决策备忘 | 固化最终论文定位、必须保留的贡献点、理论边界、实验证据红线，以及内部指南到正式正文的转化规则 | 判断“什么能写、什么不能写、如何转化成正文”时 |
 | [auvhamnode_thesis_chapter_prewrite_pack_zh.md](auvhamnode_thesis_chapter_prewrite_pack_zh.md) | 学位论文章节开写前材料包 | 集中整理符号表、claim-evidence 表、理论到代码映射、实验矩阵、图表清单、正文种子段落和待补材料 | 真正开始写正文前，作为底稿索引和任务清单使用 |
 | [drafts/auvhamnode_thesis_chapter_review_notes_zh.md](drafts/auvhamnode_thesis_chapter_review_notes_zh.md) | 旧稿审查意见与重写约束 | 记录旧中间稿的问题、可保留素材、重写原则和新稿结构 | 继续写正文前，先确认不重复旧稿问题 |
-| [drafts/auvhamnode_thesis_chapter_zh.tex](drafts/auvhamnode_thesis_chapter_zh.tex) | 当前正式重写主稿 | 当前文件中第 1--5 节已按 10 节扩展结构完成阶段性正文；第 6--7 节已切换为新标题并保留待扩写正文；第 8 节结果分析入口已建立 | 后续正文扩写的唯一主稿入口 |
+| [drafts/auvhamnode_thesis_chapter_zh.tex](drafts/auvhamnode_thesis_chapter_zh.tex) | 当前正式重写主稿 | 当前文件已形成 10 节完整章节初稿：第 1--7 节完成方法、能量性质和验证协议；第 8 节已按 current evidence、B1 anomaly 口径和两级结构证据框架写入结果；第 9--10 节已同步讨论和小结；PDF 已生成 | 后续终稿级复核、局部润色和图表补强的唯一主稿入口 |
 | [drafts/deprecated/auvhamnode_thesis_chapter_zh_framework_20260520.tex](drafts/deprecated/auvhamnode_thesis_chapter_zh_framework_20260520.tex) | 已降级旧框架稿 | 保留 2026-05-20 前 10 节框架、旧标题体系和已迁移正文素材 | 仅在追溯旧框架或迁移遗漏素材时查阅 |
 | [drafts/deprecated/auvhamnode_thesis_chapter_zh_intermediate_20260519.tex](drafts/deprecated/auvhamnode_thesis_chapter_zh_intermediate_20260519.tex) | 已降级旧中间稿 | 保留旧稿公式、段落和表格素材，但不再作为主稿逐句修改 | 仅在迁移素材时查阅 |
 
@@ -115,7 +115,19 @@
   - **能量层（精度驱动）**：`phnode_full`=0.68 夺冠；去标量势能 V 的 `phnode_qforce`=3.76 是**最差的结构化模型**，甚至不如半结构化黑箱 se3_momentum(1.49)/se3_accel(2.46) → 势能/能量核心是承重件（去 V 比"整段动量换黑箱"更伤，前提保住 SE(3)+质量）。消融阶梯：去能量核心×5.5 ≫ 去 mass×1.9 > 去 lift×1.2。
 - **clean/clean 全表**（pos 60s 中位均值, N；P95 见 per_seed）：`phnode_full` 0.68(5) < `ablate_no_lift` 0.83(4,剔s43) < `ablate_no_mass_prior` 1.30(5) < `se3_momentum_blackbox` 1.49(5) < `se3_accel_blackbox` 2.46(5,中位1.64) < `phnode_qforce` 3.76(5,P95~13) < `blackbox_fullstate` **5/5 发散**。
 - **qforce hedge 不变**：3.76 与旧 regime 0.57 冲突，但 T2 内部 5 seed 一致[2–4.5]无坍缩，合法 T2 数；"垫底结构化模型"定位带 regime hedge。
-- **§8 证据已完整**：可按 B1 + 三取舍（co-primary {pos中位,P95}@60s、completion 脚注）+ 两级框架撰写，等用户说"写"。
+- **§8 证据已完整**：当时已确认可按 B1 + 三取舍（co-primary {pos中位,P95}@60s、completion 脚注）+ 两级框架撰写；2026-05-28 同步时，主稿已据此完成 §8 阶段性落稿。
+
+2026-05-28 主稿进度同步：
+
+- **§8 已完成阶段性落稿**：`drafts/auvhamnode_thesis_chapter_zh.tex` 已将 current evidence 写入“实验结果与结构证据分析”，采用 B1 训练异常口径与 rollout 发散口径；主表使用 60 s 位置误差中位数和 P95 并列指标，completion 作为健全性脚注。
+- **两级证据框架已落入正文**：几何层写为全状态黑箱 5/5 长期递推发散与 \(\SE(3)\) 动量黑箱稳定之间的对照，支持“\(\SE(3)\) 几何结构是当前模型族内长期稳定递推的关键结构条件”；能量层写为完整模型 0.68 m 取得最优精度、去能量核心的端口哈密顿位形广义力基线 3.76 m 且 P95 较高，支持“机械能量核心是当前模型族中主要精度先验”。
+- **§9/§10 与摘要口径已同步**：讨论中保留端口哈密顿适用范围、普通 ODE 数值积分的 SO(3) 边界、非保守力不可唯一辨识、仿真证据与真实海试泛化边界；小结已按两级证据结论收束。
+- **README 早期“§8 待写/§9 blocked/§10 pending”类描述已视为过期**：后续应从当前 TeX 主稿出发做终稿级复核，而不是回到“等待撰写 §8”的状态。
+
+2026-05-30 终稿表达同步：
+
+- **R9 正式中文表达优化已完成**：摘要、第 7 节证据口径、第 8 节当前证据来源与异常处理、第 9 节讨论边界和第 10 节小结已做长句压缩、术语中文化和工程化表达降噪。
+- **PDF 已重新编译**：`drafts/auvhamnode_thesis_chapter_zh.pdf` 已在 `mytorch1` 环境下通过 `latexmk -xelatex` 重新生成；无 undefined citation/reference、无 overfull hbox、无缺图，仅保留一个参考文献段落 underfull hbox。
 
 必须持续遵守的边界：
 
@@ -149,12 +161,12 @@
 | 符号表 | done | 开写前材料包第 2 节 | 写正文时迁移为论文符号表 |
 | 数据空间/模型空间定义 | ready | 开写前材料包第 3 节 | 已提前写入正式正文“问题定义” |
 | 理论到参数化映射 | done | 开写前材料包第 5 节 | 转化为“可训练参数化”表述 |
-| claim-evidence 表 | ready | 开写前材料包第 4 节 | 写结果章前按最新 catalog 再校验一次 |
+| claim-evidence 表 | done | 开写前材料包第 4 节；第 8 节已按 current evidence 和两级结构证据框架落稿 | 终稿前只需复核每个结论是否仍由当前证据支撑 |
 | 实验矩阵 | ready | 开写前材料包第 6 节 | 根据实际可用结果确定主表和附表 |
-| 图表清单 | ready | 开写前材料包第 7 节 | 速度变量关系图已完成并接入第 3 节；下一步优先制作“六自由度机械子系统能量/功率结构图” |
+| 图表清单 | in_progress | 速度变量关系图已完成并接入第 3 节；第 8 节当前以主表、扰动表和内部诊断表承载结果 | 终稿前视篇幅补“六自由度机械子系统能量/功率结构图”、模型结构阶梯图或 rollout 误差增长图 |
 | 旧中间稿审查与降级 | done | 审查意见文档 + deprecated 旧稿 | 旧稿只作素材库，不再逐句修改 |
 | 旧框架稿降级 | done | `drafts/deprecated/auvhamnode_thesis_chapter_zh_framework_20260520.tex` | 旧 10 节框架只作历史快照和素材备份 |
-| 正文草稿 | in_progress | `drafts/auvhamnode_thesis_chapter_zh.tex` 第 1--7 节已完成阶段性正文，10 节结构全部就位；2026-05-23 对 §1--5 做审稿式复核修订，2026-05-24 完成 §6 4 子节重构与 §7 基线/消融拆分，`drafts/auvhamnode_thesis_chapter_zh.pdf` 已按最新 TeX 编译（35 页，无 undefined reference）；§8 实验结果为唯一空节，§9 讨论与 §10 小结正文已在位 | 导出 current evidence 主表后填写第 8 节，并据 §8 结果回修 §9/§10 与摘要口径 |
+| 正文草稿 | done（完整章节初稿） | `drafts/auvhamnode_thesis_chapter_zh.tex` 已形成 10 节完整章节：§1--7 完成方法、能量性质和验证协议；§8 已写入 current evidence 主表、鲁棒性表和内部诊断表；§9 讨论、§10 小结和摘要已同步两级证据口径；R9 正式中文表达优化和最新 PDF 编译已完成 | 下一步做终稿级复核：表格数值核对、引用/术语一致性、图表补强和必要时重新编译 |
 | 第 1--2 节文献支撑返工 | done | 第 1 节已重写为以 AUV 运动建模为中心、长期状态预测为任务场景的 introduction v4；第 2 节已扩写为长论文级“相关建模基础”v1，并补强 Fossen 功率边界、受控时序预测、Neural ODE、科学机器学习、哈密顿/端口哈密顿神经模型和文献角色归纳表；2026-05-23 复核中于第 2.5 节增补 SE(3) (p)H-NODE 与拉格朗日神经网络对标差异段及李群几何积分文献 | 对标文献著录已于 2026-05-23 核实补全（见“对标文献著录核实”项）；终稿前完成 2024--2026 citation audit |
 | 对标文献著录核实 | done | `duong2021se3hamnode`（RSS 2021，vol. XVII，DOI 10.15607/RSS.2021.XVII.086）与 `duong2024liegroupphnode`（IEEE T-RO，vol. 40，pp. 3695--3715，2024，DOI 10.1109/TRO.2024.3428433）著录已核实补全；Lagrangian NN/DeLaN/Finzi、李群几何积分等其余条目著录无误 | 注：当前 `plainnat.bst` 不打印 DOI；若终稿需显示 DOI，需换用支持 DOI 的样式或加载相应宏包 |
 | 问题定义正文 | done | 当前主稿第 3 节已扩写为完整正文 v1，加入三层速度变量关系图，并补充状态表示与外源变量假设、仿真基准可观测性边界 | 后续仅随模型章符号和外源变量定义调整做一致性修订 |
@@ -162,16 +174,16 @@
 | Fossen-to-structure 桥梁节 | done | 当前主稿第 4 节“从 Fossen 能量结构到结构保持学习模型”v2，已统一 \(\nu_r\) 功率配对、弱化具体仿真器叙事并补充端口哈密顿适用边界，最新 PDF 已编译 | 后续只随第 5--6 节符号和功率边界做一致性修订 |
 | 方法正文 | done | 当前主稿第 5 节“结构化连续时间动力学模型”v1 已完成，补强增强模型态、SE(3) 运动学、相对动量、势能广义力、非保守广义力、执行器通道和相对速度动力学 | 后续只随第 6 节功率边界和符号一致性做局部修订 |
 | 能量性质正文 | done | 2026-05-24 将第 6 节按 4 子节展开（六自由度机械子系统与存储函数 / 耗散、零功率耦合与广义力功率 / 静水条件下的功率平衡命题和证明 / 海流、执行器与增强状态的适用范围），保留并复用第 5 节定义与公式、不重复推导，命题加 `\label` 可交叉引用，PDF 已重新编译 | 后续只随第 5/7 节符号与边界一致性做局部修订 |
-| 评估设置正文 | done | 2026-05-24 将第 7 节补强为 5 子节，把原合并子节拆为“基线模型与结构消融链条”（含模型比较表）与“结构消融设置”（4 项消融逐项映射到第 6 节结构性质），并明确结果留待第 8 节、不提前写性能结论 | 后续只随第 6 节性质和第 8 节结果口径做一致性修订 |
+| 评估设置正文 | done | 2026-05-24 将第 7 节补强为 5 子节，把原合并子节拆为“基线模型与结构消融链条”（含模型比较表）与“结构消融设置”（4 项消融逐项映射到第 6 节结构性质）；随后已补齐 current evidence、证据状态、基线文献锚定和 v4_lite 协议敏感性边界 | 后续只随第 8 节表格和最终术语统一做局部一致性修订 |
 | T2 当前证据重跑 | done | 4 模型×{clean,iid,v4lite}×seed42-46 已回灌并分析；定向导出 `scripts/export_section8_t2_evidence.py` → `analysis/section8_current_evidence/{per_seed_long,aggregate}.csv`（builder 已加 `sweep_oc_phase1a_*` 护栏、本地 canonical 已洗净；§8 仍只读定向导出） | 见 §3 决策块 2026-05-25 第二/三条；结论触发 §8 叙事重定 |
-| 结果主表导出 | done（current evidence, B1） | per_seed_long.csv（300 行，含 `train_nbad`/`train_anomaly`）+ aggregate.csv（60 行，B1：剔 flagged seed 后 mean+median of seed-medians，留 `excluded_seeds`/`excluded_seed_posmed`）已出；clean phnode_full=0.68m(N=5)、no_lift=0.83m(N=4) | §8 叙事定稿后据此排版主表/子表 |
-| 结构化 vs 黑箱证据（Path B） | done（已回灌+分析） | 3 黑箱 clean×seed42-46 已回灌、export 已纳入；全部 0/5 nbad（训练成功）。**`blackbox_fullstate` 5/5 rollout 发散**（85-89m/nan），`se3_momentum_blackbox`=1.49、`se3_accel_blackbox`=2.46 稳定。结论：两级叙事（SE(3) 几何→稳定性；能量核心→精度），非单调（qforce 3.76>se3 黑箱） | §8 据此写两级框架；blackbox_fullstate 走 rollout_diverged 口径（决策 A） |
-| rollout 发散口径（决策 A） | done | `export_section8_t2_evidence.py` 加 `rollout_diverged`（NaN/缺失/>10m），与 train_anomaly 同样移出聚合并单列；全 seed 发散模型不报裸中位数、记"长程稳定性失败" | §8 报 blackbox_fullstate 为 5/5 发散失败，不放有限数 |
+| 结果主表导出 | done（current evidence, B1） | per_seed_long.csv（300 行，含 `train_nbad`/`train_anomaly`）+ aggregate.csv（60 行，B1：剔 flagged seed 后 mean+median of seed-medians，留 `excluded_seeds`/`excluded_seed_posmed`）已出；clean phnode_full=0.68m(N=5)、no_lift=0.83m(N=4) | 已用于 §8 主表；终稿前复核 TeX 表格数值与 CSV 一致 |
+| 结构化 vs 黑箱证据（Path B） | done（已回灌+写入） | 3 黑箱 clean×seed42-46 已回灌、export 已纳入；全部 0/5 nbad（训练成功）。**`blackbox_fullstate` 5/5 rollout 发散**（85-89m/nan），`se3_momentum_blackbox`=1.49、`se3_accel_blackbox`=2.46 稳定。结论：两级叙事（SE(3) 几何→稳定性；能量核心→精度），非单调（qforce 3.76>se3 黑箱） | 已写入 §8；后续只核对表格和措辞边界 |
+| rollout 发散口径（决策 A） | done（已写入） | `export_section8_t2_evidence.py` 加 `rollout_diverged`（NaN/缺失/>10m），与 train_anomaly 同样移出聚合并单列；全 seed 发散模型不报裸中位数、记“长期稳定性失败” | §8 已按该口径报告 blackbox_fullstate 5/5 发散失败，不放有限数 |
 | driver 协议开关 | done（已 smoke-test） | `run_phase1a_oc_v4lite.sh` 加向后兼容 `PHASE1A_PROTOCOLS`（默认三协议不变，设 `clean` 只跑 clean）；参数化 train/audit/validate/eval/register | 供 Path B clean-only 复用；T2 可复现性不受影响 |
-| `phnode_full clean` 结果口径 | confirmed by T2 | T2 5 seed 全健康，clean 60s=0.68m，与对齐基线 0.6767m 吻合；旧 11m 不复现 | 写 §8 时用 0.68m current evidence，家族 clean 稳健夺冠 |
-| `ablate_no_lift clean` 结论 | done（B1 定案） | seed43 落标准 5 seed 内、唯一 flagged（nbad=276）；按统一 anomaly 判据移出聚合 → no_lift clean=0.83m(N=4) ≈ phnode_full，seed43 作透明注记不量化为脆弱性；base-rate 补测已作废（见第三条） | §8 主表用 N=4 数 + seed43 注记；lift 价值靠含噪 rollout 退化承载 |
-| noisy training 结论 | **改写**（旧口径证据不复现） | 旧"ablate_no_mass_prior 5/6 受益"在 matched T2 不复现（仅 2/5、净略损）；当前证据：噪声获益≈救援环境脆弱 clean seed，结构化模型无净收益，仅弱基线 qforce 明显获益 | 据当前证据重写为"非普适、主要救援脆弱 clean seed"；不再用旧 5/6 叙事 |
-| `v4_lite` 结论 | 据当前证据重定（②③不复现） | 论断②（去 lift 噪声退化）与③（去 mass 初值噪声受益）matched 当前证据均不支持；④退化为"弱基线获益" | seed43 已 B1 定案、补实验作废；据当前证据重写四点论断；边界 #6 仍守 |
+| `phnode_full clean` 结果口径 | done（已写入） | T2 5 seed 全健康，clean 60s=0.68m，与对齐基线 0.6767m 吻合；旧 11m 不复现 | §8 已用 0.68m current evidence；后续只保留 provenance 边界 |
+| `ablate_no_lift clean` 结论 | done（B1 已写入） | seed43 落标准 5 seed 内、唯一 flagged（nbad=276）；按统一 anomaly 判据移出聚合 → no_lift clean=0.83m(N=4) ≈ phnode_full，seed43 作透明注记不量化为脆弱性；base-rate 补测已作废（见第三条） | §8 已用 N=4 数 + seed43 注记；后续避免把单次失败量化为模型脆弱性 |
+| noisy training 结论 | done（已按当前证据改写） | 旧“ablate_no_mass_prior 5/6 受益”在 matched T2 不复现（仅 2/5、净略损）；当前证据：噪声获益≈救援环境脆弱 clean seed，结构化模型无净收益，仅弱基线 qforce 明显获益 | 正文已避免旧 5/6 叙事；后续只作为协议敏感性和扰动条件讨论 |
+| `v4_lite` 结论 | done（协议敏感性） | 论断②（去 lift 噪声退化）与③（去 mass 初值噪声受益）matched 当前证据均不支持；④退化为“弱基线获益” | §8 已将 v4_lite 作为协议敏感性诊断，不写成主协议胜利 |
 | caveat A：ablate_no_lift seed44 | resolved（against ②） | T2 中 seed44 iid-train 健康（0.83m），旧 3.72m 噪声退化为环境伪影、不复现 → 论断②失去证据 | 不再以 seed44 噪声退化支持 lift 必要性 |
 | 真实海试泛化 | blocked | 当前无真实海试主证据 | 只能写为局限性和未来工作 |
 
@@ -179,7 +191,7 @@
 
 ## 5. 建议的正式正文目录
 
-2026-05-23 复核后，正式正文建议采用以下 10 节结构。当前 TeX 主稿第 1--7 节已按该结构完成阶段性正文（§6/§7 子节于 2026-05-24 补齐）；第 8 节结果分析入口已建立，待 current evidence 主表导出后填写；第 9 讨论、第 10 小结正文已在位。第 1--7 节后续只随符号、引用和后文一致性做局部修订。
+2026-05-30 同步后，当前 TeX 主稿已按以下 10 节结构形成完整章节初稿。第 1--7 节完成问题、基础、状态契约、理论桥梁、模型构造、能量性质和验证协议；第 8 节已按 current evidence 写入实验结果与结构证据分析；第 9 节讨论和第 10 节小结已同步结果口径；R9 已完成全文正式表达优化。后续目录不再重开，主要做终稿级一致性复核和图表补强。
 
 1. **研究问题与方法概述**
    - AUV 运动建模任务及其长期状态预测对象：位置、姿态、速度等运动状态
@@ -260,21 +272,21 @@
 | P4 | 扩写“结构化模型的能量性质与功率关系” | 正文第 6 节命题、证明和适用范围完整版本（4 子节） | done |
 | P5 | 扩写“训练目标、基线体系与验证协议” | 正文第 7 节参数化、损失、rollout、基线和消融完整版本（5 子节） | done |
 | P6 | 导出 current evidence 结果表 | 论文结果表底稿 | done（`analysis/section8_current_evidence/`） |
-| P7 | 写“实验结果与结构证据分析” | current evidence 主表和图 | **证据就绪可写**：B1+三取舍+两级框架（SE(3)几何→稳定/能量核心→精度）已定，黑箱已回灌（见 §3 第三/四/五条）；等用户说“写” |
-| P8 | 扩写“讨论”并同步结果口径 | 正文第 9 节完整正文 v1 | blocked until P7 |
-| P9 | 写本章小结并回修摘要/第 1 节收束段 | 完整章节初稿 | pending |
+| P7 | 写“实验结果与结构证据分析” | current evidence 主表、扰动表和内部诊断表 | done：§8 已按 B1+rollout_diverged 口径、co-primary 指标和两级框架落稿 |
+| P8 | 扩写“讨论”并同步结果口径 | 正文第 9 节完整正文 v1 | done：§9 已同步端口哈密顿边界、SO(3) 数值边界、非保守力可辨识性和真实海试泛化边界 |
+| P9 | 写本章小结并回修摘要/第 1 节收束段 | 完整章节初稿 | done：摘要、§1 收束段和 §10 已同步两级证据结论 |
 
-### 6.1 当前下一步：§8 证据已齐，按 B1+三取舍+两级框架写 §8
+### 6.1 当前下一步：完整章节初稿后的终稿级复核
 
-第 1--7 节已形成完整论证链并完成阶段性正文：第 1 节建立 AUV 运动建模和长期状态预测任务，第 2 节给出相关建模基础，第 3 节固定数据态--模型态和海流速度契约，第 4 节完成 Fossen 能量结构到结构保持学习模型的桥梁，第 5 节给出结构化连续时间动力学模型，第 6 节（2026-05-24，P4）按 4 子节给出机械核心定义、功率角色分析、静水功率平衡命题与证明、适用范围，第 7 节（2026-05-24，P5）按 5 子节给出结构保持参数化、控制块训练目标、长期递推与证据口径、基线模型与结构消融链条、结构消融设置。§6 严格定位为 §5 主方法的结构性质分析，引用 §5 公式而非重复推导；§7 各消融逐项映射到 §6 结构性质，并明确性能结论留待 §8。
+当前主稿已经完成从“证据就绪”到“结果落稿”的转换。第 8 节采用 current evidence 定向导出 `analysis/section8_current_evidence/`，并按 B1 训练异常、rollout 发散、co-primary 指标和两级结构证据框架写入结果；第 9 节和第 10 节已经按这些结果同步讨论与小结。因此后续不应再按“等待写 §8”推进，而应进入终稿级复核。
 
-P6（current evidence 导出）已完成（`analysis/section8_current_evidence/`，已按 B1 重导出）。分析结果**推翻了基于旧 oc_followup 的 §8 叙事计划**（详见 §3 决策块 2026-05-25 第二条）：噪声训练"获益"实为救援环境脆弱 clean seed、v4-lite 论断 ②③ 在 matched 当前证据不复现、`ablate_no_lift` clean seed43 出现可复现坍缩。
+建议下一轮最小行动如下：
 
-**§8 已解除暂缓（2026-05-25 第三条）**：seed43 经核实落标准 5 seed 内、是全 60-run 矩阵唯一 anomaly（nbad=276），口径定为 **B1**——按统一 anomaly 判据移出定量聚合（no_lift clean=0.83m，N=4），seed43 作透明注记、不量化为脆弱性；非对称 base-rate 补测因公平性问题作废。`phnode_full` clean seed42/46 在干净镜像恢复正常，红线 #5 获独立验证。故 §8 可按当前证据直接撰写：四点论断据 matched 证据重写（不得照旧写 ②③），主表用 B1 口径。§8 定稿后再回修 §9/§10 与摘要口径。当前已确定的 §8 正向材料：`phnode_full clean=0.68m(N=5)` 稳健夺冠（印证 provenance、红线 #5）、`ablate_no_lift clean=0.83m(N=4)` 典型情形与完整模型相当但有 1/5 训练不稳注记。
-
-**§8 主表口径细化 + 黑箱补齐（2026-05-25 第四条）**：三取舍已定（co-primary={pos_median,pos_P95}@60s、completion 降脚注；头号证据放整体结构；seed43 走强 hedge "lift 助训练稳定"）。`phnode_qforce` 经核实是"去能量核心"基线，故头号命题锚定"保守势能/能量核心是头号承重先验"，消融阶梯 能量核心×5.5≫mass×1.9>lift×1.2。旧 catalog 黑箱因 regime 不可比（同数据但 full 旧环境 3/6 坍缩、qforce 0.57↔3.76 反转；builder 自 a2ca101 冻结未变）不可跨表采纳，改走 **Path B**：在 g3_5_7 regime 重生成 3 黑箱 clean-only×seed42-46（已回灌，见第五条）。
-
-**第五条（黑箱已回灌，§8 证据齐）**：黑箱训练全成功(0/5 nbad)；`blackbox_fullstate` 5/5 rollout 发散（走 `rollout_diverged` 口径=决策 A），`se3_momentum_blackbox`=1.49/`se3_accel_blackbox`=2.46 稳定。**两级叙事定案（决策 B，取代"结构化≫黑箱"单调命题）**：① 几何层——SE(3) 结构是长程稳定性命门（全黑箱发散 vs se3_momentum_bb 稳）；② 能量层——能量核心是精度头号驱动（full 0.68 夺冠，去 V 的 qforce 3.76 最差结构化、连半结构化黑箱都不如），消融阶梯 能量核心×5.5≫mass×1.9>lift×1.2。**§8 现可撰写**：按 B1 + 三取舍（co-primary {pos中位,P95}@60s、completion 脚注）+ 两级框架，blackbox_fullstate 报 5/5 发散失败（不放有限数）；等用户说"写"。
+1. **数值核对**：逐项核对 §8 三张表与 `analysis/section8_current_evidence/aggregate.csv`、必要时与 `per_seed_long.csv` 的一致性，尤其是 P95、completion、excluded/diverged seeds 和 `v4_lite` 列。
+2. **口径核对**：确认 §8、§9、摘要和 §10 没有把 `v4_lite` 写成主协议胜利，没有把 `No Lift seed43` 写成定量脆弱性结论，也没有把旧 `phnode_full seed42/46` 异常写成当前模型脆弱性。
+3. **文字和术语复核**：在 R9 已完成的基础上，继续检查第 1 节与第 2 节是否仍有重复叙事，统一“完成率”“当前证据”“长期递推”“端口哈密顿”等中文术语，减少不必要的英文裸写。
+4. **图表补强**：根据篇幅决定是否新增能量/功率结构图、模型结构阶梯图或 rollout 误差增长图；当前章节已经能由表格支撑主要结论，图表补强属于终稿增强项。
+5. **编译验证**：修改正文后重新运行 LaTeX 编译，检查 undefined reference/citation、表格溢出和 PDF 版面。
 
 ---
 
