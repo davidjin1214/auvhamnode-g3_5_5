@@ -600,6 +600,15 @@ AUVHamNODE 首先把位姿变化从可学习黑箱中分离出来，显式编码
   在给定外部广义力 \(\tau_\theta(\nu_r,u_a,c_\tau)\) 的条件下，AUVHamNODE 的机械核心指由配置 \(q=(x,R)\)、相对动量 \(p_r\)、机械存储函数 \(H_\theta(q,p_r)\)、\(\SE(3)\) 运动学、保守广义力 \(f_\theta^V(q)\)、正定耗散项 \(-D_\theta(\xi)\nu_r\) 和斜对称零功率耦合项 \(J_\theta(\xi)\nu_r\) 组成的连续时间力学子系统。执行器状态 \(u_a\)、命令 \(u_c\)、海流 \(v_c^n\) 和深度上下文 \(z_{\mathrm{ref}}\) 属于增强状态或外源上下文；它们可以影响广义力分支或速度转换，但不作为机械存储函数的独立储能变量。因而，本章的端口哈密顿性质只针对该机械核心的功率平衡，而不针对完整增强状态作闭合系统声明。
 \end{definition}
 
+图~\ref{fig:mechanical-core-power-structure} 概括了这一定义中的机械核心边界、功率角色和外源通道位置。
+
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=145mm]{figures/mechanical_core_power_structure.pdf}
+  \caption{六自由度机械核心的能量--功率关系与外源边界。虚线框内为本文用于能量性质分析的开放式机械核心：相对动量与相对水速度通过正定质量配对，机械存储函数由动能和标量势能组成，余伴随耦合与斜对称升力分支不改变机械存储能量，耗散分支只抽取机械能，可学习广义力通过 \(\nu_r^\top\tau_\theta\) 与机械核心交换功率。执行器命令、执行器状态、海流和深度上下文位于机械核心边界之外，只通过速度转换、条件化特征或广义力端口影响机械核心；该图不表示完整航行器--执行器--环境增强系统的闭合端口哈密顿化。}
+  \label{fig:mechanical-core-power-structure}
+\end{figure}
+
 该机械核心对应第~\ref{sec:structured-continuous-model} 节增强状态向量场 \eqref{eq:complete-augmented-vector-field} 中的六自由度力学部分：位姿 \(q=(x,R)\) 由 \(\SE(3)\) 运动学 \eqref{eq:se3-kinematics} 推进，相对动量 \(p_r=M_\theta\nu_r\)（见式 \eqref{eq:relative-momentum}）与相对水速度 \(\nu_r\) 通过正定质量配对，机械存储函数 \eqref{eq:hamiltonian} 把第~\ref{sec:fossen-to-structure} 节的功率账本写成状态函数。存储函数自然分解为动能 \(K_\theta(p_r)=\tfrac12 p_r^\top M_\theta^{-1}p_r\) 与势能 \(V_\theta(q)\)：动能由常正定质量矩阵确定，势能由受第~\ref{sec:state-current-contract} 节状态契约限定的配置特征确定。由于本文采用常质量参数化，相对速度满足 \(\partial H_\theta/\partial p_r=M_\theta^{-1}p_r=\nu_r\)，即存储函数对相对动量的梯度恰为功率配对所用的速度变量。执行器状态、命令、海流和深度通道虽然进入向量场 \eqref{eq:complete-augmented-vector-field}，但它们在单个积分窗口内取零导数或按一阶滞后演化，没有独立储能函数，因而只作为机械核心的外源条件，而不计入存储函数 \(H_\theta\)。
 
 \subsection{耗散、零功率耦合与广义力功率}
@@ -907,6 +916,15 @@ AUVHamNODE 首先把位姿变化从可学习黑箱中分离出来，显式编码
   \par\vspace{2pt}
   \footnotesize 注：中位数与 P95 均为先在运行内对轨迹取统计量、再取种子间均值；\(N\) 为参与定量聚合的有效种子数。完成率为健全性脚注。无升力耦合消融排除的随机种子 43 终端位置误差中位数为 44.4~m（训练失败计数为 276）。全状态黑箱五个随机种子全部递推发散，不报有限中位数。
 \end{table}
+
+图~\ref{fig:s8-two-level-evidence} 将表~\ref{tab:s8-clean-main} 的主结果按几何稳定性和能量精度两个层次归纳展示，用于辅助读取后续精度与结构消融分析。
+
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=150mm]{figures/section8_two_level_evidence.pdf}
+  \caption{当前证据集下的两级结构证据。左侧概括几何层证据：在干净初值训练和干净评估配置下，全状态黑箱五个随机种子全部长期递推发散，而保留 \(\SE(3)\) 位姿运动学与常质量结构的动量黑箱保持有限误差。右侧概括能量与消融层证据：条形为 60~s 终端位置误差中位数的种子间均值，细线为 P95 的种子间均值。无升力耦合消融按统一训练异常判据排除随机种子 43；全状态黑箱因全部随机种子递推发散，不报告有限中位数。该图仅概括当前数据协议与模型族下的证据，不构成普遍必要性定理。}
+  \label{fig:s8-two-level-evidence}
+\end{figure}
 
 \subsection{能量核心对预测精度的作用}
 
