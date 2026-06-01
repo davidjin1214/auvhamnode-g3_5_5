@@ -444,7 +444,14 @@ AUVHamNODE 的结构约束转换可以概括为三类。第一类是几何约束
 \section{结构化连续时间动力学模型}
 \label{sec:structured-continuous-model}
 
-第~\ref{sec:fossen-to-structure} 节给出的结构约束关系落实到一个增强状态上的连续时间向量场。AUVHamNODE 的定义只依赖本节列出的状态、运动学、存储函数、广义力分解、执行器滞后和外源通道；这些定义为后续能量性质分析和验证协议提供统一对象。
+第~\ref{sec:fossen-to-structure} 节给出的结构约束关系在本节落实为一个增强状态上的连续时间向量场。具体而言，几何约束对应 \(\SE(3)\) 位姿运动学，功率配对约束对应相对动量、机械存储函数和广义力--速度配对，开放广义力约束对应耗散、零功率耦合、执行器条件化广义力以及外源上下文接口。AUVHamNODE 的定义只依赖本节列出的状态、运动学、存储函数、广义力分解、执行器滞后和外源通道；这些定义为后续能量性质分析和验证协议提供统一对象。
+
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=138mm]{figures/model_definition_overview.pdf}
+  \caption{AUVHamNODE 增强状态与连续时间向量场定义示意图。图中只展示模型定义中的模块关系：数据态经速度转换进入模型态，模型态驱动 \(\SE(3)\) 运动学、机械存储、广义力分支、执行器滞后和外源上下文接口，并由 ODE 流映射生成输出状态。该图不表示完整航行器--执行器--环境系统的闭合储能结构；机械核心的功率关系另见图~\ref{fig:mechanical-core-power-structure}。}
+  \label{fig:model-definition-overview}
+\end{figure}
 
 \subsection{增强状态与模型态空间}
 
@@ -455,7 +462,7 @@ AUVHamNODE 的结构约束转换可以概括为三类。第一类是几何约束
   [x,R,\nu_r,u_a,u_c,v_c^n,z_{\mathrm{ref}}],
   \label{eq:augmented-model-state}
 \end{equation}
-其中 \(u_c\)、\(v_c^n\) 和 \(z_{\mathrm{ref}}\) 是分段常值外源通道，\(u_a\) 是由命令驱动的一阶执行器状态。若某一实验设置不使用海流或深度上下文，相应通道从增强状态中省略。由于控制命令和外源上下文已经作为状态分量携带并在单个积分窗口内取零导数，模型可在增强状态 \(y\) 上写成自治形式的连续时间向量场
+其中 \(u_c\)、\(v_c^n\) 和 \(z_{\mathrm{ref}}\) 是分段常值外源通道，\(u_a\) 是由命令驱动的一阶执行器状态。若某一实验设置不使用海流或深度上下文，相应通道从增强状态中省略。把这些分段常值通道列入 \(y\) 的目的，是在单个积分窗口内把受控初值问题写成扩展状态上的自治 ODE；这是一种求解器表示，不表示控制、海流或深度上下文成为带独立储能的闭合物理状态。于是模型可写为
 \begin{equation}
   \dot y=F_\theta(y),
 \end{equation}
@@ -491,9 +498,9 @@ AUVHamNODE 首先把位姿变化从可学习黑箱中分离出来，显式编码
   +V_\theta(q),
   \label{eq:hamiltonian}
 \end{equation}
-其中 \(q=(x,R)\)，\(V_\theta(q)\) 为标量势能函数的简写。由于本文数据态中的位置 \(x\) 是控制块内相对位移，本文采用的参数化并不把 \(V_\theta\) 解释为可任意依赖水平相对位置的全局势能；其可学习输入应理解为与姿态重力方向以及可选绝对深度 \(z_{\mathrm{ref}}+x_3\) 相容的势能特征。正定质量保证动能二次型为正，标量势能则使保守广义力来自同一个能量函数。该写法把第~\ref{sec:fossen-to-structure} 节中的能量--功率关系转化为可学习模型的状态函数：动能由 \((M_\theta,p_r)\) 确定，势能由受状态契约限定的配置特征确定，耗散和外部广义力只通过后续动力学改变存储能量。
+其中 \(q=(x,R)\)，\(V_\theta(q)\) 为标量势能函数的简写。这里的 \(V_\theta\) 不是任意全局位置势能：由于数据态中的 \(x\) 是控制块内相对位移，势能分支的输入只应理解为与姿态重力方向、可选绝对深度 \(z_{\mathrm{ref}}+x_3\) 或其他明确上下文相容的配置特征，而不把控制块内水平相对位移解释为全局水平位置坐标。正定质量保证动能二次型为正，标量势能则使保守广义力来自同一个能量函数。该写法把第~\ref{sec:fossen-to-structure} 节中的能量--功率关系转化为模型定义中的状态函数：动能由 \((M_\theta,p_r)\) 确定，势能由受状态契约限定的配置特征确定，耗散和外部广义力只通过后续动力学改变机械存储。
 
-本文采用常质量矩阵参数化；参数化中直接学习正定逆质量 \(M_\theta^{-1}\)，再由其逆得到 \(M_\theta\)。具体地，令下三角因子 \(L_M\) 的对角元由正值映射保证，则 \(M_\theta^{-1}=L_ML_M^\top\succ0\)。在这个设定下，\(\partial H_\theta/\partial p_r=M_\theta^{-1}p_r=\nu_r\)，因此相对速度和相对动量之间的配对关系在模型内部保持一致。若扩展为状态相关质量矩阵，则动量方程和能量导数还需包含额外的质量梯度项；本文的能量性质分析不覆盖该扩展情形。
+本文采用常质量矩阵设定，并要求 \(M_\theta^{-1}\succ0\)；具体正定参数化在第~\ref{sec:training-baselines-protocol} 节给出。在这个设定下，\(\partial H_\theta/\partial p_r=M_\theta^{-1}p_r=\nu_r\)，因此相对速度和相对动量之间的配对关系在模型内部保持一致。若扩展为状态相关质量矩阵，则动量方程和能量导数还需包含额外的质量梯度项；本文的能量性质分析不覆盖该扩展情形。
 
 \subsection{势能诱导的保守广义力}
 
@@ -515,7 +522,7 @@ AUVHamNODE 首先把位姿变化从可学习黑箱中分离出来，显式编码
   -\frac{\dd}{\dd t}V_\theta(q).
   \label{eq:potential-power-pairing}
 \end{equation}
-该关系说明，保守分支不是任意的配置力网络，而是与机械存储函数中的同一个势能项配对。当势能不依赖某些相对位置分量时，相应梯度自然为零；因此式 \eqref{eq:potential-force} 的一般形式不意味着该模型学习任意全局位置势能。式 \eqref{eq:potential-power-pairing} 的形式化证明见引理~\ref{lem:potential-power-pairing}。
+式 \eqref{eq:potential-power-pairing} 在本节只作为构造性质提示：保守分支不是任意配置力网络，而是与机械存储函数中的同一个势能项配对；当势能不依赖某些相对位置分量时，相应梯度自然为零。该配对关系的形式化证明见引理~\ref{lem:potential-power-pairing}。
 
 \subsection{非保守广义力与执行器通道}
 
@@ -528,18 +535,18 @@ AUVHamNODE 首先把位姿变化从可学习黑箱中分离出来，显式编码
   +\tau_\theta(\nu_r,u_a,c_\tau),
   \label{eq:nonconservative-force}
 \end{equation}
-其中 \(D_\theta(\xi)\succeq0\) 表示耗散矩阵，\(J_\theta(\xi)=-J_\theta(\xi)^\top\) 表示斜对称零功率耦合矩阵，\(\tau_\theta\) 表示由执行器状态和上下文驱动的可学习广义力分支。这里用 \(\xi\) 表示耗散和零功率耦合分支的输入特征；把单个积分窗口内随增强状态携带的外源上下文统一记为 \(c=(v_c^n,z_{\mathrm{ref}})\)，并用 \(c_\tau\) 表示其中对广义力分支可见的子集（含由 \(c\) 派生的特征），\(\xi\) 与 \(c_\tau\) 不必完全相同。在无海流设置下，\(\xi=\nu_r\)、\(c_\tau\) 为空，广义力分支的输入为 \((\nu_r,u_a)\)；在海流设置下，本文主协议默认以体坐标海流速度 \(v_c^b=R^\top v_c^n\) 作为附加输入特征，即 \(\xi=(\nu_r,v_c^b)\)、\(c_\tau=v_c^b\)，广义力分支的完整输入为 \((\nu_r,u_a,v_c^b)\)。作为可选配置，海流特征也可改用总体体坐标线速度 \(v_b=v_r+R^\top v_c^n\)，但本文主协议固定采用体坐标海流速度。这种记号区分避免把所有外源量都混入同一个未限定上下文，也避免把执行器广义力写成标准仿射输入矩阵。
+其中 \(D_\theta(\xi)\succeq0\) 表示耗散矩阵，\(J_\theta(\xi)=-J_\theta(\xi)^\top\) 表示斜对称零功率耦合矩阵，\(\tau_\theta\) 表示由执行器状态和上下文驱动的可学习广义力分支。这里用 \(\xi\) 表示耗散和零功率耦合分支可见的输入特征；把单个积分窗口内随增强状态携带的外源上下文记为 \(c=(v_c^n,z_{\mathrm{ref}})\)，并用 \(c_\tau\) 表示对广义力分支可见的上下文子集或由 \(c\) 派生的特征。第~\ref{sec:training-baselines-protocol} 节给出本章实验中 \(\xi\) 与 \(c_\tau\) 的具体协议选择；本节只固定符号接口，以避免把所有外源量混入同一个未限定上下文，也避免把执行器广义力写成标准仿射输入矩阵。
 
-这一分解对应三种不同的功能角色。耗散项用于表达阻尼和速度相关能量耗散；斜对称项用于表达不改变机械存储能量的耦合或升力类作用；可学习广义力 \(\tau_\theta\) 则作为执行器驱动和未建模非保守作用进入机械方程的广义力通道。参数化时，\(D_\theta\) 由正对角或 Cholesky 型因子构造为半正定矩阵，\(J_\theta\) 由矩阵反对称化得到。这些构造继承了端口哈密顿和结构保持神经动力学中对耗散、互连和外部作用的角色划分 \citep{vanderschaft2014porthamiltonian,vanderschaft2017l2gain,desai2021porthamiltonian,eidnes2023pseudohamiltonian}。由于真实水动力、舵桨作用和残差效应可能在统计上互相补偿，该分解只提供物理诱导的功能角色，不声称唯一恢复真实物理项。
+这一分解对应三种不同的功能角色。耗散项用于表达阻尼和速度相关能量耗散；斜对称项用于表达不改变机械存储能量的耦合或升力类作用；可学习广义力 \(\tau_\theta\) 则作为执行器驱动和未建模非保守作用进入机械方程的广义力通道。第~\ref{sec:energy-power-properties} 节将对这些角色在能量平衡中的作用作形式化分析。由于真实水动力、舵桨作用和残差效应可能在统计上互相补偿，该分解只提供物理诱导的功能角色，不声称唯一恢复真实物理项。
 
 执行器命令 \(u_c\) 不直接等同于实际广义力。实际执行器状态满足
 \begin{equation}
-  \dot u_a=T_\theta^{-1}(u_c-u_a),
+  \dot u_a=\operatorname{diag}(T_\theta)^{-1}(u_c-u_a),
   \qquad
   \dot u_c=0,
   \label{eq:actuator-dynamics}
 \end{equation}
-其中 \(T_\theta\in\R_{>0}^m\) 为正时间常数，由正值映射（如 softplus）保证其各分量为正。广义力分支以 \(u_a\) 而不是直接以 \(u_c\) 作为执行器状态输入，并按配置依赖 \(\nu_r\)、体坐标海流或总体速度等上下文。由此，控制命令到六自由度广义力之间的非线性映射由模型学习，但该映射仍作为外部广义力通道处理，而不是被改写成标准端口哈密顿形式中的固定输入矩阵。
+其中 \(T_\theta\in\R_{>0}^m\) 为逐执行器正时间常数，\(\operatorname{diag}(T_\theta)^{-1}\) 表示对各执行器通道按其时间常数缩放，而不是一般矩阵逆。广义力分支以 \(u_a\) 而不是直接以 \(u_c\) 作为执行器状态输入，并按配置依赖 \(\nu_r\) 与 \(c_\tau\)。由此，控制命令到六自由度广义力之间的非线性映射由模型学习，但该映射仍作为外部广义力通道处理，而不是被改写成标准端口哈密顿形式中的固定输入矩阵。
 
 海流和深度上下文在单个积分窗口内作为外源携带：
 \begin{equation}
@@ -547,7 +554,7 @@ AUVHamNODE 首先把位姿变化从可学习黑箱中分离出来，显式编码
   \dot z_{\mathrm{ref}}=0 .
   \label{eq:carried-context-dynamics}
 \end{equation}
-其中 \(v_c^n\) 用于构造总体速度与相对水速度之间的转换，并可作为广义力或阻尼/零功率耦合分支的海流特征；\(z_{\mathrm{ref}}\) 主要用于重构绝对深度并为势能分支提供深度上下文。它们没有独立储能函数，因此不属于机械存储函数 \(H_\theta\) 的状态变量。
+其中 \(v_c^n\) 用于构造总体速度与相对水速度之间的转换，并可通过协议定义进入特征接口；\(z_{\mathrm{ref}}\) 主要用于重构绝对深度并为势能分支提供深度上下文。式 \eqref{eq:carried-context-dynamics} 只是单个积分窗口内的分段常值携带方式；这些通道没有独立储能函数，因此不属于机械存储函数 \(H_\theta\) 的状态变量。
 
 \subsection{相对动量动力学与完整向量场}
 
@@ -570,17 +577,13 @@ AUVHamNODE 首先把位姿变化从可学习黑箱中分离出来，显式编码
   \end{bmatrix}.
   \label{eq:coadjoint-term}
 \end{equation}
-该项对应体坐标动量的陀螺耦合结构，是由相对动量坐标和体坐标速度表示诱导的固定机械耦合项，并满足零功率性质 \citep{fossen2011handbook}：
+该项对应体坐标动量的陀螺耦合结构，是由相对动量坐标和体坐标速度表示诱导的固定机械耦合项。其零功率性质在此作为模型结构提示列出，证明见引理~\ref{lem:coadjoint-zero-power}：
 \begin{equation}
   \nu_r^\top\ad_{\nu_r}^{\ast}p_r
-  =
-  v_r^\top(p_v\times\omega)
-  +
-  \omega^\top(p_\omega\times\omega+p_v\times v_r)
   =0,
   \label{eq:coadjoint-zero-power}
 \end{equation}
-因而它只在体坐标动量分量之间重分配机械动量，不向机械存储函数注入或抽取净功率。它与式 \eqref{eq:nonconservative-force} 中的可学习斜对称项 \(J_\theta(\xi)\nu_r\) 作用层次不同：前者来自动量坐标下的刚体/惯性耦合，后者用于表达数据诱导的升力或横向水动力类零功率作用。
+它与式 \eqref{eq:nonconservative-force} 中的可学习斜对称项 \(J_\theta(\xi)\nu_r\) 作用层次不同：前者来自动量坐标下的刚体/惯性耦合，后者用于表达数据诱导的升力或横向水动力类零功率作用。
 
 由于模型态中显式保存的是 \(\nu_r\) 而不是 \(p_r\)，ODE 右端在构造 \(\dot p_r\) 后再用正定逆质量将其映射回相对速度导数：
 \begin{equation}
@@ -595,14 +598,14 @@ AUVHamNODE 首先把位姿变化从可学习黑箱中分离出来，显式编码
   \dot x,\,
   \operatorname{vec}(\dot R),\,
   \dot\nu_r,\,
-  T_\theta^{-1}(u_c-u_a),\,
+  \operatorname{diag}(T_\theta)^{-1}(u_c-u_a),\,
   0,\,
   0,\,
   0
   \right].
   \label{eq:complete-augmented-vector-field}
 \end{equation}
-若不使用海流或深度上下文，式 \eqref{eq:complete-augmented-vector-field} 中对应的零导数通道省略。该向量场是受控开放系统的模型：六自由度力学部分通过 \(D_\theta\)、\(J_\theta\) 和 \(\tau_\theta\) 组织非保守作用，执行器和环境通道提供外源条件，输出评估再由 \(\mathcal{T}_{m\to d}\) 回到数据空间。由此，第~\ref{sec:state-current-contract} 节的速度契约、第~\ref{sec:fossen-to-structure} 节的功率桥梁和本节的模型定义形成一致的建模对象。
+若不使用海流或深度上下文，式 \eqref{eq:complete-augmented-vector-field} 中对应的零导数通道省略。该向量场是单个积分窗口内的受控开放系统模型：六自由度力学部分通过 \(D_\theta\)、\(J_\theta\) 和 \(\tau_\theta\) 组织非保守作用，执行器和环境通道提供外源条件，输出评估再由 \(\mathcal{T}_{m\to d}\) 回到数据空间。由此，本节定义为第~\ref{sec:energy-power-properties} 节的能量性质分析和第~\ref{sec:training-baselines-protocol} 节的训练、消融与验证协议提供同一个模型对象。
 
 \section{结构化模型的能量性质与功率关系}
 \label{sec:energy-power-properties}
@@ -781,7 +784,7 @@ AUVHamNODE 首先把位姿变化从可学习黑箱中分离出来，显式编码
 \begin{equation}
   J_\theta(\xi)=A_\theta(\xi)-A_\theta(\xi)^\top .
 \end{equation}
-可学习广义力分支 \(\tau_\theta\) 接收执行器状态、相对速度和可选海流特征，用于表达执行器驱动和其他无法解析闭合的非保守广义力。表~\ref{tab:implementation-map} 汇总上述理论对象与可训练参数化的对应关系及其结构作用。
+可学习广义力分支 \(\tau_\theta\) 接收执行器状态、相对速度和可选海流特征，用于表达执行器驱动和其他无法解析闭合的非保守广义力。特征接口按数据协议实例化：无海流设置下通常取 \(\xi=\nu_r\)、\(c_\tau\) 为空；海流主协议以体坐标海流速度 \(v_c^b=R^\top v_c^n\) 作为附加特征，可写为 \(\xi=(\nu_r,v_c^b)\)、\(c_\tau=v_c^b\)；采用总体体坐标线速度 \(v_b=v_r+R^\top v_c^n\) 作为替代特征时，只作为协议配置或敏感性设置处理。表~\ref{tab:implementation-map} 汇总上述理论对象与可训练参数化的对应关系及其结构作用。
 
 \begin{table}[htbp]
   \centering
