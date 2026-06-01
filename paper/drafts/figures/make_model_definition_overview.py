@@ -33,8 +33,6 @@ PALETTE = {
     "teal_pale": "#EDF7F4",
     "gold": "#B98524",
     "gold_pale": "#FBF3DF",
-    "red": "#9A5B46",
-    "red_pale": "#F7EEEA",
     "gray_pale": "#F4F6F8",
 }
 
@@ -204,13 +202,13 @@ def draw() -> None:
         ax,
         x=0.325,
         y=0.725,
-        w=0.245,
+        w=0.270,
         h=0.120,
         title="Model state",
-        body=r"$y=(x,R,\nu_r,u_a,c)$",
+        body=r"$y=(x,R,\nu_r,u_a,u_c,c)$",
         face=PALETTE["teal_pale"],
         edge=PALETTE["teal"],
-        body_size=6.7,
+        body_size=6.3,
     )
     labeled_box(
         ax,
@@ -227,16 +225,16 @@ def draw() -> None:
 
     arrow(ax, (0.252, 0.785), (0.322, 0.785), color=PALETTE["blue"])
     add_text(ax, 0.287, 0.822, r"$\mathcal{T}_{d\to m}$", size=6.3, color=PALETTE["blue"])
-    arrow(ax, (0.572, 0.785), (0.742, 0.785), color=PALETTE["blue"])
-    add_text(ax, 0.657, 0.822, r"$\mathcal{T}_{m\to d}$", size=6.3, color=PALETTE["blue"])
+    arrow(ax, (0.597, 0.785), (0.742, 0.785), color=PALETTE["blue"])
+    add_text(ax, 0.670, 0.822, r"$\mathcal{T}_{m\to d}$", size=6.3, color=PALETTE["blue"])
 
     # Vector-field container.
     rounded_box(
         ax,
         0.060,
-        0.105,
+        0.175,
         0.885,
-        0.535,
+        0.465,
         face=PALETTE["paper"],
         edge=PALETTE["rule"],
         radius=0.018,
@@ -288,8 +286,8 @@ def draw() -> None:
         h=0.105,
         title="Actuator lag",
         body=r"$u_c\rightarrow u_a$",
-        face=PALETTE["red_pale"],
-        edge=PALETTE["red"],
+        face=PALETTE["gray_pale"],
+        edge=PALETTE["muted"],
     )
     labeled_box(
         ax,
@@ -320,7 +318,7 @@ def draw() -> None:
         y=0.315,
         w=0.115,
         h=0.150,
-        title="ODE step",
+        title="ODE flow",
         body=r"$\hat{y}(t)$",
         face=PALETTE["paper"],
         edge=PALETTE["ink"],
@@ -328,19 +326,17 @@ def draw() -> None:
         body_size=7.0,
     )
 
-    # Internal module arrows.
+    # Internal module arrows. Dashed arrows indicate conditioning inputs.
     arrow(ax, (0.280, 0.488), (0.327, 0.488), color=PALETTE["muted"])
     arrow(ax, (0.515, 0.488), (0.562, 0.488), color=PALETTE["muted"])
-    arrow(ax, (0.658, 0.435), (0.658, 0.353), color=PALETTE["muted"])
-    arrow(ax, (0.750, 0.405), (0.788, 0.405), color=PALETTE["muted"])
-    arrow(ax, (0.280, 0.298), (0.327, 0.298), color=PALETTE["muted"], linestyle=(0, (3, 3)))
-    arrow(ax, (0.515, 0.298), (0.562, 0.298), color=PALETTE["muted"], linestyle=(0, (3, 3)))
+    arrow(ax, (0.705, 0.435), (0.705, 0.353), color=PALETTE["muted"])
+    arrow(ax, (0.750, 0.298), (0.788, 0.360), color=PALETTE["muted"])
+    arrow(ax, (0.280, 0.350), (0.562, 0.465), color=PALETTE["muted"], linestyle=(0, (3, 3)))
+    arrow(ax, (0.515, 0.350), (0.625, 0.437), color=PALETTE["muted"], linestyle=(0, (3, 3)))
 
     # State to vector field and vector field to output.
     arrow(ax, (0.448, 0.724), (0.448, 0.642), color=PALETTE["teal"])
     arrow(ax, (0.848, 0.464), (0.848, 0.722), color=PALETTE["blue"])
-
-    add_text(ax, 0.098, 0.135, "definition only: no closed environment energy state", size=6.0, color=PALETTE["muted"], ha="left")
 
     for suffix in ("pdf", "svg", "png"):
         out = OUT_BASE.with_suffix(f".{suffix}")
