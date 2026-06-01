@@ -160,10 +160,11 @@ def labeled_box(
     title_size: float = 6.9,
     body_size: float = 6.3,
     title_y: float = 0.66,
+    body_y: float = 0.34,
 ) -> None:
     rounded_box(ax, x, y, w, h, face=face, edge=edge, lw=0.85)
     add_text(ax, x + w / 2, y + h * title_y, title, size=title_size, weight="bold", color=edge)
-    add_text(ax, x + w / 2, y + h * 0.34, body, size=body_size, color=PALETTE["ink"])
+    add_text(ax, x + w / 2, y + h * body_y, body, size=body_size, color=PALETTE["ink"])
 
 
 def draw() -> None:
@@ -205,10 +206,10 @@ def draw() -> None:
         w=0.270,
         h=0.120,
         title="Model state",
-        body=r"$y=(x,R,\nu_r,u_a,u_c,c)$",
+        body=r"$y$",
         face=PALETTE["teal_pale"],
         edge=PALETTE["teal"],
-        body_size=6.3,
+        body_size=7.2,
     )
     labeled_box(
         ax,
@@ -262,7 +263,7 @@ def draw() -> None:
         w=0.185,
         h=0.105,
         title="Mechanical storage",
-        body=r"$M_\theta,\ H_\theta$",
+        body="mass + storage",
         face=PALETTE["teal_pale"],
         edge=PALETTE["teal"],
     )
@@ -273,9 +274,12 @@ def draw() -> None:
         w=0.185,
         h=0.105,
         title="Force branches",
-        body=r"$f^V,\ D/J,\ \tau$",
+        body="potential, damping\nzero-power, input",
         face=PALETTE["gold_pale"],
         edge=PALETTE["gold"],
+        body_size=5.4,
+        title_y=0.72,
+        body_y=0.30,
     )
 
     labeled_box(
@@ -285,9 +289,10 @@ def draw() -> None:
         w=0.185,
         h=0.105,
         title="Actuator lag",
-        body=r"$u_c\rightarrow u_a$",
+        body="command to state",
         face=PALETTE["gray_pale"],
         edge=PALETTE["muted"],
+        body_size=5.9,
     )
     labeled_box(
         ax,
@@ -296,9 +301,12 @@ def draw() -> None:
         w=0.185,
         h=0.105,
         title="Carried context",
-        body=r"$v_c^n,\ z_{\rm ref}$",
+        body="context $c$\ncurrent, depth",
         face=PALETTE["gray_pale"],
         edge=PALETTE["muted"],
+        body_size=5.4,
+        title_y=0.72,
+        body_y=0.30,
     )
     labeled_box(
         ax,
@@ -307,9 +315,10 @@ def draw() -> None:
         w=0.185,
         h=0.105,
         title="Momentum flow",
-        body=r"$\dot{p}_r\rightarrow\dot{\nu}_r$",
+        body="momentum to velocity",
         face=PALETTE["teal_pale"],
         edge=PALETTE["teal"],
+        body_size=5.9,
     )
 
     labeled_box(
@@ -319,11 +328,13 @@ def draw() -> None:
         w=0.115,
         h=0.150,
         title="ODE flow",
-        body=r"$\hat{y}(t)$",
+        body="model trajectory\n$\\hat{y}(t)$",
         face=PALETTE["paper"],
         edge=PALETTE["ink"],
         title_size=6.8,
-        body_size=7.0,
+        body_size=5.9,
+        title_y=0.68,
+        body_y=0.31,
     )
 
     # Internal module arrows. Dashed arrows indicate conditioning inputs.

@@ -17,6 +17,8 @@
 
 图形生成方式建议采用 Python/matplotlib 脚本生成矢量 PDF，而不是 gpt-image2。理由是本图包含符号、箭头和模块标签，需要文字可控、版宽可控、可复现，并能与现有 `paper/drafts/figures/*.py` 工作流一致。gpt-image2 更适合位图概念插画，不适合带精确文本标签的论文结构图。图宽不超过 138 mm，高度不限但应适合 A4 页面阅读；图中使用英文，减少公式和说明性文字，保证缩放到论文版面后标签清晰。
 
+2026-06-02 图形落稿复核补充：最终模型定义总览图采用“少公式、强结构语义”原则，而不是把第 1.5 正文公式重复搬入图内。图内保留 \(s\)、\(y\)、\(\hat{s}\)、\(\mathcal{T}_{d\to m}\)、\(\mathcal{T}_{m\to d}\) 和 \(\dot y=F_\theta(y)\) 等导航符号；力分支、执行器滞后、外源上下文和动量流主要用语义标签表达。图注负责说明 \(c\) 为海流和深度组成的外源上下文，虚线箭头为条件化输入而非机械储能关系。该处理比增加 \(f_\theta^V\)、\(D_\theta/J_\theta\)、\(\tau_\theta\) 等完整符号更符合定义导航图的功能。
+
 ## 2. 当前主要优点
 
 1. **定义顺序基本正确。** 当前小节顺序与合理模型定义顺序一致，即“增强状态与模型态空间 → \(\SE(3)\) 运动学 → 相对动量与机械存储函数 → 势能诱导保守广义力 → 非保守广义力与执行器通道 → 相对动量动力学与完整向量场”。
@@ -156,8 +158,8 @@ f_\theta^{\mathrm{nc}}
 ### 6.4 应新增到第 1.5 的图形内容
 
 - 新增一张模型定义总览图，建议题名为 “AUVHamNODE augmented state and vector-field definition” 或正文中文图题“增强状态与连续时间向量场定义示意图”。
-- 图中英文标签建议限制在：Data state, Model state, SE(3) kinematics, Mechanical storage, Conservative force, Non-conservative force, Actuator lag, Carried context, Vector field, Output state。
-- 图中公式只保留必要短式，例如 \(y\)、\(H_\theta\)、\(f^{nc}\)、\(\dot y=F_\theta(y)\)；避免把第 1.5 全部公式搬进图中。
+- 图中英文标签建议限制在：Data state, Model state, SE(3) kinematics, Mechanical storage, Force branches, Actuator lag, Carried context, Momentum flow, ODE flow, Output state。
+- 图中公式只保留导航性短式，例如 \(s\)、\(y\)、\(\hat{s}\)、状态转换映射和 \(\dot y=F_\theta(y)\)；力分支和外源接口优先用语义标签表达，避免把第 1.5 全部公式搬进图中。
 - 图形边界：该图只说明模型定义模块关系，不表达能量平衡证明、不画第 1.8 结果排序、不把外源通道画成闭合储能子系统。
 
 ### 6.5 应删除或避免
@@ -199,7 +201,7 @@ f_\theta^{\mathrm{nc}}
 | 1.5-F | P2 | 改清执行器时间常数记号 | 执行器滞后公式与完整向量场 | 使用 \(\operatorname{diag}(T_\theta)^{-1}\) 或逐分量除法写法 | 完成（TeX 已落稿） |
 | 1.5-G | P2 | 前置并压缩 \(V_\theta\) 输入边界 | 相对动量与机械存储函数小节 | 明确 \(V_\theta\) 不是任意全局位置势能，输入受姿态和深度上下文限制 | 完成（TeX 已落稿） |
 | 1.5-H | P2 | 末段只保留对象统一说明 | 完整向量场末段 | 末段不预告实验排序，只说明与第 1.6/1.7 的对象接口 | 完成（TeX 已落稿） |
-| 1.5-I | P1 | 新增模型定义总览图 | 第 1.5 开头或增强状态小节之后；`paper/drafts/figures/` | Python/matplotlib 生成英文标签矢量 PDF；图宽 \(\leq 138\) mm；图只展示模型定义模块关系，不展示证明或结果 | 完成（脚本和 PDF/SVG/PNG 已生成并接入 TeX） |
+| 1.5-I | P1 | 新增模型定义总览图 | 第 1.5 开头或增强状态小节之后；`paper/drafts/figures/` | Python/matplotlib 生成英文标签矢量 PDF；图宽 \(\leq 138\) mm；图只展示模型定义模块关系，不展示证明或结果；最终标签采用少公式、强结构语义方案 | 完成（脚本和 PDF/SVG/PNG 已生成并接入 TeX） |
 | 1.5-J | P2 | 继续迁移质量矩阵具体参数化细节 | 相对动量与机械存储函数小节；第 1.7 结构保持参数化 | 第 1.5 只保留正定常质量定义和状态相关质量边界；Cholesky/softplus 细节留在第 1.7 | 完成（TeX 已落稿） |
 
 ## 9. 落稿原则

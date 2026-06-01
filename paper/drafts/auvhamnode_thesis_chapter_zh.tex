@@ -449,7 +449,7 @@ AUVHamNODE 的结构约束转换可以概括为三类。第一类是几何约束
 \begin{figure}[htbp]
   \centering
   \includegraphics[width=138mm]{figures/model_definition_overview.pdf}
-  \caption{AUVHamNODE 增强状态与连续时间向量场定义示意图。图中只展示模型定义中的模块关系：数据态经速度转换进入模型态，模型态中的执行器命令和外源上下文通过执行器滞后、特征接口和广义力分支条件化相对动量动力学，并与 \(\SE(3)\) 运动学共同组成 ODE 流和输出状态。该图不表示完整航行器--执行器--环境系统的闭合储能结构；机械核心的功率关系另见图~\ref{fig:mechanical-core-power-structure}。}
+  \caption{AUVHamNODE 增强状态与连续时间向量场定义示意图。图中只展示模型定义中的模块关系：数据态经速度转换进入模型态，模型态中的执行器命令和外源上下文通过执行器滞后、特征接口和广义力分支条件化相对动量动力学，并与 \(\SE(3)\) 运动学共同组成 ODE 流和输出状态。图中的 \(c\) 表示由海流和深度组成的外源上下文，虚线箭头表示条件化输入而非机械储能关系。该图不表示完整航行器--执行器--环境系统的闭合储能结构；机械核心的功率关系另见图~\ref{fig:mechanical-core-power-structure}。}
   \label{fig:model-definition-overview}
 \end{figure}
 
