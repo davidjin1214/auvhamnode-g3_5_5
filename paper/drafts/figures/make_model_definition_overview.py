@@ -27,14 +27,17 @@ PALETTE = {
     "muted": "#60646B",
     "rule": "#D7DDE4",
     "paper": "#FFFFFF",
-    "blue": "#2E6EBA",
-    "blue_pale": "#EEF5FC",
-    "teal": "#2F8E86",
-    "teal_pale": "#EDF7F4",
-    "gold": "#B98524",
-    "gold_pale": "#FBF3DF",
-    "gray_pale": "#F4F6F8",
+    "state": "#2E5E8C",
+    "state_pale": "#F4F8FB",
+    "power": "#9A7418",
+    "power_pale": "#FBF7E8",
+    "aux_pale": "#F6F7F8",
 }
+
+TITLE_SIZE = 6.9
+BODY_SIZE = 5.9
+MATH_SIZE = 7.0
+LABEL_SIZE = 5.9
 
 
 def pick_font() -> str:
@@ -56,7 +59,7 @@ def setup_style() -> None:
             "pdf.fonttype": 42,
             "ps.fonttype": 42,
             "mathtext.fontset": "dejavusans",
-            "font.size": 6.7,
+            "font.size": BODY_SIZE,
             "axes.unicode_minus": False,
             "savefig.facecolor": "white",
         }
@@ -69,7 +72,7 @@ def add_text(
     y: float,
     text: str,
     *,
-    size: float = 6.6,
+    size: float = BODY_SIZE,
     weight: str = "regular",
     color: str = PALETTE["ink"],
     ha: str = "center",
@@ -157,13 +160,13 @@ def labeled_box(
     body: str,
     face: str,
     edge: str,
-    title_size: float = 6.9,
-    body_size: float = 6.3,
+    title_size: float = TITLE_SIZE,
+    body_size: float = BODY_SIZE,
     title_y: float = 0.66,
     body_y: float = 0.34,
 ) -> None:
     rounded_box(ax, x, y, w, h, face=face, edge=edge, lw=0.85)
-    add_text(ax, x + w / 2, y + h * title_y, title, size=title_size, weight="bold", color=edge)
+    add_text(ax, x + w / 2, y + h * title_y, title, size=title_size, weight="bold")
     add_text(ax, x + w / 2, y + h * body_y, body, size=body_size, color=PALETTE["ink"])
 
 
@@ -175,75 +178,64 @@ def draw() -> None:
     ax.set_xlim(0, 1)
     ax.set_ylim(0, 1)
 
-    add_text(ax, 0.055, 0.955, "AUVHamNODE model definition", size=8.2, weight="bold", ha="left")
-    add_text(
-        ax,
-        0.945,
-        0.955,
-        "single integration window",
-        size=6.2,
-        color=PALETTE["muted"],
-        ha="right",
-    )
-
     # Data/model state boundary.
     labeled_box(
         ax,
         x=0.055,
-        y=0.725,
+        y=0.775,
         w=0.195,
         h=0.120,
         title="Data state",
         body=r"$s$",
-        face=PALETTE["blue_pale"],
-        edge=PALETTE["blue"],
-        body_size=7.2,
+        face=PALETTE["state_pale"],
+        edge=PALETTE["state"],
+        body_size=MATH_SIZE,
     )
     labeled_box(
         ax,
         x=0.325,
-        y=0.725,
+        y=0.775,
         w=0.270,
         h=0.120,
         title="Model state",
         body=r"$y$",
-        face=PALETTE["teal_pale"],
-        edge=PALETTE["teal"],
-        body_size=7.2,
+        face=PALETTE["state_pale"],
+        edge=PALETTE["state"],
+        body_size=MATH_SIZE,
     )
     labeled_box(
         ax,
         x=0.745,
-        y=0.725,
+        y=0.775,
         w=0.200,
         h=0.120,
         title="Output state",
         body=r"$\hat{s}$",
-        face=PALETTE["blue_pale"],
-        edge=PALETTE["blue"],
-        body_size=7.2,
+        face=PALETTE["state_pale"],
+        edge=PALETTE["state"],
+        body_size=MATH_SIZE,
     )
 
-    arrow(ax, (0.252, 0.785), (0.322, 0.785), color=PALETTE["blue"])
-    add_text(ax, 0.287, 0.822, r"$\mathcal{T}_{d\to m}$", size=6.3, color=PALETTE["blue"])
-    arrow(ax, (0.597, 0.785), (0.742, 0.785), color=PALETTE["blue"])
-    add_text(ax, 0.670, 0.822, r"$\mathcal{T}_{m\to d}$", size=6.3, color=PALETTE["blue"])
+    arrow(ax, (0.252, 0.835), (0.322, 0.835), color=PALETTE["state"])
+    add_text(ax, 0.287, 0.872, r"$\mathcal{T}_{d\to m}$", size=LABEL_SIZE, color=PALETTE["muted"])
+    arrow(ax, (0.597, 0.835), (0.742, 0.835), color=PALETTE["state"])
+    add_text(ax, 0.670, 0.872, r"$\mathcal{T}_{m\to d}$", size=LABEL_SIZE, color=PALETTE["muted"])
 
     # Vector-field container.
     rounded_box(
         ax,
         0.060,
-        0.175,
+        0.140,
         0.885,
-        0.465,
+        0.535,
         face=PALETTE["paper"],
         edge=PALETTE["rule"],
         radius=0.018,
         lw=0.9,
         zorder=0,
     )
-    add_text(ax, 0.082, 0.606, "continuous-time vector field", size=7.4, weight="bold", ha="left")
-    add_text(ax, 0.925, 0.606, r"$\dot{y}=F_\theta(y)$", size=7.4, weight="bold", color=PALETTE["muted"], ha="right")
+    add_text(ax, 0.082, 0.637, "continuous-time vector field", size=TITLE_SIZE, weight="bold", ha="left")
+    add_text(ax, 0.925, 0.637, r"$\dot{y}=F_\theta(y)$", size=MATH_SIZE, color=PALETTE["muted"], ha="right")
 
     labeled_box(
         ax,
@@ -253,8 +245,8 @@ def draw() -> None:
         h=0.105,
         title="SE(3) kinematics",
         body="pose flow",
-        face=PALETTE["blue_pale"],
-        edge=PALETTE["blue"],
+        face=PALETTE["paper"],
+        edge=PALETTE["rule"],
     )
     labeled_box(
         ax,
@@ -264,8 +256,8 @@ def draw() -> None:
         h=0.105,
         title="Mechanical storage",
         body="mass + storage",
-        face=PALETTE["teal_pale"],
-        edge=PALETTE["teal"],
+        face=PALETTE["paper"],
+        edge=PALETTE["rule"],
     )
     labeled_box(
         ax,
@@ -275,9 +267,9 @@ def draw() -> None:
         h=0.105,
         title="Force branches",
         body="potential, damping\nzero-power, input",
-        face=PALETTE["gold_pale"],
-        edge=PALETTE["gold"],
-        body_size=5.4,
+        face=PALETTE["power_pale"],
+        edge=PALETTE["power"],
+        body_size=BODY_SIZE,
         title_y=0.72,
         body_y=0.30,
     )
@@ -290,9 +282,9 @@ def draw() -> None:
         h=0.105,
         title="Actuator lag",
         body="command to state",
-        face=PALETTE["gray_pale"],
+        face=PALETTE["aux_pale"],
         edge=PALETTE["muted"],
-        body_size=5.9,
+        body_size=BODY_SIZE,
     )
     labeled_box(
         ax,
@@ -302,9 +294,9 @@ def draw() -> None:
         h=0.105,
         title="Carried context",
         body="context $c$\ncurrent, depth",
-        face=PALETTE["gray_pale"],
+        face=PALETTE["aux_pale"],
         edge=PALETTE["muted"],
-        body_size=5.4,
+        body_size=BODY_SIZE,
         title_y=0.72,
         body_y=0.30,
     )
@@ -316,9 +308,9 @@ def draw() -> None:
         h=0.105,
         title="Momentum flow",
         body="momentum to velocity",
-        face=PALETTE["teal_pale"],
-        edge=PALETTE["teal"],
-        body_size=5.9,
+        face=PALETTE["paper"],
+        edge=PALETTE["rule"],
+        body_size=BODY_SIZE,
     )
 
     labeled_box(
@@ -331,8 +323,8 @@ def draw() -> None:
         body="model trajectory\n$\\hat{y}(t)$",
         face=PALETTE["paper"],
         edge=PALETTE["ink"],
-        title_size=6.8,
-        body_size=5.9,
+        title_size=TITLE_SIZE,
+        body_size=BODY_SIZE,
         title_y=0.68,
         body_y=0.31,
     )
@@ -346,8 +338,8 @@ def draw() -> None:
     arrow(ax, (0.515, 0.350), (0.625, 0.437), color=PALETTE["muted"], linestyle=(0, (3, 3)))
 
     # State to vector field and vector field to output.
-    arrow(ax, (0.448, 0.724), (0.448, 0.642), color=PALETTE["teal"])
-    arrow(ax, (0.848, 0.464), (0.848, 0.722), color=PALETTE["blue"])
+    arrow(ax, (0.448, 0.774), (0.448, 0.677), color=PALETTE["state"])
+    arrow(ax, (0.848, 0.464), (0.848, 0.772), color=PALETTE["state"])
 
     for suffix in ("pdf", "svg", "png"):
         out = OUT_BASE.with_suffix(f".{suffix}")

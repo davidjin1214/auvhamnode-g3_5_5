@@ -28,12 +28,14 @@ PALETTE = {
     "muted": "#60646B",
     "rule": "#D8DDE3",
     "paper": "#FFFFFF",
-    "blue": "#2E6EBA",
-    "blue_pale": "#EEF5FC",
-    "teal": "#2F8E86",
-    "teal_pale": "#EDF7F4",
-    "current": "#C78F2D",
+    "state": "#2E5E8C",
+    "state_pale": "#F4F8FB",
 }
+
+TITLE_SIZE = 6.9
+BODY_SIZE = 5.9
+MATH_SIZE = 7.0
+LABEL_SIZE = 5.9
 
 
 @dataclass(frozen=True)
@@ -68,7 +70,7 @@ def setup_style() -> None:
             "svg.fonttype": "none",
             "pdf.fonttype": 42,
             "ps.fonttype": 42,
-            "font.size": 6.7,
+        "font.size": BODY_SIZE,
             "axes.linewidth": 0.6,
             "axes.unicode_minus": False,
             "savefig.facecolor": "white",
@@ -82,7 +84,7 @@ def add_text(
     y: float,
     text: str,
     *,
-    size: float = 6.6,
+    size: float = BODY_SIZE,
     weight: str = "regular",
     color: str = PALETTE["ink"],
     ha: str = "center",
@@ -168,10 +170,10 @@ def state_box(
     role: str,
     velocity: str,
 ) -> None:
-    rounded_box(ax, x, y, w, h, face=style.face, edge=style.edge, lw=0.95)
-    add_text(ax, x + 0.030, y + h - 0.044, title, size=7.0, weight="bold", color=style.edge, ha="left")
-    add_text(ax, x + w * 0.48, y + h * 0.52, equation, size=7.7)
-    add_text(ax, x + 0.030, y + 0.040, role, size=5.8, color=PALETTE["muted"], ha="left")
+    rounded_box(ax, x, y, w, h, face=style.face, edge=style.edge, lw=0.85)
+    add_text(ax, x + 0.030, y + h - 0.044, title, size=TITLE_SIZE, weight="bold", ha="left")
+    add_text(ax, x + w * 0.48, y + h * 0.52, equation, size=MATH_SIZE)
+    add_text(ax, x + 0.030, y + 0.040, role, size=LABEL_SIZE, color=PALETTE["muted"], ha="left")
 
     pill_w, pill_h = 0.130, 0.055
     pill_x = x + w - pill_w - 0.028
@@ -185,27 +187,27 @@ def state_box(
         face=PALETTE["paper"],
         edge=style.edge,
         radius=0.018,
-        lw=0.75,
+        lw=0.70,
         zorder=3,
     )
-    add_text(ax, pill_x + pill_w / 2, pill_y + pill_h / 2, velocity, size=7.1, weight="bold", color=style.edge)
+    add_text(ax, pill_x + pill_w / 2, pill_y + pill_h / 2, velocity, size=MATH_SIZE, weight="bold", color=style.edge)
 
 
 def conversion_box(ax, *, x: float, y: float, w: float, h: float) -> None:
     rounded_box(ax, x, y, w, h, face=PALETTE["paper"], edge=PALETTE["rule"], radius=0.012, lw=0.75, zorder=3)
 
-    add_text(ax, x + 0.035, y + h * 0.70, r"$\mathcal{T}_{d\to m}$", size=6.9, weight="bold", color=PALETTE["blue"], ha="left")
-    add_text(ax, x + 0.155, y + h * 0.70, r"$\nu_r=\nu_b-\Delta_c$", size=7.1, ha="left")
-    add_text(ax, x + 0.035, y + h * 0.34, r"$\mathcal{T}_{m\to d}$", size=6.9, weight="bold", color=PALETTE["teal"], ha="left")
-    add_text(ax, x + 0.155, y + h * 0.34, r"$\nu_b=\nu_r+\Delta_c$", size=7.1, ha="left")
+    add_text(ax, x + 0.035, y + h * 0.70, r"$\mathcal{T}_{d\to m}$", size=MATH_SIZE, weight="bold", ha="left")
+    add_text(ax, x + 0.155, y + h * 0.70, r"$\nu_r=\nu_b-\Delta_c$", size=MATH_SIZE, ha="left")
+    add_text(ax, x + 0.035, y + h * 0.34, r"$\mathcal{T}_{m\to d}$", size=MATH_SIZE, weight="bold", ha="left")
+    add_text(ax, x + 0.155, y + h * 0.34, r"$\nu_b=\nu_r+\Delta_c$", size=MATH_SIZE, ha="left")
 
     add_text(
         ax,
         x + w - 0.035,
         y + h * 0.52,
         r"$\Delta_c(R,v_c^n)=[R^\top v_c^n;\,0]$",
-        size=6.6,
-        color=PALETTE["current"],
+        size=LABEL_SIZE,
+        color=PALETTE["muted"],
         ha="right",
     )
 
@@ -229,7 +231,7 @@ def draw() -> None:
         y=data_y,
         w=box_w,
         h=box_h,
-        style=StateStyle(PALETTE["blue_pale"], PALETTE["blue"]),
+        style=StateStyle(PALETTE["state_pale"], PALETTE["state"]),
         title="Data / evaluation space",
         equation=r"$s=[x,R,\nu_b,u_a,u_c,v_c^n,z_{\rm ref}]$",
         role=r"pose kinematics, rollout metrics",
@@ -244,7 +246,7 @@ def draw() -> None:
         y=model_y,
         w=box_w,
         h=box_h,
-        style=StateStyle(PALETTE["teal_pale"], PALETTE["teal"]),
+        style=StateStyle(PALETTE["state_pale"], PALETTE["state"]),
         title="ODE model space",
         equation=r"$y=[x,R,\nu_r,u_a,u_c,v_c^n,z_{\rm ref}]$",
         role=r"hydrodynamic branch, velocity loss",
@@ -252,10 +254,10 @@ def draw() -> None:
     )
 
     x_mid = 0.500
-    arrow(ax, (x_mid - 0.040, data_y), (x_mid - 0.040, conv_y + conv_h), color=PALETTE["blue"])
-    arrow(ax, (x_mid - 0.040, conv_y), (x_mid - 0.040, model_y + box_h), color=PALETTE["blue"])
-    arrow(ax, (x_mid + 0.040, model_y + box_h), (x_mid + 0.040, conv_y), color=PALETTE["teal"])
-    arrow(ax, (x_mid + 0.040, conv_y + conv_h), (x_mid + 0.040, data_y), color=PALETTE["teal"])
+    arrow(ax, (x_mid - 0.040, data_y), (x_mid - 0.040, conv_y + conv_h), color=PALETTE["state"])
+    arrow(ax, (x_mid - 0.040, conv_y), (x_mid - 0.040, model_y + box_h), color=PALETTE["state"])
+    arrow(ax, (x_mid + 0.040, model_y + box_h), (x_mid + 0.040, conv_y), color=PALETTE["state"])
+    arrow(ax, (x_mid + 0.040, conv_y + conv_h), (x_mid + 0.040, data_y), color=PALETTE["state"])
 
     for suffix, kwargs in [
         (".svg", {}),

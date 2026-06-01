@@ -27,17 +27,17 @@ PALETTE = {
     "muted": "#60646B",
     "rule": "#D7DDE4",
     "paper": "#FFFFFF",
-    "core": "#2E6EBA",
-    "core_pale": "#EEF5FC",
-    "store": "#2F8E86",
-    "store_pale": "#EDF7F4",
-    "diss": "#B98524",
-    "diss_pale": "#FBF3DF",
-    "zero": "#6B6F7A",
-    "zero_pale": "#F3F4F6",
-    "port": "#B98524",
-    "port_pale": "#FBF3DF",
+    "state": "#2E5E8C",
+    "state_pale": "#F4F8FB",
+    "power": "#9A7418",
+    "power_pale": "#FBF7E8",
+    "aux_pale": "#F6F7F8",
 }
+
+TITLE_SIZE = 6.9
+BODY_SIZE = 5.9
+MATH_SIZE = 7.2
+LABEL_SIZE = 5.9
 
 
 def pick_font() -> str:
@@ -64,7 +64,7 @@ def setup_style() -> None:
             "pdf.fonttype": 42,
             "ps.fonttype": 42,
             "mathtext.fontset": "dejavusans",
-            "font.size": 7.2,
+            "font.size": BODY_SIZE,
             "axes.unicode_minus": False,
             "savefig.facecolor": "white",
         }
@@ -77,7 +77,7 @@ def add_text(
     y: float,
     text: str,
     *,
-    size: float = 6.5,
+    size: float = BODY_SIZE,
     weight: str = "regular",
     color: str = PALETTE["ink"],
     ha: str = "center",
@@ -165,8 +165,8 @@ def labeled_box(
     body: str = "",
     face: str,
     edge: str,
-    title_size: float = 7.1,
-    body_size: float = 6.6,
+    title_size: float = TITLE_SIZE,
+    body_size: float = BODY_SIZE,
     title_y: float = 0.62,
 ) -> None:
     rounded_box(ax, x, y, w, h, face=face, edge=edge, lw=0.85)
@@ -177,7 +177,7 @@ def labeled_box(
         title,
         size=title_size,
         weight="bold",
-        color=edge,
+        color=PALETTE["ink"],
     )
     if body:
         add_text(ax, x + w / 2, y + h * 0.31, body, size=body_size, color=PALETTE["ink"])
@@ -199,9 +199,9 @@ def draw() -> None:
         core_w,
         core_h,
         face=PALETTE["paper"],
-        edge=PALETTE["core"],
+        edge=PALETTE["rule"],
         radius=0.018,
-        lw=1.0,
+        lw=0.95,
         linestyle=(0, (4, 3)),
         zorder=0,
     )
@@ -210,9 +210,9 @@ def draw() -> None:
         core_x + 0.024,
         core_y + core_h - 0.050,
         "Open six-DOF mechanical core",
-        size=8.2,
+        size=TITLE_SIZE,
         weight="bold",
-        color=PALETTE["core"],
+        color=PALETTE["ink"],
         ha="left",
     )
 
@@ -224,9 +224,9 @@ def draw() -> None:
         h=0.135,
         title="Core state",
         body="configuration\nmomentum",
-        face=PALETTE["core_pale"],
-        edge=PALETTE["core"],
-        body_size=6.2,
+        face=PALETTE["state_pale"],
+        edge=PALETTE["state"],
+        body_size=BODY_SIZE,
         title_y=0.68,
     )
     labeled_box(
@@ -237,9 +237,9 @@ def draw() -> None:
         h=0.135,
         title="Storage",
         body="mechanical energy",
-        face=PALETTE["store_pale"],
-        edge=PALETTE["store"],
-        body_size=6.2,
+        face=PALETTE["paper"],
+        edge=PALETTE["rule"],
+        body_size=BODY_SIZE,
     )
 
     labeled_box(
@@ -250,10 +250,10 @@ def draw() -> None:
         h=0.120,
         title="Zero-power coupling",
         body="coadjoint\nskew branch",
-        face=PALETTE["zero_pale"],
-        edge=PALETTE["zero"],
-        title_size=6.6,
-        body_size=5.8,
+        face=PALETTE["paper"],
+        edge=PALETTE["rule"],
+        title_size=TITLE_SIZE,
+        body_size=BODY_SIZE,
         title_y=0.70,
     )
     labeled_box(
@@ -264,23 +264,23 @@ def draw() -> None:
         h=0.120,
         title="Dissipation",
         body="energy extraction",
-        face=PALETTE["diss_pale"],
-        edge=PALETTE["diss"],
-        title_size=7.0,
-        body_size=5.9,
+        face=PALETTE["power_pale"],
+        edge=PALETTE["power"],
+        title_size=TITLE_SIZE,
+        body_size=BODY_SIZE,
     )
 
-    rounded_box(ax, 0.165, 0.215, 0.430, 0.125, face=PALETTE["port_pale"], edge=PALETTE["port"], lw=0.95)
+    rounded_box(ax, 0.165, 0.215, 0.430, 0.125, face=PALETTE["power_pale"], edge=PALETTE["power"], lw=0.90)
     add_text(
         ax,
         0.380,
         0.286,
         "Hydrostatic balance",
-        size=7.2,
+        size=TITLE_SIZE,
         weight="bold",
-        color=PALETTE["port"],
+        color=PALETTE["ink"],
     )
-    add_text(ax, 0.380, 0.240, r"$\dot H_\theta=-P_D+P_\tau$", size=8.0, color=PALETTE["ink"])
+    add_text(ax, 0.380, 0.240, r"$\dot H_\theta=-P_D+P_\tau$", size=MATH_SIZE, color=PALETTE["ink"])
 
     labeled_box(
         ax,
@@ -289,11 +289,11 @@ def draw() -> None:
         w=0.165,
         h=0.195,
         title="Carried context",
-        body="actuator\ncurrent, depth",
-        face=PALETTE["core_pale"],
-        edge=PALETTE["core"],
-        title_size=7.0,
-        body_size=5.9,
+        body="actuator state\ncurrent, depth",
+        face=PALETTE["aux_pale"],
+        edge=PALETTE["muted"],
+        title_size=TITLE_SIZE,
+        body_size=BODY_SIZE,
         title_y=0.70,
     )
     labeled_box(
@@ -304,21 +304,21 @@ def draw() -> None:
         h=0.145,
         title="Force port",
         body="external\ngeneralized force",
-        face=PALETTE["port_pale"],
-        edge=PALETTE["port"],
-        title_size=6.9,
-        body_size=5.5,
+        face=PALETTE["power_pale"],
+        edge=PALETTE["power"],
+        title_size=TITLE_SIZE,
+        body_size=BODY_SIZE,
         title_y=0.70,
     )
 
-    arrow(ax, (0.320, 0.725), (0.425, 0.725), color=PALETTE["core"])
+    arrow(ax, (0.320, 0.725), (0.425, 0.725), color=PALETTE["state"])
     arrow(ax, (0.215, 0.660), (0.215, 0.575), color=PALETTE["muted"])
-    arrow(ax, (0.540, 0.660), (0.540, 0.575), color=PALETTE["store"])
-    arrow(ax, (0.215, 0.455), (0.270, 0.340), color=PALETTE["zero"])
-    arrow(ax, (0.540, 0.455), (0.490, 0.340), color=PALETTE["diss"])
-    arrow(ax, (0.790, 0.400), (0.595, 0.265), color=PALETTE["port"])
-    arrow(ax, (0.870, 0.610), (0.870, 0.475), color=PALETTE["core"], linestyle=(0, (3, 2)))
-    arrow(ax, (0.790, 0.700), (0.730, 0.540), color=PALETTE["core"], linestyle=(0, (3, 2)))
+    arrow(ax, (0.540, 0.660), (0.540, 0.575), color=PALETTE["muted"])
+    arrow(ax, (0.215, 0.455), (0.270, 0.340), color=PALETTE["muted"])
+    arrow(ax, (0.540, 0.455), (0.490, 0.340), color=PALETTE["power"])
+    arrow(ax, (0.790, 0.400), (0.595, 0.265), color=PALETTE["power"])
+    arrow(ax, (0.870, 0.610), (0.870, 0.475), color=PALETTE["muted"], linestyle=(0, (3, 2)))
+    arrow(ax, (0.790, 0.700), (0.730, 0.540), color=PALETTE["muted"], linestyle=(0, (3, 2)))
 
     for suffix, kwargs in [
         (".svg", {}),
