@@ -14,7 +14,7 @@
 
 口径来源：`checkpoints/` 磁盘文件、`analysis/oc_data_catalog/` 规范化 CSV、`analysis/provenance_audit/`、`docs/` 报告、`paper/` 草稿、各 run 的 `config.json`。
 
-> 范围说明：本清单仅覆盖当前 `g3_5_5` 仓库（全部 300 个 run 均为 `oc`）。更早的 `noc`/`oc` 实验（30 个 run，单一架构 `ph_se3_full` 的大 batch 配方扫描）属于**前代仓库 `g3_5_4`**，已单独梳理并附旧→新模型命名映射，见 [g3_5_4_legacy_noc_oc_inventory_zh.md](g3_5_4_legacy_noc_oc_inventory_zh.md)。当前论文不使用 `g3_5_4` 的结果。
+> 范围说明：本清单 §1–§J 覆盖当前 `g3_5_5` 仓库（全部 300 个 run 均为 `oc`）。更早的 `noc`/`oc` 实验（30 个 run，单一架构 `ph_se3_full` 的大 batch 配方扫描）属于**前代仓库 `g3_5_4`**。**2026-05-30 跨仓库复核**已把前代仓库作为新分区并入本文档：g3_5_4 的 `noc` 专节 + `oc` 专节（含统一口径 60s rollout 数值）见 **§K**，两仓库的总账对账表见 **§L**。模型命名映射（旧 11 → 新 10）与各报告散文结论的完整版仍在 [g3_5_4_legacy_noc_oc_inventory_zh.md](g3_5_4_legacy_noc_oc_inventory_zh.md)。当前论文 §8 不使用 `g3_5_4` 的任何结果（见 §L.4）。
 
 ---
 
@@ -31,7 +31,8 @@
 
 另有不计入 300 的产物：
 - **C. Provenance 审计重训**：1 个 forensic run（`analysis/provenance_audit/phase3_retrain/audit_phase3_seed46_clean_20260512_095957/`，不在 `checkpoints/` 下）。
-- **manifest-only 聚合目录**（无 `best_model.pt`，仅 CSV/TSV/JSON 清单，指向云端路径）：`sweep_oc_phase1a_decision_{clean,iid,v4lite}_*_cleanrun_v1`、`sweep_oc_phase1a_decision_proxy_*`、`sweep_oc_phase1_probe_iideval_20260424_024232`。
+- **manifest-only 聚合目录**（无 `best_model.pt`，仅 CSV/TSV/JSON 清单，指向云端路径）：`sweep_oc_phase1a_decision_{clean,iid,v4lite}_*_cleanrun_v1`、`sweep_oc_phase1a_decision_proxy_*`、`sweep_oc_phase1_probe_iideval_20260424_024232`、`sweep_oc_phase1_smoke_matched_20260423_173332`（phase1 聚合 CSV/JSON + `experiment_report.md` + `proxy_export_info.txt`）。
+- **元数据/日志目录**（无 run）：`checkpoints/phase1a_metadata_*`（8 个，审计元数据）、`checkpoints/phase1a_logs/`（Colab 端 `.log`）、`checkpoints/` 顶层 `p1_2_clean_matched_eval_*.{log,pid}`（5 个 P1-2 后台作业痕迹）。
 
 > 关键事实：规范化 catalog（`analysis/oc_data_catalog/`）**只覆盖 A 分区的 98 个 run**。B 分区（最近的 Phase-1A 现实性验证）和 E 分区（旧噪声）都不在 catalog 中。引用 catalog 数字时，覆盖面仅限 A 分区。
 
@@ -321,3 +322,252 @@ v4-lite 是面向**纯动力学模型**的轨迹一致噪声-IC 协议。相对 
 - Phase-1A：**Phase-1B 未进入**（cleanrun 报告判定不进入）；t2_wpfrag 的 **iid/v4lite 缺 3 个黑箱/se3 基线**。
 - 数据集 `auv_oc_traj2000_*`、`auv_oc_traj667_*` 当前证据未使用。
 - Phase-1A v4-lite 的 `phase1a_v4_protocol_validation.json`、proxy 目录的逐 run config/environment 未导出（cleanrun 报告标记缺失）。
+
+---
+
+# K. 前代仓库 g3_5_4 分区（noc + oc）
+
+> 本节为 **2026-05-30 跨仓库复核**新增。口径来源：`g3_5_4/checkpoints/` 磁盘文件、各 suite 的 `*_summary.csv`/`*_runs.csv`、各 run 的 `config.json` 与 `rollout_benchmark/*/horizon_metrics.csv`、`g3_5_4/checkpoints/**/*.md` findings 文档、`g3_5_4/docs/`。所有 rollout 数值经从磁盘**独立重取**核验（非沿用旧表）。模型命名映射全表与报告散文完整版见 [g3_5_4_legacy_noc_oc_inventory_zh.md](g3_5_4_legacy_noc_oc_inventory_zh.md)。
+
+## K.0 定位与镜像/环境
+
+- `g3_5_4` 是 `g3_5_5` 的**前一代仓库**，共 **30 个**含 `best_model.pt` 的训练 run，**全部为单一架构 `ph_se3_full`**（= 新版 `phnode_full`，同一 `AUVHamNODE` 类）。
+- 这条线回答的问题是"**大 batch 默认配方该取哪个、noc 与 oc 是否需要不同配方**"——是**训练稳定性 / 精度-效率权衡 + noc-vs-oc 数据对照**研究，架构固定，只扫训练超参（batch / lr / warmup / total_steps）与数据是否带海流。**不是**多模型消融。
+- **镜像/环境**：Colab，镜像路径 `auvhamnode/g3_5_4`（`dataset_path` 前缀 `/content/drive/MyDrive/Colab Notebooks/auvhamnode/g3_5_4/`），`config.json` `device=cuda`。时间窗约 **2026-03-30 ~ 04-02**。
+- **溯源缺口（如实标注）**：g3_5_4 的 `config.json` **不含** `code_revision` / `git_commit` / `environment` 字段，也无 `_audit_meta/`——与 g3_5_5 A 区同样无法做 commit 级 / 环境级溯源；无 provenance 重训记录。
+
+## K.1 模型命名映射（旧 11 → 新 10，摘要）
+
+旧版 `ph_se3_full` ↔ 新版 `phnode_full` 为**同一 `AUVHamNODE` 类、同一结构化 pH 核心**（M⁻¹ + 标量势 V(q) + 拆分 D/J/B，默认 `learn_lift=True, coupled_damping=True, condition_on_velocity=True`），唯一差异是装饰性的已弃用构造参数。其余 9 个旧名（`ph_se3_nomassinit/diagd/noj/buonly/mergednc/qforce`、`mom_se3_unstruct`、`se3_unstruct`、`bb_free_unstruct`）一一对应新版 `ablate_*`/`phnode_*`/`se3_*_blackbox`/`blackbox_fullstate`；旧版第 11 个 `ham_se3_unstruct`（单一可学习 H(q,p) 的 SE(3) Hamiltonian 基线）在新版**已删除**（11→10）。完整映射表见 legacy doc §1。
+
+> **关键**：`g3_5_4` 实际**只训练了 `ph_se3_full` 一个模型**（其余 10 个 baseline/ablation 仅定义、未训练）。因此前代全部 30 个 checkpoint 与新版 `phnode_full` 是 1:1 对应。
+
+## K.2 数据集与 noc/oc 设置差异
+
+两个数据集，schema 均为 `auv_dataset_v3`，gen-seed 均为 **42**，blocks=150，dt_state=0.05，场景比例 PRBS 0.4 / CHIRP 0.35 / OU 0.25。
+
+| 项 | **noc**（无海流） | **oc**（带海流） |
+|---|---|---|
+| 文件 / id | `auv_noc_traj1000_blk150_s42_32ec4535` | `auv_oc_traj1000_blk150_s42_89c80d68` |
+| `ocean_current` | **False** | **True** |
+| `state_dim` | **24** `[Δpos3,R9,nu_b6,u_act3,u_cmd3]` | **27**（末 3 维加 `v_c^n`） |
+| nu_model | `nu_b`（体速度=相对速度） | `nu_r = nu_b − [Rᵀv_c^n; 0]`（相对速度） |
+| 海流特征 flag | 无 | `dj_current_feature=current_body`、`actuation_current_feature=current_body` |
+| 训练/测试轨迹 | 558 / 140 | 559 / 140 |
+| 海流均值 | 无（`current_speed_range[0,0.5]` 为默认残留、零扰动） | ‖v_c^n‖≈0.262 m/s（中位 0.251，RMS 0.304） |
+| .pkl 大小 | 192 MB | 216 MB |
+
+> **跨代不可混用**：`g3_5_4` 的 oc 数据集是 `89c80d68`（**seed 42**），与 `g3_5_5` 主线的 `d0be9434`（**seed 23**）是**不同数据集**；noc 数据集 `32ec4535` 在 `g3_5_5` 中不存在。两代结果不可直接跨代比较（见 §L.2）。
+
+## K.3 noc 专节（10 run，单一 `ph_se3_full`）
+
+### K.3.1 run 明细 + 统一口径 rollout
+
+统一口径：60s 自由递推**终端位置误差中位数**（`resampled` 评估，scope=overall=场景 ALL=PRBS+CHIRP+OU 汇总）。`best_loss`=各 run `best_test_total`。所有 noc run 均含 `block_evaluation.json`+`heldout_evaluation.json`+`rollout_benchmark/`（无纯训练 run）。
+
+| suite | run | seed | batch | lr | wu | steps | best_loss | **60s 中位/m** | 60s P95/m | comp@60s | heldout 30s 中位/m | 训练h | 标记 |
+|---|---|---:|---:|---|---:|---:|---|---:|---:|---:|---:|---:|---|
+| run_largebatch_noc | bs2048_seed233 | 233 | 2048 | 5e-3 | 300 | 7000 | 9.99e-05 | **0.3331** | 0.9858 | 0.989 | 0.1498 | 0.342 | 正常 |
+| run_largebatch_noc | bs2048_seed43 | 43 | 2048 | 5e-3 | 300 | 7000 | 1.64e-04 | **0.3338** | 1.023 | 0.989 | 0.1359 | 0.330 | 正常 |
+| run_largebatch_noc | bs2048_seed44 | 44 | 2048 | 5e-3 | 300 | 7000 | 1.79e-04 | **0.3685** | 0.9836 | 0.989 | 0.1688 | 0.332 | 正常 |
+| run_largebatch_noc | bs4096_seed233 | 233 | 4096 | 6e-3 | 400 | 5000 | 3.87e-04 | **0.6698** | 1.841 | 0.989 | 0.3051 | 0.259 | 正常（精度较差） |
+| run_largebatch_noc | bs4096_seed43 | 43 | 4096 | 6e-3 | 400 | 5000 | 2.95e-04 | **0.4742** | 1.236 | 0.989 | 0.2040 | 0.261 | 正常（精度较差） |
+| run_largebatch_noc | bs4096_seed44 | 44 | 4096 | 6e-3 | 400 | 5000 | 2.75e-04 | **0.4338** | 1.292 | 0.989 | 0.1704 | 0.266 | 正常（精度较差） |
+| followup/noc_4096_recipe | diag4096_s233_lr5e-3_wu400_ts5000 | 233 | 4096 | 5e-3 | 400 | 5000 | 4.76e-04 | **0.5771** | 1.469 | 0.988 | 0.2814 | 0.293 | 正常 |
+| followup/noc_4096_recipe | diag4096_s233_lr5e-3_wu400_ts7000 | 233 | 4096 | 5e-3 | 400 | 7000 | 1.42e-04 | **0.3686** | 0.9611 | 0.988 | 0.1601 | 0.399 | **followup 最佳配方** |
+| followup/noc_4096_recipe | diag4096_s233_lr6e-3_wu400_ts5000 | 233 | 4096 | 6e-3 | 400 | 5000 | 3.87e-04 | **0.6885** | 1.659 | 0.988 | 0.3051 | 0.285 | 正常（≈主 bs4096_s233，见 K.6） |
+| followup/noc_4096_recipe | diag4096_s233_lr6e-3_wu400_ts7000 | 233 | 4096 | 6e-3 | 400 | 7000 | **1.75e-01** | **N/A（发散）** | — | — | 17.04 | — | **发散：ep29，resampled 目录为空** |
+
+跨种子聚合（与 legacy doc / 报告口径一致，"先轨迹内取中位、再种子间取均值"）：noc **bs2048**（233/43/44）60s 中位均值 ≈ **0.3451 m**；noc **bs4096**（233/43/44）≈ **0.5260 m**（劣化 ≈1.52×）。
+
+> 发散 run `diag4096_…_lr6e-3_wu400_ts7000`：`best_loss=0.1748`、`ever_nonfinite_test=1.0`、仅约 738 步（step_coverage≈0.105）；其 `resampled_batch_compare_10_30_60_*/` 目录**存在但为空**（评估中止），故 60s 列为 N/A；heldout 30s 中位 = 17.04 m（严重发散）。
+
+### K.3.2 rollout 评估覆盖（与 g3_5_5 的差异）
+
+每个 noc run 的 `rollout_benchmark/` 含两套：`heldout_batch_compare_10_20_30_*`（horizon 10/20/30s）+ `resampled_batch_compare_10_30_60_*`（horizon 10/30/60s）；场景 PRBS / CHIRP / OU（+ 汇总 ALL）。**关键差异**：g3_5_4 **只有 clean rollout**，**无 profile 噪声评估**（`nominal/degraded/heading_biased` 这套 profile 噪声体系是 g3_5_5 才引入的）。resampled 评估集为 90 条轨迹（run_largebatch_noc）/ 84 条（followup）——同一训练在不同 suite 下因评估集大小不同，60s 中位会略有差别（见 K.6）。
+
+### K.3.3 noc 报告结论（标注来源，不做取舍）
+
+- **`largebatch_noc_report.md`**：报告称 "**bs=2048 是 noc 更好的默认大 batch 配方**"。bs4096 唯一优势是 wall-clock（0.784×），代价是 best val loss 劣化 2.16×、heldout 30s 位置中位 1.50×、resampled 60s 位置中位 1.52×；训练期 solver failure / invalid prediction / SO(3) 违例均为 0（**非数值不稳定，是优化质量问题**）。报告称严格说只能主张"当前 bs4096 配方劣于当前 bs2048 配方"，不过度推广。推荐默认 `bs2048, lr5e-3, min_lr1e-4, wu300, total_steps7000, epochs200`。
+- **`largebatch_followup.md`（noc 部分）**：报告称 followup noc_4096 的最优（stability-first）配方为 `bs4096, lr0.005, wu400, steps7000`（best 1.424e-04）；`lr0.006, wu400, steps7000` **发散**（`reach_target=0`、`step_coverage=0.105`、`no_success_epoch_warnings=383`）。
+- **`docs/experiment_command_matrix.md` §7**：noc 配方定义——bs2048：`lr5e-3/min_lr1e-4/wu300/ts7000/epochs200`；bs4096：`lr6e-3/min_lr1e-4/wu400/ts5000/epochs300`。
+
+## K.4 oc 专节（20 run，单一 `ph_se3_full`）
+
+### K.4.1 run 明细 + 统一口径 rollout
+
+| suite | run | seed | batch | lr | wu | steps | best_loss | **60s 中位/m** | 60s P95/m | comp@60s | heldout 30s 中位/m | 训练h | 标记 |
+|---|---|---:|---:|---|---:|---:|---|---:|---:|---:|---:|---:|---|
+| run_largebatch_oc | bs2048_seed233 | 233 | 2048 | 5e-3 | 300 | (停于246) | **0.4572** | **67.68** | 99.91 | 0.733 | 30.57 | 0.015 | **崩溃：ep7 Test→inf** |
+| run_largebatch_oc | bs2048_seed42 | 42 | 2048 | 5e-3 | 300 | 7000 | 3.68e-03 | 0.8970 | 3.002 | 1.000 | 0.2580 | 0.367 | 正常 |
+| run_largebatch_oc | bs2048_seed43 | 43 | 2048 | 5e-3 | 300 | 7000 | 3.79e-03 | 1.009 | 3.313 | 0.978 | 0.3027 | 0.365 | 正常 |
+| run_largebatch_oc | bs2048_seed44 | 44 | 2048 | 5e-3 | 300 | 7000 | 3.75e-03 | 1.040 | 3.447 | 1.000 | 0.3416 | 0.359 | 正常 |
+| run_largebatch_oc | bs4096_seed233 | 233 | 4096 | 6e-3 | 400 | 5000 | 3.93e-03 | 1.086 | 3.061 | 0.978 | 0.3497 | 0.281 | 正常 |
+| run_largebatch_oc | bs4096_seed42 | 42 | 4096 | 6e-3 | 400 | 5000 | 3.78e-03 | 0.8152 | 3.072 | 0.989 | 0.3244 | 0.287 | 正常 |
+| run_largebatch_oc | bs4096_seed43 | 43 | 4096 | 6e-3 | 400 | 5000 | 3.73e-03 | 0.9960 | 3.062 | 0.989 | 0.3445 | 0.287 | 正常 |
+| run_largebatch_oc | bs4096_seed44 | 44 | 4096 | 6e-3 | 400 | 5000 | 3.91e-03 | 0.9538 | 3.418 | 0.978 | 0.3906 | 0.284 | 正常 |
+| oc_aligned | aligned_bs4096_s233 | 233 | 4096 | 4.5e-3 | 300 | 7000 | 3.71e-03 | 0.7843 | 3.351 | 0.976 | 0.3129 | 0.464 | 正常 |
+| oc_aligned | aligned_bs4096_s42 | 42 | 4096 | 4.5e-3 | 300 | 7000 | 3.82e-03 | 1.111 | 3.232 | 1.000 | 0.3448 | 0.460 | 正常 |
+| oc_aligned | aligned_bs4096_s43 | 43 | 4096 | 4.5e-3 | 300 | 7000 | 3.68e-03 | 1.159 | 3.515 | 0.976 | 0.3982 | 0.440 | 正常 |
+| oc_aligned | aligned_bs4096_s44 | 44 | 4096 | 4.5e-3 | 300 | 7000 | 3.69e-03 | 0.9491 | 3.684 | 0.976 | 0.3236 | 0.459 | 正常 |
+| confirm/oc_2048_confirm | confirm2048_s233 | 233 | 2048 | 4.5e-3 | 300 | 7000 | 3.72e-03 | 0.9400 | 3.325 | 0.988 | 0.3021 | 0.353 | 正常（≡followup lr4.5/wu300，见 K.6） |
+| confirm/oc_2048_confirm | confirm2048_s42 | 42 | 2048 | 4.5e-3 | 300 | 7000 | 3.81e-03 | 0.9821 | 3.030 | 1.000 | 0.3602 | 0.349 | 正常 |
+| confirm/oc_2048_confirm | confirm2048_s43 | 43 | 2048 | 4.5e-3 | 300 | 7000 | 3.77e-03 | 0.9361 | 3.503 | 1.000 | 0.2681 | 0.354 | 正常 |
+| confirm/oc_2048_confirm | confirm2048_s44 | 44 | 2048 | 4.5e-3 | 300 | 7000 | 3.91e-03 | 1.481 | 4.183 | 0.976 | 0.4137 | 0.346 | 正常（稳定簇中 60s 最大者） |
+| followup/oc_2048_stability | diag2048_s233_lr4e-3_wu300_ts7000 | 233 | 2048 | 4e-3 | 300 | 7000 | 3.88e-03 | 1.307 | 2.853 | 0.989 | 0.4686 | 0.353 | 正常 |
+| followup/oc_2048_stability | diag2048_s233_lr4e-3_wu400_ts7000 | 233 | 2048 | 4e-3 | 400 | (停于400) | **0.1322** | **34.15** | 68.72 | 1.000 | 14.75 | 0.021 | **发散：ep10 Test→inf** |
+| followup/oc_2048_stability | diag2048_s233_lr4.5e-3_wu300_ts7000 | 233 | 2048 | 4.5e-3 | 300 | 7000 | 3.72e-03 | 1.014 | 3.287 | 0.989 | 0.3098 | 0.355 | 正常（≡confirm2048_s233，见 K.6） |
+| followup/oc_2048_stability | diag2048_s233_lr4.5e-3_wu400_ts7000 | 233 | 2048 | 4.5e-3 | 400 | 7000 | 3.83e-03 | 1.145 | 3.426 | 0.989 | 0.3431 | 0.352 | 正常 |
+
+> **复核更正（如实标注）**：本次实测 oc 稳定子集（seed42/43/44 及 confirm/aligned）60s 中位实际落在 **≈0.78–1.48 m** 区间，**否定了"约 0.4–0.5 m"的先验预期**。oc 任务（含海流）在 60s 上系统性难于 noc（noc 最佳配方 ≈0.33 m），但二者数据集/state_dim 不同，**非受控对照**（见 §L.2）。
+
+### K.4.2 oc 报告结论（标注来源）
+
+- **`largebatch_oc_report.md`**：报告称 oc **不呈现 noc 的规律**——noc 中 bs4096 一贯较差，但 oc 的主要事件是 **bs2048 seed233 单次灾难性崩溃**（ep6 正常 → ep7 `Test inf` / `Fail 34/11` → ep8 起无成功 batch → 仅 246/7000 步，best 卡在 ep4=0.4572）。报告称这是"**genuine optimization failure, not a reporting artifact**"。在稳定子集（42/43/44）上 2048 与 4096 接近：报告称要安全默认就用 bs4096（更可靠），推荐默认 `bs4096, lr6e-3, wu400, steps5000`。
+- **`largebatch_oc_paired_summary.md`**（配对稳定子集 4096/2048 比值）：best_test 1.02×、resampled 60s 中位 0.939×（4096 略好）、heldout 30s 中位 1.17×（4096 较差）、train_hours 0.787×（4096 较快）。
+- **`oc_confirm_vs_baselines.md`**：报告称 `confirm2048`（lr4.5e-3/wu300/ts7000）**修复了 seed233 崩溃**（全 4 seed reach_target、零 non-finite）；相对旧 4096：优化质量/局部 vel RMSE/heldout 30s 中位/completion/发散率更好，但 resampled 60s 中位 1.127×、p95 1.113× **更差**，慢 1.217×。报告称这是"**配方比较，非纯 batch-size 单变量**，尚不能宣称 4096 过时"。
+- **`oc_aligned_vs_confirm.md`**：严格对齐 `aligned bs4096, lr4.5e-3/wu300/ts7000` vs confirm2048。报告称 aligned4096 四 seed 全稳定，best_test/速度 RMSE/resampled 60s 中位/p95/rot 中位更好；confirm2048 在 heldout 30s 中位/completion/发散率/效率（快约 30%）略优。结论："去掉配方失配后，4096 不再需要旧的稳定性论据；权衡变为 **60s 精度 vs 效率/发散裕度**"。
+- **`largebatch_followup.md`（oc 部分）**：oc_2048_stability 最佳 `bs2048, lr4.5e-3, wu300, steps7000`（best 3.719e-03）；`lr4e-3, wu400` **发散**（ep10，best 0.1322，60s 中位 34.15）。报告称**驱动发散的是 lr/warmup 选择，而非单独的 batch size**。
+
+### K.4.3 海流物理退化分析（`docs/current_ocean_performance_analysis.md`，单独摘录）
+
+该文是**海流场景物理/架构退化分析**（根目录代码相对 `original/` 版本为何在海流下变差），**不是 batch 配方报告**，故不计入上面的配方数字。报告分层结论（标注来源）：
+
+1. **推进器入流定义（最高置信度）**：报告称根目录把推进器入流从相对轴向速度改成总速度模长 `‖ν‖`，正确做法应是 `nu_r[0]`；海流下尤其危险——主体/舵面按 `nu_r`、推进器按 `‖ν‖`，构成混合闭合，横流被错误注入推进器支路。列为第一优先级修复。
+2. **B_net 条件变量语义（第二层）**：根目录 B_net 偏向 `nu_r + u_act (+ v_c_body)`，original 在海流下更接近 `nu_r + u_act + v_total`；报告称影响控制力分支可学习性，但二者均非理想答案。
+3. **D/J current conditioning（第三层）**：真实架构差异但不应先验视为主因，建议作为可控 ablation 开关暴露。
+4. **Actuator loss（第四层）**：有建模意义（约束 u_actual 可辨识性），但更像训练目标重加权项。
+- 报告称**不宜直接下结论**："推进器入流错误是唯一已确认主因"、"D/J conditioning 可完全排除"、"B_net 一定应看 v_total/v_c_body" 三者均**不下定论**。
+
+## K.5 g3_5_4 异常分类（沿用三分类口径的诚实落点）
+
+g3_5_4 是**单一架构的配方扫描**，与三分类口径设计所针对的"固定配方下多模型逐种子行为"语境不同，因此**三类映射并不干净**，如实说明如下：
+
+| g3_5_4 异常实例 | 三分类归属 | 诚实说明（标注来源） |
+|---|---|---|
+| oc `bs2048_seed233` 崩溃（ep7→inf，67.68 m） | **不属 (1)/(3)，最接近"配方驱动脆弱"** | 报告称是 genuine optimization failure；但 `confirm2048`（同 seed233，仅 lr 5e-3→4.5e-3）**已复现稳定**——即同种子在更好配方下收敛。故**非模型固有逐种子脆弱**，是**配方（lr/warmup）条件性失败**，被换配方修复。无 provenance 重训，不能归 (1) 环境漂移。 |
+| oc followup `lr4e-3_wu400_ts7000` 发散（ep10，34.15 m） | 同上，配方驱动 | 同 seed233 在 `lr4e-3_wu300` 收敛（best 3.879e-03）→ 报告归因 wu400 与 lr 的组合，非 batch size。 |
+| noc followup `lr6e-3_wu400_ts7000` 发散（ep29，best 0.175） | 同上，配方驱动 | 同 seed233 在 `lr5e-3` 或 `ts5000` 均收敛 → 报告归因 lr/steps 组合。 |
+
+> **诚实结论**：g3_5_4 的全部 3 个异常都是 **"配方驱动训练发散（lr/warmup/steps 组合）"** ——报告一致将其归因于优化器配方、并以"同种子换配方即收敛"证明可被修复；**无一**符合 (1) 环境漂移（无 provenance 重训）或 (3) 结构性全种子发散（每个都是单配方单种子、且同种子的姊妹配方收敛）。它们与 (2) 真实可复现脆弱的相似点仅在于"非随机一次性"（与特定配方绑定），但本质是**配方条件性**而非模型固有。本节据此把它们标为独立的"配方驱动"类，不强行塞进三分类。
+
+## K.6 g3_5_4 内部 overlap 与计数诚实说明
+
+磁盘上确为 **30 个独立 run 目录**（noc 10 + oc 20），但其中存在**配方重叠的再评估**，引用数字时需知：
+
+- **oc**：`confirm/oc_2048_confirm/confirm2048_s233` 与 `followup/oc_2048_stability/diag2048_s233_lr4.5e-3_wu300_ts7000` 为**同配方同种子**，`best_loss` 逐位一致（0.0037186…），训练历史相同（同一训练，两份报告各自引用 / 确定性复跑）。
+- **noc**：`run_largebatch_noc/bs4096_seed233` 与 `followup/noc_4096_recipe/diag4096_s233_lr6e-3_wu400_ts5000` 为**同配方**，`best_loss` 同为 3.870e-04（followup 的配方扫描把基线 recipe 也纳入作参照点）。
+- **评估集大小不一致**：`run_largebatch_*` 的 resampled 用 **90** 条轨迹，`followup` 用 **84** 条——故上述"同一训练"在两 suite 下 60s 中位会略不同（如 confirm 0.9400 vs followup 1.014；noc 主 0.6698 vs followup 0.6885）。**跨 suite 比较 60s 数字时务必同评估集**。
+
+---
+
+# L. 跨仓库总账对账表（g3_5_5 + g3_5_4）
+
+> 本节为 2026-05-30 跨仓库复核新增，统一两仓库的 run 计数、noc/oc 拆分、重叠、镜像/环境与论文证据归属。评估口径统一为 60s 终端位置误差中位数、scope=overall。
+
+## L.1 run 计数对账
+
+| 仓库 | 分区 | run 数 | 数据 | 模型 | 是否进入当前论文 §8 |
+|---|---|---:|---|---|---|
+| **g3_5_5** | A. Catalog 主线 | 98 | oc（`d0be9434`/s23） | 10 模型族 | 部分（补充表，剔除 2 个 stale 种子） |
+| **g3_5_5** | B. Phase-1A | 148 | oc（`d0be9434`/s23） | 7/4 模型 | **是（§8 主证据）** |
+| **g3_5_5** | E. Unused 旧噪声 | 54 | oc（`d0be9434`/s23） | 6 模型 | 否（弃用 noise-v1） |
+| g3_5_5 小计 | | **300** | **全 oc** | | |
+| **g3_5_4** | noc（run_largebatch_noc + followup/noc_4096_recipe） | 10 | **noc**（`32ec4535`/s42） | 仅 `ph_se3_full` | 否 |
+| **g3_5_4** | oc（run_largebatch_oc + oc_aligned + confirm + followup/oc_2048_stability） | 20 | oc（`89c80d68`/s42） | 仅 `ph_se3_full` | 否 |
+| g3_5_4 小计 | | **30** | **noc 10 + oc 20** | | |
+| **两仓库合计** | | **330** | **noc 10 + oc 320** | | |
+
+（g3_5_5 另有不计入 300 的：C. provenance 审计 forensic 重训 1 个；多个 manifest-only 聚合目录——见 §1。）
+
+## L.2 noc/oc 拆分与重叠
+
+- **noc 仅存在于 g3_5_4**（10 run，数据集 `32ec4535`）。g3_5_5 全部 300 run 均为 oc，**无 noc**。
+- **oc 在两仓库都有，但数据集不同**：g3_5_4 oc = `89c80d68`（gen-seed 42、state_dim 27）；g3_5_5 oc = `d0be9434`（gen-seed 23、state_dim 27）。**两者不是同一数据集**。
+- **跨仓库 run 重叠 = 0**：不同代码镜像、不同数据集、g3_5_4 仅训 `ph_se3_full`——没有任何 run 被两仓库共享。
+- **仓库内 overlap**：g3_5_4 内有 2 对"同配方再评估"（见 K.6）；g3_5_5 内 catalog rollout 有同一 checkpoint 多 `rollout_run_id` 的去重坑（见下 L.5）。
+- **可比性**：g3_5_4 noc-vs-oc 是同仓库同模型、但数据集/state_dim 不同（海流有无），属"任务难度差异"而非受控消融；两代 oc（89c80d68 vs d0be9434）gen-seed 不同，**不可直接跨代比较数值**。
+
+## L.3 代码镜像 / 环境对账
+
+| 分区 | 云镜像 | 时间窗 | 溯源元数据 |
+|---|---|---|---|
+| g3_5_5 A（catalog） | `auvhamnode/g3_5_5` | 04-04~24 | 无 `code_revision`（审计补 `_audit_meta` 仅新 run）；2 种子标 `stale_environment_drift` |
+| g3_5_5 B（Phase-1A） | `auvhamnode/g3_5_7` | 04-24~26 | 带 `_audit_meta/`，当前 main 可逐位复现 |
+| g3_5_5 C（forensic 重训） | `auvhamnode/g3_5_7` | 05-12 | 完整 `_audit_meta/`（PyTorch 2.10.0+cu128 / CUDA 12.8 / cuDNN 91002） |
+| g3_5_5 E（unused） | `auvhamnode/g3_5_5` | 04-06 前 | 弃用 noise-v1（`--noise_level l1/l2`） |
+| **g3_5_4 noc + oc** | `auvhamnode/g3_5_4` | **03-30~04-02** | **无** `code_revision`/`git_commit`/`environment`/`_audit_meta`（`device=cuda`，余不可考） |
+
+## L.4 是否进入当前论文证据
+
+- **进入 §8**：仅 g3_5_5 **B 区**（主证据，可逐位复现）+ g3_5_5 **A 区**可信子集（作为补充表，按异常三分类剔除 2 个 stale 种子；同镜像算倍数）。
+- **不进入**：g3_5_5 E 区（弃用噪声）；g3_5_5 C（仅审计 forensic）；**g3_5_4 全部 30 run（noc + oc）**——前代不同数据集/不同代码镜像，论文 §8 不使用（与 legacy doc §5 一致）。
+- g3_5_4 的价值定位：早期**训练稳定性 / 大 batch 配方 + noc-vs-oc 数据对照**研究，为 g3_5_5 收敛到"结构化 SE(3) pH + 海流主线 + profile 噪声 + 规范化 catalog"提供配方与稳定性背景，但本身不作为论文模型证据。
+
+## L.5 评估口径统一说明
+
+- 统一指标：rollout 自由递推 **60s 终端位置误差中位数**，scope=**overall**，先轨迹内取中位、再种子间取均值。
+- **g3_5_4**：直接取各 suite `*_summary.csv`/`*_runs.csv` 的 `resampled_pos_med_60s`，等于该 run `rollout_benchmark/resampled_batch_compare_10_30_60_*/horizon_metrics.csv` 中 `scenario=ALL`、`horizon_s=60.0` 的 `final_position_error_median`（已逐位核验）。**仅 clean rollout，无 profile 噪声评估**。
+- **g3_5_5（A 区 catalog）**：从 `canonical_rollout_summary_long.csv` 过滤 `metric_name=final_position_error & stat_name∈{median,p95} & horizon_s=60.0 & scope=overall`，并按 `rollout_run_registry.csv` 的 `is_selection_eligible=1`、优先 `resampled_traj30_*` 对每 (model,train,seed,profile) **唯一去重**。
+  - **去重坑（复核实证）**：registry 共 352 行、`is_selection_eligible=1` 325 行；其中 40 行（phnode_full 20 + ablate_no_mass_prior 20）是 `traj8` 的 `*_iideval_*` 探针，`selection_priority=100` **不低于**正确的 `resampled_traj30` matched（priority 80）。例：phnode_full seed43 clean nominal_eval，traj8_iideval=**34.28 m** vs traj30 matched=**0.84 m**（**41×** 误差）。若按"最高 priority"简单去重会取错——必须额外按 `rollout_purpose` 排除 iideval/traj8 探针。
+  - 复核交叉校验（全部成立）：phnode_full clean 非漂移种子(43,44,45,47)均值 **0.6098 m**；seed42 **4.2148**、seed46 **47.8637**（标 stale）；noisy nominal_eval phnode_full 逐种子 42/43/44/45/46/47 = 5.159/1.092/0.956/1.621/0.932/1.055（均值 1.803）；ablate_diag_damping clean **4.166**；ablate_bu_only clean **27.80**。
+
+---
+
+# M. 磁盘 ↔ 清单覆盖率核验（2026-05-30 复核，可复现）
+
+> 目的：证明两仓库 `checkpoints/` 下**每个**含 `best_model.pt` 的训练目录都已 1:1 映射到本清单的某个分区，无孤儿目录；且所有 0-run（manifest / 元数据 / 日志）目录都已点名。核验方法：对每个顶层目录 `find -name best_model.pt | wc -l`，再把计数归并到分区。
+
+## M.1 g3_5_5 覆盖矩阵（300 run）
+
+| 顶层目录组 | run 数 | 分区 | 清单位置 |
+|---|---:|---|---|
+| `sweep_oc_all/` | 45 | A | §A.1 |
+| `sweep_oc_all_noise/` | 30 | A | §A.1 |
+| `sweep_oc_main_noise_*_extra_42-46-47/` | 3 | A（followup P1-1） | §A.1 |
+| `sweep_oc_key_ablation_noise_*_extra_42-46-47/` | 6 | A（followup P1-1） | §A.1 |
+| `sweep_oc_phase1_probe_{clean,iid,v4lite}_*` | 2+2+2=6 | A（probe） | §A.1 |
+| `sweep_oc_phase1_smoke_clean_fix_*` | 4 | A（probe） | §A.1 |
+| `sweep_oc_smoke/` | 3 | A（smoke） | §A.1 / §D |
+| `sweep_oc_main_noise_seed42_smoke/` | 1 | A（smoke） | §A.1 / §D |
+| **A 区小计** | **98** | | |
+| `sweep_oc_phase1a_decision_clean_t2_wpfrag_*`（7 目录×5） | 35 | B | §B.1 |
+| `sweep_oc_phase1a_decision_iid_t2_wpfrag_*`（4×5） | 20 | B | §B.1 |
+| `sweep_oc_phase1a_decision_v4lite_t2_wpfrag_*`（4×5） | 20 | B | §B.1 |
+| `sweep_oc_phase1a_decision_extra43-45_{clean,iid,v4lite}_*_cleanrun_v1`（3×6） | 18 | B | §B.2 |
+| `sweep_oc_phase1a_smoke3_{clean,iid,v4lite}_*_cleanrun_v1`（3×9） | 27 | B | §B.2 |
+| `sweep_oc_phase1a_smoke1_{clean,iid,v4lite}_*_cleanrun_v1`（3×3） | 9 | B（smoke） | §B.3 |
+| `sweep_oc_phase1a_smoke1_clean_t2_wpfrag_*`（7×1） | 7 | B（smoke） | §B.3 |
+| `sweep_oc_phase1a_smoke1_iid_t2_wpfrag_*`（4×1） | 4 | B（smoke） | §B.3 |
+| `sweep_oc_phase1a_smoke1_v4lite_t2_wpfrag_*`（4×1） | 4 | B（smoke） | §B.3 |
+| `smoke_v4lite/`（ep=3 code smoke） | 4 | B（smoke） | §B.3 / §D |
+| **B 区小计** | **148** | | |
+| `checkpoints/unused/`（l1/l2 旧噪声 3 suite） | 54 | E | §E |
+| **E 区小计** | **54** | | |
+| **g3_5_5 合计** | **300** | | |
+
+**0-run 目录（不计入 300，均已点名）**：`sweep_oc_phase1a_decision_{clean,iid,v4lite}_*_cleanrun_v1`、`decision_proxy_*`、`sweep_oc_phase1_probe_iideval_20260424_024232`、`sweep_oc_phase1_smoke_matched_20260423_173332`（manifest 聚合，§1）；`phase1a_metadata_*`×8、`phase1a_logs/`、顶层 `p1_2_clean_matched_eval_*.{log,pid}`×5（元数据/日志，§1/§D）。
+
+## M.2 g3_5_4 覆盖矩阵（30 run）
+
+| 顶层目录 | run 数 | noc/oc | 清单位置 |
+|---|---:|---|---|
+| `run_largebatch_noc/` | 6 | noc | §K.3 |
+| `run_largebatch_followup/`（noc_4096_recipe 4 + oc_2048_stability 4） | 8 | noc 4 + oc 4 | §K.3 / §K.4 |
+| `run_largebatch_oc/` | 8 | oc | §K.4 |
+| `run_largebatch_oc_aligned/` | 4 | oc | §K.4 |
+| `run_largebatch_confirm/`（oc_2048_confirm） | 4 | oc | §K.4 |
+| **g3_5_4 合计** | **30**（noc 10 + oc 20） | | |
+
+仓库内无 `checkpoints/` 之外的 `best_model.pt`。
+
+## M.3 复现命令
+
+```bash
+# 每个顶层目录的 run 数（两仓库各跑一次）
+for d in checkpoints/*/; do echo "$(find "$d" -name best_model.pt 2>/dev/null | wc -l)  $d"; done
+# 总 run 数
+find checkpoints -name best_model.pt | wc -l   # g3_5_5 → 300；g3_5_4 → 30
+```
+
+**核验结论**：g3_5_5 300 + g3_5_4 30 = **330 个训练 run 全部映射到分区，无孤儿**；noc/oc、catalog/t2_wpfrag/phase-1A/cleanrun v1/smoke/probe/unused/provenance/manifest 各类别均已收录。

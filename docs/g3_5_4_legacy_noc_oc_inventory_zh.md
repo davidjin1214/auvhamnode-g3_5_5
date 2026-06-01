@@ -4,6 +4,8 @@
 对象仓库：`/Users/xiangjin/Library/CloudStorage/OneDrive-Personal/我的/Code/auv_se3node/g3_5_4`（当前 `g3_5_5` 的前代）  
 本文件存放位置：`g3_5_5/docs/`（作为当前主线清单 [experiment_full_inventory_zh.md](experiment_full_inventory_zh.md) 的前代补充）。
 
+> **2026-05-30 跨仓库复核更新**：本文档保留为 g3_5_4 的**模型命名映射（§1）+ 训练配方/`best_loss`（§3）+ 报告散文结论（§4）**的详细参考。新增的**统一口径 60s rollout 数值（noc 10 / oc 20 逐 run）、noc/oc 专节、异常分类与跨仓库总账对账表**已并入主清单 [experiment_full_inventory_zh.md](experiment_full_inventory_zh.md) 的 **§K / §L**（rollout 数值经从 g3_5_4 磁盘独立重取核验）。引用 60s 数字请以主清单 §K 为准。
+
 ## 0. 定位
 
 - `g3_5_4` 是 `g3_5_5` 的**前一代仓库**。共 **30 个**训练 run，**全部为单一架构 `ph_se3_full`**（= 新版 `phnode_full`）。
