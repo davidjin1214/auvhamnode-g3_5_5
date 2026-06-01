@@ -15,28 +15,28 @@ from matplotlib import font_manager
 from matplotlib.patches import FancyArrowPatch, FancyBboxPatch
 
 
-WIDTH_MM = 145
-HEIGHT_MM = 66
+WIDTH_MM = 138
+HEIGHT_MM = 60
 MM_TO_IN = 1 / 25.4
 
 OUT_DIR = Path(__file__).resolve().parent
 OUT_BASE = OUT_DIR / "mechanical_core_power_structure"
 
 PALETTE = {
-    "ink": "#252525",
-    "muted": "#62666D",
-    "rule": "#D8DDE3",
+    "ink": "#24272B",
+    "muted": "#60646B",
+    "rule": "#D7DDE4",
     "paper": "#FFFFFF",
     "core": "#2E6EBA",
     "core_pale": "#EEF5FC",
     "store": "#2F8E86",
     "store_pale": "#EDF7F4",
-    "diss": "#9A5B3F",
-    "diss_pale": "#F7EFEA",
+    "diss": "#B98524",
+    "diss_pale": "#FBF3DF",
     "zero": "#6B6F7A",
     "zero_pale": "#F3F4F6",
-    "port": "#B8862B",
-    "port_pale": "#FBF4E5",
+    "port": "#B98524",
+    "port_pale": "#FBF3DF",
 }
 
 
@@ -222,11 +222,12 @@ def draw() -> None:
         y=0.660,
         w=0.215,
         h=0.135,
-        title="State / velocity",
-        body=r"$q,\ p_r,\ \nu_r$",
+        title="Core state",
+        body="configuration\nmomentum",
         face=PALETTE["core_pale"],
         edge=PALETTE["core"],
-        body_size=7.0,
+        body_size=6.2,
+        title_y=0.68,
     )
     labeled_box(
         ax,
@@ -235,10 +236,10 @@ def draw() -> None:
         w=0.235,
         h=0.135,
         title="Storage",
-        body=r"$H_\theta=K_\theta+V_\theta$",
+        body="mechanical energy",
         face=PALETTE["store_pale"],
         edge=PALETTE["store"],
-        body_size=7.0,
+        body_size=6.2,
     )
 
     labeled_box(
@@ -247,12 +248,13 @@ def draw() -> None:
         y=0.455,
         w=0.215,
         h=0.120,
-        title="Zero-power",
-        body=r"$\operatorname{ad}^*,\ J_\theta$",
+        title="Zero-power coupling",
+        body="coadjoint\nskew branch",
         face=PALETTE["zero_pale"],
         edge=PALETTE["zero"],
-        title_size=7.0,
-        body_size=6.8,
+        title_size=6.6,
+        body_size=5.8,
+        title_y=0.70,
     )
     labeled_box(
         ax,
@@ -261,11 +263,11 @@ def draw() -> None:
         w=0.235,
         h=0.120,
         title="Dissipation",
-        body=r"$P_D\geq0$",
+        body="energy extraction",
         face=PALETTE["diss_pale"],
         edge=PALETTE["diss"],
         title_size=7.0,
-        body_size=6.8,
+        body_size=5.9,
     )
 
     rounded_box(ax, 0.165, 0.215, 0.430, 0.125, face=PALETTE["port_pale"], edge=PALETTE["port"], lw=0.95)
@@ -273,7 +275,7 @@ def draw() -> None:
         ax,
         0.380,
         0.286,
-        "Power balance",
+        "Hydrostatic balance",
         size=7.2,
         weight="bold",
         color=PALETTE["port"],
@@ -286,12 +288,13 @@ def draw() -> None:
         y=0.610,
         w=0.165,
         h=0.195,
-        title="External context",
-        body=r"$u_c\to u_a$" + "\n" + r"$v_c^n,\ z_{\rm ref}$",
+        title="Carried context",
+        body="actuator\ncurrent, depth",
         face=PALETTE["core_pale"],
         edge=PALETTE["core"],
         title_size=7.0,
-        body_size=6.6,
+        body_size=5.9,
+        title_y=0.70,
     )
     labeled_box(
         ax,
@@ -299,12 +302,13 @@ def draw() -> None:
         y=0.330,
         w=0.165,
         h=0.145,
-        title="Generalized-force port",
-        body=r"$P_\tau=\nu_r^\top\tau_\theta$",
+        title="Force port",
+        body="external\ngeneralized force",
         face=PALETTE["port_pale"],
         edge=PALETTE["port"],
-        title_size=6.7,
-        body_size=6.4,
+        title_size=6.9,
+        body_size=5.5,
+        title_y=0.70,
     )
 
     arrow(ax, (0.320, 0.725), (0.425, 0.725), color=PALETTE["core"])

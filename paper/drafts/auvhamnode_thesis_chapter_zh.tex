@@ -617,15 +617,17 @@ AUVHamNODE 首先把位姿变化从可学习黑箱中分离出来，显式编码
 承载本节能量性质的对象是第~\ref{sec:structured-continuous-model} 节模型中的六自由度力学部分，本文将其界定为机械核心。
 
 \begin{definition}[AUVHamNODE 的机械核心]
-  在给定外部广义力 \(\tau_\theta(\nu_r,u_a,c_\tau)\) 的条件下，AUVHamNODE 的机械核心指由配置 \(q=(x,R)\)、相对动量 \(p_r\)、机械存储函数 \(H_\theta(q,p_r)\)、\(\SE(3)\) 运动学、保守广义力 \(f_\theta^V(q)\)、正定耗散项 \(-D_\theta(\xi)\nu_r\) 和斜对称零功率耦合项 \(J_\theta(\xi)\nu_r\) 组成的连续时间力学子系统。执行器状态 \(u_a\)、命令 \(u_c\)、海流 \(v_c^n\) 和深度上下文 \(z_{\mathrm{ref}}\) 属于增强状态或外源上下文；它们可以影响广义力分支或速度转换，但不作为机械存储函数的独立储能变量。因而，本章的端口哈密顿性质只针对该机械核心的功率平衡，而不针对完整增强状态作闭合系统声明。
+  在给定外部广义力 \(\tau_\theta(\nu_r,u_a,c_\tau)\) 的条件下，AUVHamNODE 的机械核心指由配置 \(q=(x,R)\)、相对动量 \(p_r\)、机械存储函数 \(H_\theta(q,p_r)\)、\(\SE(3)\) 运动学、保守广义力 \(f_\theta^V(q)\)、由半正定耗散矩阵 \(D_\theta(\xi)\succeq0\) 生成的耗散项 \(-D_\theta(\xi)\nu_r\) 和斜对称零功率耦合项 \(J_\theta(\xi)\nu_r\) 组成的连续时间力学子系统。执行器状态 \(u_a\)、命令 \(u_c\)、海流 \(v_c^n\) 和深度上下文 \(z_{\mathrm{ref}}\) 属于增强状态或外源上下文；它们可以影响广义力分支或速度转换，但不作为机械存储函数的独立储能变量。因而，本章的端口哈密顿性质只针对该机械核心的功率平衡，而不针对完整增强状态作闭合系统声明。
 \end{definition}
+
+当势能分支使用绝对深度时，可将 \(V_\theta(q;z_{\mathrm{ref}})\) 简记为 \(V_\theta(q)\)；其中 \(z_{\mathrm{ref}}\) 是给定积分窗口内的势能上下文参数，不是带独立动力学和储能定义的机械状态。
 
 图~\ref{fig:mechanical-core-power-structure} 概括了机械核心边界、功率角色和外源通道位置。
 
 \begin{figure}[htbp]
   \centering
-  \includegraphics[width=145mm]{figures/mechanical_core_power_structure.pdf}
-  \caption{开放式机械核心的功率关系与外源边界。虚线框表示用于第~\ref{sec:energy-power-properties} 节能量性质分析的六自由度机械核心；图中只保留状态/速度、机械存储、零功率项、耗散和广义力端口的结构关系，具体公式见正文。执行器命令与状态、海流和深度上下文位于边界之外，只通过速度转换、条件化特征或广义力端口影响机械核心；该图不表示完整航行器--执行器--环境增强系统的闭合端口哈密顿化。}
+  \includegraphics[width=138mm]{figures/mechanical_core_power_structure.pdf}
+  \caption{开放式机械核心的功率关系与外源边界。虚线框为第~\ref{sec:energy-power-properties} 节分析的静水六自由度机械核心；图中 \(P_D:=\nu_r^\top D_\theta(\xi)\nu_r\)，\(P_\tau:=\nu_r^\top\tau_\theta\)，主平衡 \(\dot H_\theta=-P_D+P_\tau\) 仅对应静水机械核心。执行器、海流和深度上下文位于边界之外，海流附加功率项作为正文中的外源修正处理；该图不表示完整航行器--执行器--环境增强系统的闭合端口哈密顿化。}
   \label{fig:mechanical-core-power-structure}
 \end{figure}
 
@@ -687,7 +689,15 @@ AUVHamNODE 首先把位姿变化从可学习黑箱中分离出来，显式编码
 
 \begin{proposition}[静水机械核心的能量平衡]
   \label{prop:hydrostatic-energy-balance}
-  考虑无海流或静水条件 \(v_c^n=0\)，并设机械核心按第~\ref{sec:structured-continuous-model} 节构造，满足下述构造性条件：连续时间精确流下 \(R(t)\in\SO(3)\)；质量矩阵 \(M_\theta\succ0\) 且不随状态变化；耗散与零功率耦合由参数化保证 \(D_\theta(\xi)\succeq0\)、\(J_\theta(\xi)=-J_\theta(\xi)^\top\)；保守广义力 \(f_\theta^V\) 由势能 \(V_\theta\) 经式 \eqref{eq:potential-force} 生成；体坐标动量耦合取式 \eqref{eq:coadjoint-term} 的余伴随形式。则余伴随耦合的零功率性（引理~\ref{lem:coadjoint-zero-power}）与势能功率配对（引理~\ref{lem:potential-power-pairing}）成立，且对于机械存储函数 \eqref{eq:hamiltonian} 和非保守力分解 \eqref{eq:nonconservative-force}，机械核心满足
+  考虑无海流或静水条件 \(v_c^n=0\)，并设机械核心按第~\ref{sec:structured-continuous-model} 节构造，满足以下构造性条件：
+  \begin{enumerate}
+    \item 连续时间精确流下 \(R(t)\in\SO(3)\)；
+    \item 质量矩阵 \(M_\theta\succ0\) 且不随状态变化；
+    \item 耗散与零功率耦合由参数化保证 \(D_\theta(\xi)\succeq0\)、\(J_\theta(\xi)=-J_\theta(\xi)^\top\)；
+    \item 保守广义力 \(f_\theta^V\) 由势能 \(V_\theta\) 经式 \eqref{eq:potential-force} 生成；
+    \item 体坐标动量耦合取式 \eqref{eq:coadjoint-term} 的余伴随形式。
+  \end{enumerate}
+  则余伴随耦合的零功率性（引理~\ref{lem:coadjoint-zero-power}）与势能功率配对（引理~\ref{lem:potential-power-pairing}）成立，且对于机械存储函数 \eqref{eq:hamiltonian} 和非保守力分解 \eqref{eq:nonconservative-force}，机械核心满足
   \begin{equation}
     \dot H_\theta
     =
@@ -764,7 +774,7 @@ AUVHamNODE 首先把位姿变化从可学习黑箱中分离出来，显式编码
   +\nabla_x V_\theta^\top v_c^n ,
   \label{eq:energy-balance-current}
 \end{equation}
-其中附加项 \(\nabla_x V_\theta^\top v_c^n\) 是外源海流平移作用在依赖绝对位置或深度的势能上所做的功；当势能仅依赖绝对深度 \(z_{\mathrm{ref}}+x_3\) 时，它退化为 \((\partial V_\theta/\partial x_3)\,v_{c,3}^n\)。若势能不含绝对位置或深度依赖，则 \(\nabla_x V_\theta=0\)，该项为零。该项不能由耗散 \(-\nu_r^\top D_\theta\nu_r\) 吸收，也不属于广义力端口功率 \(\nu_r^\top\tau_\theta\)，因此海流在本文中是影响速度契约和广义力分支的外源条件，而不是带独立储能的闭合哈密顿环境子系统。
+其中附加项 \(\nabla_x V_\theta^\top v_c^n\) 表示外源海流平移与依赖绝对位置或深度的势能之间产生的功率交换项；当势能仅依赖绝对深度 \(z_{\mathrm{ref}}+x_3\) 时，它退化为 \((\partial V_\theta/\partial x_3)\,v_{c,3}^n\)。若势能不含绝对位置或深度依赖，则 \(\nabla_x V_\theta=0\)，该项为零。该项不能由耗散 \(-\nu_r^\top D_\theta\nu_r\) 吸收，也不属于广义力端口功率 \(\nu_r^\top\tau_\theta\)，因此海流在本文中是影响速度契约和广义力分支的外源条件，而不是带独立储能的闭合哈密顿环境子系统。
 
 \section{训练目标、基线体系与验证协议}
 \label{sec:training-baselines-protocol}
