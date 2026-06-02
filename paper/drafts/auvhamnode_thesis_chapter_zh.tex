@@ -444,12 +444,12 @@ AUVHamNODE 的结构约束转换可以概括为三类。第一类是几何约束
 \section{结构化连续时间动力学模型}
 \label{sec:structured-continuous-model}
 
-第~\ref{sec:fossen-to-structure} 节给出的结构约束关系在本节落实为一个增强状态上的连续时间向量场。具体而言，几何约束对应 \(\SE(3)\) 位姿运动学，功率配对约束对应相对动量、机械存储函数和广义力--速度配对，开放广义力约束对应耗散、零功率耦合、执行器条件化广义力以及外源上下文接口。AUVHamNODE 的定义只依赖本节列出的状态、运动学、存储函数、广义力分解、执行器滞后和外源通道；这些定义为后续能量性质分析和验证协议提供统一对象。
+第~\ref{sec:fossen-to-structure} 节给出的结构约束关系可落实为增强状态上的连续时间向量场。具体而言，几何约束对应 \(\SE(3)\) 位姿运动学，功率配对约束对应相对动量、机械存储函数和广义力--速度配对，开放广义力约束对应耗散、零功率耦合、执行器条件化广义力以及外源上下文接口。AUVHamNODE 由这些状态、运动学、存储函数、广义力分解、执行器滞后和外源通道共同定义，并为能量性质分析和验证协议提供统一的模型对象。
 
 \begin{figure}[htbp]
   \centering
   \includegraphics[width=138mm]{figures/model_definition_overview.pdf}
-  \caption{AUVHamNODE 增强状态与连续时间向量场定义示意图。图中只展示模型定义中的模块关系：数据态经速度转换进入模型态，模型态中的执行器命令和外源上下文通过执行器滞后、特征接口和广义力分支条件化相对动量动力学，并与 \(\SE(3)\) 运动学共同组成 ODE 流和输出状态。图中的 \(c\) 表示由海流和深度组成的外源上下文，虚线箭头表示条件化输入而非机械储能关系。该图不表示完整航行器--执行器--环境系统的闭合储能结构；机械核心的功率关系另见图~\ref{fig:mechanical-core-power-structure}。}
+  \caption{AUVHamNODE 增强状态与连续时间向量场定义示意图。数据态经速度转换进入模型态，执行器滞后、外源上下文 \(c\)（海流和深度）及特征接口条件化广义力分支，并与 \(\SE(3)\) 运动学和动量流共同组成 ODE 流。虚线箭头表示条件化输入而非机械储能关系；该图不表示完整航行器--执行器--环境系统的闭合储能结构，机械核心功率关系见图~\ref{fig:mechanical-core-power-structure}。}
   \label{fig:model-definition-overview}
 \end{figure}
 
@@ -515,14 +515,7 @@ AUVHamNODE 首先把位姿变化从可学习黑箱中分离出来，显式编码
   \end{bmatrix}.
   \label{eq:potential-force}
 \end{equation}
-在静水条件下，\(\dot x=Rv_r\)、\(\dot R=R\widehat{\omega}\)，式 \eqref{eq:potential-force} 满足
-\begin{equation}
-  \nu_r^\top f_\theta^{V}(q)
-  =
-  -\frac{\dd}{\dd t}V_\theta(q).
-  \label{eq:potential-power-pairing}
-\end{equation}
-式 \eqref{eq:potential-power-pairing} 在本节只作为构造性质提示：保守分支不是任意配置力网络，而是与机械存储函数中的同一个势能项配对；当势能不依赖某些相对位置分量时，相应梯度自然为零。该配对关系的形式化证明见引理~\ref{lem:potential-power-pairing}。
+在静水条件下，式 \eqref{eq:potential-force} 与机械存储函数中的同一个势能项形成广义力--速度功率配对；保守分支因而不是任意配置力网络。当势能不依赖某些相对位置分量时，相应梯度自然为零。该配对关系的形式化表达与证明见引理~\ref{lem:potential-power-pairing}。
 
 \subsection{非保守广义力与执行器通道}
 
@@ -535,9 +528,9 @@ AUVHamNODE 首先把位姿变化从可学习黑箱中分离出来，显式编码
   +\tau_\theta(\nu_r,u_a,c_\tau),
   \label{eq:nonconservative-force}
 \end{equation}
-其中 \(D_\theta(\xi)\succeq0\) 表示耗散矩阵，\(J_\theta(\xi)=-J_\theta(\xi)^\top\) 表示斜对称零功率耦合矩阵，\(\tau_\theta\) 表示由执行器状态和上下文驱动的可学习广义力分支。这里用 \(\xi\) 表示耗散和零功率耦合分支可见的输入特征；把单个积分窗口内随增强状态携带的外源上下文记为 \(c=(v_c^n,z_{\mathrm{ref}})\)，并用 \(c_\tau\) 表示对广义力分支可见的上下文子集或由 \(c\) 派生的特征。第~\ref{sec:training-baselines-protocol} 节给出本章实验中 \(\xi\) 与 \(c_\tau\) 的具体协议选择；本节只固定符号接口，以避免把所有外源量混入同一个未限定上下文，也避免把执行器广义力写成标准仿射输入矩阵。
+其中 \(D_\theta(\xi)\succeq0\) 表示耗散矩阵，\(J_\theta(\xi)=-J_\theta(\xi)^\top\) 表示斜对称零功率耦合矩阵，\(\tau_\theta\) 表示由执行器状态和上下文驱动的可学习广义力分支。这里用 \(\xi\) 表示耗散和零功率耦合分支可见的输入特征；把单个积分窗口内随增强状态携带的外源上下文记为 \(c=(v_c^n,z_{\mathrm{ref}})\)，并用 \(c_\tau\) 表示对广义力分支可见的上下文子集或由 \(c\) 派生的特征。具体协议选择由第~\ref{sec:training-baselines-protocol} 节的训练与验证设置规定；在模型定义层面，\(\xi\) 与 \(c_\tau\) 只是受限特征接口，以避免把所有外源量混入同一个未限定上下文，也避免把执行器广义力写成标准仿射输入矩阵。
 
-这一分解对应三种不同的功能角色。耗散项用于表达阻尼和速度相关能量耗散；斜对称项用于表达不改变机械存储能量的耦合或升力类作用；可学习广义力 \(\tau_\theta\) 则作为执行器驱动和未建模非保守作用进入机械方程的广义力通道。第~\ref{sec:energy-power-properties} 节将对这些角色在能量平衡中的作用作形式化分析。由于真实水动力、舵桨作用和残差效应可能在统计上互相补偿，该分解只提供物理诱导的功能角色，不声称唯一恢复真实物理项。
+这一分解对应三种不同的功能角色。耗散项用于表达阻尼和速度相关能量耗散；斜对称项用于表达不改变机械存储能量的耦合或升力类作用；可学习广义力 \(\tau_\theta\) 则作为执行器驱动和未建模非保守作用进入机械方程的广义力通道。这些角色在能量平衡中的作用由第~\ref{sec:energy-power-properties} 节的引理与命题形式化。由于真实水动力、舵桨作用和残差效应可能在统计上互相补偿，该分解只提供物理诱导的功能角色，不声称唯一恢复真实物理项。
 
 执行器命令 \(u_c\) 不直接等同于实际广义力。实际执行器状态满足
 \begin{equation}
@@ -577,13 +570,7 @@ AUVHamNODE 首先把位姿变化从可学习黑箱中分离出来，显式编码
   \end{bmatrix}.
   \label{eq:coadjoint-term}
 \end{equation}
-该项对应体坐标动量的陀螺耦合结构，是由相对动量坐标和体坐标速度表示诱导的固定机械耦合项。其零功率性质在此作为模型结构提示列出，证明见引理~\ref{lem:coadjoint-zero-power}：
-\begin{equation}
-  \nu_r^\top\ad_{\nu_r}^{\ast}p_r
-  =0,
-  \label{eq:coadjoint-zero-power}
-\end{equation}
-它与式 \eqref{eq:nonconservative-force} 中的可学习斜对称项 \(J_\theta(\xi)\nu_r\) 作用层次不同：前者来自动量坐标下的刚体/惯性耦合，后者用于表达数据诱导的升力或横向水动力类零功率作用。
+该项对应体坐标动量的陀螺耦合结构，是由相对动量坐标和体坐标速度表示诱导的固定机械耦合项。其零功率性质见引理~\ref{lem:coadjoint-zero-power}。它与式 \eqref{eq:nonconservative-force} 中的可学习斜对称项 \(J_\theta(\xi)\nu_r\) 作用层次不同：前者来自动量坐标下的刚体/惯性耦合，后者用于表达数据诱导的升力或横向水动力类零功率作用。
 
 由于模型态中显式保存的是 \(\nu_r\) 而不是 \(p_r\)，ODE 右端在构造 \(\dot p_r\) 后再用正定逆质量将其映射回相对速度导数：
 \begin{equation}
@@ -605,7 +592,7 @@ AUVHamNODE 首先把位姿变化从可学习黑箱中分离出来，显式编码
   \right].
   \label{eq:complete-augmented-vector-field}
 \end{equation}
-若不使用海流或深度上下文，式 \eqref{eq:complete-augmented-vector-field} 中对应的零导数通道省略。该向量场是单个积分窗口内的受控开放系统模型：六自由度力学部分通过 \(D_\theta\)、\(J_\theta\) 和 \(\tau_\theta\) 组织非保守作用，执行器和环境通道提供外源条件，输出评估再由 \(\mathcal{T}_{m\to d}\) 回到数据空间。由此，本节定义为第~\ref{sec:energy-power-properties} 节的能量性质分析和第~\ref{sec:training-baselines-protocol} 节的训练、消融与验证协议提供同一个模型对象。
+若不使用海流或深度上下文，式 \eqref{eq:complete-augmented-vector-field} 中对应的零导数通道省略。该向量场是单个积分窗口内的受控开放系统模型：六自由度力学部分通过 \(D_\theta\)、\(J_\theta\) 和 \(\tau_\theta\) 组织非保守作用，执行器和环境通道提供外源条件，输出评估再由 \(\mathcal{T}_{m\to d}\) 回到数据空间。由此得到的同一模型对象同时支撑机械核心能量性质分析以及训练、消融与验证协议。
 
 \section{结构化模型的能量性质与功率关系}
 \label{sec:energy-power-properties}
@@ -660,7 +647,12 @@ AUVHamNODE 首先把位姿变化从可学习黑箱中分离出来，显式编码
 
 \begin{lemma}[余伴随耦合的零功率性]
   \label{lem:coadjoint-zero-power}
-  对任意 \(\nu_r=[v_r^\top,\omega^\top]^\top\) 和 \(p_r=[p_v^\top,p_\omega^\top]^\top\)，式 \eqref{eq:coadjoint-term} 给出的余伴随耦合项满足零功率性质 \(\nu_r^\top\ad_{\nu_r}^{\ast}p_r=0\)。
+  对任意 \(\nu_r=[v_r^\top,\omega^\top]^\top\) 和 \(p_r=[p_v^\top,p_\omega^\top]^\top\)，式 \eqref{eq:coadjoint-term} 给出的余伴随耦合项满足零功率性质
+  \begin{equation}
+    \nu_r^\top\ad_{\nu_r}^{\ast}p_r
+    =0 .
+    \label{eq:coadjoint-zero-power}
+  \end{equation}
 \end{lemma}
 \begin{proof}
   由式 \eqref{eq:coadjoint-term}，
@@ -671,7 +663,14 @@ AUVHamNODE 首先把位姿变化从可学习黑箱中分离出来，显式编码
 
 \begin{lemma}[势能功率配对]
   \label{lem:potential-power-pairing}
-  设 \(V_\theta(q)\) 为式 \eqref{eq:hamiltonian} 中的标量势能，保守广义力 \(f_\theta^V(q)\) 由式 \eqref{eq:potential-force} 经自动微分生成。在静水条件 \(v_c^n=0\)（此时 \(\dot x=Rv_r\)、\(\dot R=R\widehat\omega\)）下，有 \(\nu_r^\top f_\theta^V(q)=-\dd V_\theta(q)/\dd t\)，即式 \eqref{eq:potential-power-pairing} 成立；若 \(V_\theta\) 通过 \(z_{\mathrm{ref}}+x_3\) 依赖绝对深度，该依赖经 \(\nabla_x V_\theta\) 的第三分量进入平动项，配对仍成立。
+  设 \(V_\theta(q)\) 为式 \eqref{eq:hamiltonian} 中的标量势能，保守广义力 \(f_\theta^V(q)\) 由式 \eqref{eq:potential-force} 经自动微分生成。在静水条件 \(v_c^n=0\)（此时 \(\dot x=Rv_r\)、\(\dot R=R\widehat\omega\)）下，有
+  \begin{equation}
+    \nu_r^\top f_\theta^{V}(q)
+    =
+    -\frac{\dd}{\dd t}V_\theta(q).
+    \label{eq:potential-power-pairing}
+  \end{equation}
+  若 \(V_\theta\) 通过 \(z_{\mathrm{ref}}+x_3\) 依赖绝对深度，该依赖经 \(\nabla_x V_\theta\) 的第三分量进入平动项，配对仍成立。
 \end{lemma}
 \begin{proof}
   势能沿轨迹的导数为
