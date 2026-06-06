@@ -184,22 +184,22 @@ Fossen 型海洋航行器动力学把 AUV 的惯性、水动力、恢复力和�
 \end{equation}
 在正则坐标中，哈密顿方程具有斜对称结构
 \begin{equation}
-  \dot z=J\nabla H(z),
+  \dot z=\mathcal{J}\nabla H(z),
   \qquad
-  J=-J^\top ,
+  \mathcal{J}=-\mathcal{J}^\top ,
   \label{eq:hamiltonian-matrix-form}
 \end{equation}
-其中 \(z=[q^\top,p^\top]^\top\)。由于 \(J\) 斜对称，连续时间精确流满足 \(\dot H=\nabla H^\top J\nabla H=0\)。因此，能量守恒不是由“存在一个标量函数”单独产生的，而是由能量梯度和斜对称互连结构共同产生的。
+其中 \(z=[q^\top,p^\top]^\top\)。由于 \(\mathcal{J}\) 斜对称，连续时间精确流满足 \(\dot H=\nabla H^\top \mathcal{J}\nabla H=0\)。因此，能量守恒不是由“存在一个标量函数”单独产生的，而是由能量梯度和斜对称互连结构共同产生的。
 
 哈密顿神经网络（Hamiltonian Neural Network, HNN）将这一思想用于神经动力学学习 \citep{greydanus2019hamiltonian}：模型不直接拟合任意 \(\dot z\)，而是学习标量能量函数 \(H_\theta(z)\)，再由结构方程生成向量场。后续 SymODEN 和 Dissipative SymODEN 进一步把控制、耗散和不可直接观测动量纳入结构化学习框架 \citep{zhong2020symoden,zhong2020dissipativesymoden}。对 AUV 建模而言，本文借鉴的不是闭合保守系统的能量守恒假设，而是“机械存储函数 + 受限结构生成向量场”的建模原则；AUV 本身是受控开放系统，存在阻尼、推进器和舵面输入、海流影响、执行器滞后以及环境扰动。
 
 端口哈密顿系统把哈密顿能量方法扩展到开放、耗散和受控系统 \citep{vanderschaft2014porthamiltonian,vanderschaft2017l2gain}。有限维端口哈密顿系统常写为
 \begin{equation}
   \dot z=
-  \bigl(J(z)-\mathcal R(z)\bigr)\nabla H(z)
+  \bigl(\mathcal{J}(z)-\mathcal R(z)\bigr)\nabla H(z)
   +G(z)u,
   \qquad
-  J(z)=-J(z)^\top,\quad \mathcal R(z)\succeq0 .
+  \mathcal{J}(z)=-\mathcal{J}(z)^\top,\quad \mathcal R(z)\succeq0 .
   \label{eq:ph-template}
 \end{equation}
 若定义端口输出 \(y=G(z)^\top\nabla H(z)\)，则存储函数满足
@@ -215,7 +215,7 @@ Fossen 型海洋航行器动力学把 AUV 的惯性、水动力、恢复力和�
 
 机械系统的端口哈密顿形式与 Fossen 型功率结构存在自然联系：动量变量下的机械存储函数给出速度映射，Coriolis/向心项可解释为零功率耦合的一部分，阻尼对应耗散，推进器和舵面产生的广义力对应外部机械端口。因此，式 \eqref{eq:fossen-energy-balance} 可理解为海洋航行器动力学中的端口哈密顿风格功率平衡。但这一联系具有明确边界：实际 AUV 模型还包含经验舵桨项、执行器限幅、控制器闭环、海流外源和未建模环境扰动。若没有为这些部分引入额外状态、端口和储能定义，就不能把完整航行器--执行器--环境增强系统声称为闭合标准端口哈密顿系统。
 
-端口哈密顿神经模型或端口哈密顿风格神经模型把 \(H\)、\(J\)、\(\mathcal R\) 或 \(G\) 中的部分对象参数化为神经网络，同时保留斜对称、正定耗散和端口功率结构。相关综述指出，机器学习与端口哈密顿系统的结合主要围绕哈密顿学习、结构保持降阶、端口哈密顿实现和控制展开 \citep{cherifi2020overviewphml}。已有 pHNN 和伪哈密顿神经模型还强调了外部力、噪声观测与内部结构的分离：显式时变受迫系统、状态相关外部力以及输出误差噪声模型都可以在哈密顿或端口哈密顿风格框架中处理 \citep{desai2021porthamiltonian,eidnes2023pseudohamiltonian,moradi2026phnnoutputerror}。本文采用这些思想构造结构化连续时间假设空间，但只把可证明的端口语义限定在开放式六自由度机械子系统及其广义力--速度功率配对上；执行器状态、海流外源和由上下文驱动的非线性广义力分支在本文模型中作为受控开放系统的一部分处理。
+端口哈密顿神经模型或端口哈密顿风格神经模型把 \(H\)、\(\mathcal{J}\)、\(\mathcal R\) 或 \(G\) 中的部分对象参数化为神经网络，同时保留斜对称、正定耗散和端口功率结构。相关综述指出，机器学习与端口哈密顿系统的结合主要围绕哈密顿学习、结构保持降阶、端口哈密顿实现和控制展开 \citep{cherifi2020overviewphml}。已有 pHNN 和伪哈密顿神经模型还强调了外部力、噪声观测与内部结构的分离：显式时变受迫系统、状态相关外部力以及输出误差噪声模型都可以在哈密顿或端口哈密顿风格框架中处理 \citep{desai2021porthamiltonian,eidnes2023pseudohamiltonian,moradi2026phnnoutputerror}。本文采用这些思想构造结构化连续时间假设空间，但只把可证明的端口语义限定在开放式六自由度机械子系统及其广义力--速度功率配对上；执行器状态、海流外源和由上下文驱动的非线性广义力分支在本文模型中作为受控开放系统的一部分处理。
 
 在刚体与机器人动力学方向，已有研究把哈密顿或拉格朗日结构直接嵌入神经动力学模型。深度拉格朗日网络和拉格朗日神经网络通过学习拉格朗日量约束模型输出 \citep{lutter2019deeplagrangian,cranmer2020lagrangian}，并可借助显式约束进一步简化哈密顿与拉格朗日神经网络 \citep{finzi2020constrained}。与本文最接近的是在 \(\SE(3)\) 流形上构造的哈密顿与端口哈密顿神经常微分方程：它们以正定逆质量、势能和输入项参数化刚体能量结构，并用于位姿动力学学习与控制 \citep{duong2021se3hamnode,duong2024liegroupphnode}。本文与这一系列工作共享 \(\SE(3)\) 几何与能量结构化神经动力学的基本思路，差异在于面向受海流影响的水下航行器长期状态预测：其一，引入总体速度与相对水速度的状态契约（见第~\ref{sec:state-current-contract} 节），使机械功率配对在有海流条件下仍保持一致；其二，显式建模命令到广义力之间的一阶执行器滞后通道，而非把控制输入直接当作理想广义力或标准仿射输入；其三，把端口哈密顿语义严格限定在开放式六自由度机械子系统，而不声称完整航行器--执行器--环境系统闭合；其四，以长期自由递推、结构消融和内部物理诊断作为主要证据，而不仅依赖短时拟合误差或闭环控制性能。
 
@@ -532,7 +532,7 @@ AUVHamNODE 首先把位姿变化从可学习黑箱中分离出来，显式编码
 
 上述结构约束通过参数化直接落实在可训练函数类上。耗散分支在完整形式下输出下三角因子 \(L_D(\xi)\)，构造 \(D_\theta(\xi)=L_D(\xi)L_D(\xi)^\top\succeq0\)；对角阻尼变体改用非负对角元 \(\diag(d_\theta(\xi))\)。斜对称分支输出矩阵参数 \(A_\theta(\xi)\) 并反对称化为 \(J_\theta(\xi)=A_\theta(\xi)-A_\theta(\xi)^\top\)，恒满足 \(J_\theta=-J_\theta^\top\)。半正定耗散与斜对称零功率耦合因而是参数化的构造性质，为第~\ref{sec:energy-power-properties} 节的耗散与零功率性质提供直接的结构来源。
 
-这一分解对应三种不同的功能角色。耗散项用于表达阻尼和速度相关能量耗散；斜对称项用于表达不改变机械存储能量的耦合或升力类作用；可学习广义力 \(\tau_\theta\) 则作为执行器驱动和未建模非保守作用进入机械方程的广义力通道。这些角色在能量平衡中的作用由第~\ref{sec:energy-power-properties} 节的引理与命题形式化。由于真实水动力、舵桨作用和残差效应可能在统计上互相补偿，该分解只提供物理诱导的功能角色，不声称唯一恢复真实物理项。
+这一分解对应耗散、斜对称零功率耦合与可学习广义力三种不同的功能角色，各自的结构作用见表~\ref{tab:implementation-map}，其在能量平衡中的意义由第~\ref{sec:energy-power-properties} 节的引理与命题形式化。由于真实水动力、舵桨作用和残差效应可能在统计上互相补偿，该分解只提供物理诱导的功能角色，不声称唯一恢复真实物理项。
 
 执行器命令 \(u_c\) 不直接等同于实际广义力。实际执行器状态满足
 \begin{equation}
