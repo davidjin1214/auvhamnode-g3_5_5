@@ -397,7 +397,14 @@ Fossen 型海洋航行器动力学把 AUV 的惯性、水动力、恢复力和�
   \rightsquigarrow
   \{M_\theta,\ \ad_{\nu_r}^{\ast}p_r,\ J_\theta(\cdot)\nu_r,\ D_\theta(\cdot)\nu_r,\ V_\theta,\ \tau_\theta;\ \nu_r\}.
 \]
-这里的箭头表示功率功能角色进入模型定义的方式，不表示真实水动力来源与神经分支之间存在一一对应关系。例如，体坐标相对动量中的余伴随项和可学习斜对称分支都具有零功率角色，但前者来自坐标表示下的惯性耦合，后者只是用于表达数据诱导的零功率作用。表~\ref{tab:fossen-to-auvhamnode-roles} 进一步说明该对应关系的含义和边界。该表只说明功率角色如何约束模型设计，不构成新的能量平衡证明；能量性质仍需要在明确分析对象、连续时间假设和适用条件后单独陈述。
+这里的箭头表示功率功能角色进入模型定义的方式，不表示真实水动力来源与神经分支之间存在一一对应关系。例如，体坐标相对动量中的余伴随项和可学习斜对称分支都具有零功率角色，但前者来自坐标表示下的惯性耦合，后者只是用于表达数据诱导的零功率作用。图~\ref{fig:fossen-role-mapping} 以左右双栏直观对照该角色转换，表~\ref{tab:fossen-to-auvhamnode-roles} 进一步说明该对应关系的含义和边界。该表只说明功率角色如何约束模型设计，不构成新的能量平衡证明；能量性质仍需要在明确分析对象、连续时间假设和适用条件后单独陈述。
+
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=138mm]{figures/fossen_role_mapping.pdf}
+  \caption{Fossen 型功率角色到 AUVHamNODE 结构化组件的角色转换。左列为经典向量（唯象）Fossen 项，右列为几何、保结构的可训练组件：广义质量 \(\to\) 正定逆质量 \(M_\theta^{-1}\succ0\)（式~\eqref{eq:mass-parameterization}）；科氏--向心项 \(\to\) 体坐标余伴随耦合 \(\mathrm{ad}^{*}_{\nu_r}p_r\)（几何诱导、固定、零功率，式~\eqref{eq:coadjoint-term}）与可学习斜对称耦合 \(J_\theta=-J_\theta^\top\)（数据诱导的升力/横向类零功率作用）；阻尼 \(\to\) 半正定耗散 \(D_\theta\succeq0\)；恢复力 \(\to\) 标量势能 \(V_\theta\) 诱导的保守广义力 \(f_\theta^{V}\)（式~\eqref{eq:potential-force}）；外部广义力 \(\to\) 可学习广义力端口 \(\tau_\theta\)（式~\eqref{eq:nonconservative-force}）。蓝色表示参数化构造保证的结构先验，金色标记保结构函数类内由网络学习的形状。底部对照 Fossen 显式合力式（式~\eqref{eq:fossen}）与开放结构形式 \(\dot p_r=\mathrm{ad}^{*}_{\nu_r}p_r+f_\theta^{V}-D_\theta(\xi)\nu_r+J_\theta(\xi)\nu_r+\tau_\theta\)（式~\eqref{eq:momentum-dynamics}），功率配对统一使用相对水速度 \(\nu_r\)。该角色转换只约束未知项的组织方式，不声称唯一辨识真实水动力来源；\(\tau_\theta\) 是外部广义力端口而非固定输入矩阵 \(G(q)u\)，完整航行器--执行器--环境系统作为开放系统处理，不构成闭合端口哈密顿系统。各角色的适用边界详见表~\ref{tab:fossen-to-auvhamnode-roles}。}
+  \label{fig:fossen-role-mapping}
+\end{figure}
 
 \begin{table}[htbp]
   \centering
@@ -438,13 +445,13 @@ AUVHamNODE 的结构约束转换可以概括为三类。第一类是几何约束
 \section{结构化连续时间动力学模型}
 \label{sec:structured-continuous-model}
 
-第~\ref{sec:fossen-to-structure} 节归纳的几何约束、功率配对约束与开放广义力约束，在本节落实为增强状态上的连续时间向量场。AUVHamNODE 由增强状态、\(\SE(3)\) 位姿运动学、相对动量与机械存储函数、保守与非保守广义力分解、执行器滞后和外源通道共同定义，并为第~\ref{sec:energy-power-properties} 节的能量性质分析与第~\ref{sec:training-baselines-protocol} 节的验证协议提供统一的模型对象。
+第~\ref{sec:fossen-to-structure} 节归纳的几何约束、功率配对约束与开放广义力约束，在本节落实为增强状态上的连续时间向量场。AUVHamNODE 由增强状态、\(\SE(3)\) 位姿运动学、相对动量与机械存储函数、保守与非保守广义力分解、执行器滞后和外源通道共同定义，并为第~\ref{sec:energy-power-properties} 节的能量性质分析与第~\ref{sec:training-baselines-protocol} 节的验证协议提供统一的模型对象。图~\ref{fig:method-overview} 作为本章主图，总览了该模型对象的整体结构组织与三类语义约束。
 
 \begin{figure}[htbp]
   \centering
-  \includegraphics[width=138mm]{figures/model_definition_overview.pdf}
-  \caption{AUVHamNODE 增强状态与连续时间向量场定义示意图。数据态经速度转换进入模型态，执行器滞后、外源上下文 \(c\)（海流和深度）及特征接口条件化广义力分支，并与 \(\SE(3)\) 运动学和动量流共同组成 ODE 流。虚线箭头表示条件化输入而非机械储能关系；该图不表示完整航行器--执行器--环境系统的闭合储能结构，机械核心功率关系见图~\ref{fig:mechanical-core-power-structure}。}
-  \label{fig:model-definition-overview}
+  \includegraphics[width=138mm]{figures/method_overview_hero.pdf}
+  \caption{AUVHamNODE 核心方法与完整模型对象（本章主图）。数据态 \(s\) 经速度契约 \(\mathcal{T}_{d\to m}\)（式~\eqref{eq:velocity-contract}）转换为增强模型态 \(y\)，作为结构化连续时间向量场 \(\dot y=F_\theta(y)\)（式~\eqref{eq:complete-augmented-vector-field}）的状态；在单个积分窗口内积分得 \(\hat y(t)\)，再经 \(\mathcal{T}_{m\to d}\) 映回数据空间得输出 \(\hat s\)。配色区分三类语义：蓝色为参数化构造保证的结构先验；金色标记保结构约束类内由网络学习的形状，其药丸文字给出对应约束，如正定逆质量 \(M_\theta^{-1}\succ0\)（式~\eqref{eq:mass-parameterization}）、半正定耗散 \(D_\theta\succeq0\) 与斜对称零功率耦合 \(J_\theta=-J_\theta^\top\)（式~\eqref{eq:nonconservative-force}）、势能诱导的保守广义力 \(V_\theta\!\to\!f_\theta^{V}\)（式~\eqref{eq:potential-force}）；灰色为外源开放端口。虚线框为开放式六自由度机械核心，内含 \(\SE(3)\) 运动学与体坐标余伴随零功率耦合 \(\mathrm{ad}^{*}_{\nu_r}p_r\)（式~\eqref{eq:coadjoint-term}）等固定结构。其中执行器为命令驱动的一阶滞后通道（式~\eqref{eq:actuator-dynamics}），海流 \(v_c^n\) 与深度 \(z_{\mathrm{ref}}\) 为分段常值外源上下文，三者均位于机械核心之外、经条件化虚线箭头接入；\(\tau_\theta\) 是外部广义力端口而非固定输入矩阵 \(G(q)u\)。普通 ODE 求解器不严格保持 \(\SO(3)\)，正交性与能量仅作内部诊断；完整航行器--执行器--环境系统按受控开放系统处理，不构成闭合端口哈密顿系统。Fossen 功率角色到结构组件的转换见第~\ref{sec:fossen-to-structure} 节，速度契约与机械核心功率关系的细节分别见图~\ref{fig:velocity-state-contract} 与图~\ref{fig:mechanical-core-power-structure}。}
+  \label{fig:method-overview}
 \end{figure}
 
 \subsection{增强状态与模型态空间}
