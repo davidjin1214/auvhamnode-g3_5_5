@@ -379,7 +379,7 @@ Fossen 型海洋航行器动力学把 AUV 的惯性、水动力、恢复力和�
   =
   \mathcal{T}_{m\to d}(\hat y(t_i)).
 \end{equation}
-由此，数据态与模型态在位置、姿态、执行器状态和外源变量上共享同一数值，仅在线速度表示上通过 \(\mathcal{T}_{d\to m}\) 与 \(\mathcal{T}_{m\to d}\) 互换。这一状态契约使 \(\SE(3)\) 运动学、机械存储函数、训练损失和长期预测指标在有海流条件下指向同一组速度与能量变量；训练监督与结果报告如何在两个空间之间取用这些变量，由第~\ref{sec:training-baselines-protocol} 节的训练与验证协议规定。
+由此，数据态与模型态在位置、姿态、执行器状态和外源变量上共享同一数值，仅在线速度表示上通过 \(\mathcal{T}_{d\to m}\) 与 \(\mathcal{T}_{m\to d}\) 互换。这一状态契约使 \(\SE(3)\) 运动学、机械存储函数、训练损失和长期预测指标在有海流条件下指向同一组速度与能量变量；据此，训练中速度监督在模型态对相对水速度 \(\nu_r\) 进行，位置、姿态等可观测量则在数据态解释；训练与结果报告在两个空间之间取用这些变量的具体方式，由第~\ref{sec:training-baselines-protocol} 节的训练与验证协议规定。
 
 \section{从六自由度能量--功率关系到结构保持学习模型}
 \label{sec:fossen-to-structure}
@@ -486,7 +486,7 @@ AUVHamNODE 首先把位姿变化从可学习黑箱中分离出来，显式编码
   \dot x=R(v_r+R^\top v_c^n)=Rv_r+v_c^n .
   \label{eq:position-kinematics-current}
 \end{equation}
-这一写法同时满足两个要求：位置相对于惯性系推进，水动力相关分支仍以相对水速度为主要机械变量。连续时间层面，若 \(R(0)\in\SO(3)\)，则 \(\dot R=R\widehat\omega\) 与 \(\SO(3)\) 的切空间相容 \citep{bullo2004geometric,hairer2006geometric}；离散数值积分仍可能引入正交性和行列式漂移，因此这种运动学约束应理解为连续时间向量场结构，而不是普通 ODE 求解器的严格李群积分保证。
+这一写法同时满足两个要求：位置相对于惯性系推进，水动力相关分支仍以相对水速度为主要机械变量。连续时间层面，若 \(R(0)\in\SO(3)\)，则 \(\dot R=R\widehat\omega\) 与 \(\SO(3)\) 的切空间相容 \citep{bullo2004geometric,hairer2006geometric}；离散数值积分仍可能引入正交性和行列式漂移，因此这种运动学约束应理解为连续时间向量场结构，而不是普通 ODE 求解器的严格李群积分保证。相应地，训练中姿态误差以 \(\SO(3)\) 测地距离度量、并辅以正交性正则，使监督作用于旋转群流形上的几何偏离而非旋转矩阵的欧氏差（损失形式见第~\ref{subsec:training-objective} 小节式~\eqref{eq:training-loss}）。
 
 \subsection{相对动量与机械存储函数}
 
@@ -839,14 +839,7 @@ AUVHamNODE 首先把位姿变化从可学习黑箱中分离出来，显式编码
 \subsection{训练目标}
 \label{subsec:training-objective}
 
-训练以控制块为基本单位（第~\ref{subsec:data-generation} 小节）：在单个控制块内，模型将控制命令与海流等外源上下文取为分段常值（在该积分窗口内冻结于块初值、其导数为零），并从块初值积分生成预测轨迹，
-\begin{equation}
-  y_0=\mathcal{T}_{d\to m}(s_0),\qquad
-  \hat y(t_i)=\Phi_\theta(t_i;t_0,y_0),\qquad
-  \hat s_i=\mathcal{T}_{m\to d}(\hat y(t_i)),
-  \label{eq:block-prediction}
-\end{equation}
-其中 \(\mathcal{T}_{d\to m}\) 与 \(\mathcal{T}_{m\to d}\) 为式~\eqref{eq:data-to-model-state} 与式~\eqref{eq:model-to-data-state} 的数据态--模型态转换，\(\Phi_\theta\) 为式~\eqref{eq:complete-augmented-vector-field} 向量场经神经常微分方程积分得到的流映射。目标轨迹同样转换到模型态，使有海流样本的速度监督作用于相对水速度 \(\nu_r\)（依式~\eqref{eq:velocity-contract} 的速度契约），位置、姿态与执行器状态在两种表示中保持同一数值。数据真值的海流在控制块内仍按仿真步缓慢漂移（第~\ref{subsec:data-generation} 小节），而模型在训练与评估中将其近似为该块内的分段常值；这一近似使块级初值问题良定，海流的连续时变性则由块间更新与长期评估承接（第~\ref{subsec:rollout-eval} 小节）。
+训练以控制块为基本单位（第~\ref{subsec:data-generation} 小节）。单个控制块内的预测沿用第~\ref{sec:state-current-contract} 节的受控初值问题：将控制命令与海流等外源上下文取为分段常值，从块初值 \(y_0=\mathcal{T}_{d\to m}(s_0)\) 积分得 \(\hat y(t_i)=\Phi_\theta(t_i;t_0,y_0)\)，再经 \(\mathcal{T}_{m\to d}\) 映回数据态得预测 \(\hat s_i\)。目标轨迹同样转换到模型态，使有海流样本的速度监督作用于相对水速度 \(\nu_r\)（第~\ref{sec:state-current-contract} 节速度契约），位置、姿态与执行器状态在两种表示中保持同一数值。数据真值的海流在控制块内仍按仿真步缓慢漂移（第~\ref{subsec:data-generation} 小节），而模型在训练与评估中将其近似为该块内的分段常值；这一近似使块级初值问题良定，海流的连续时变性则由块间更新与长期评估承接（第~\ref{subsec:rollout-eval} 小节）。
 
 一个典型的加权训练目标可写为
 \begin{equation}
@@ -860,7 +853,7 @@ AUVHamNODE 首先把位姿变化从可学习黑箱中分离出来，显式编码
   +\lambda_{\SO}\mathcal{L}_{\SO(3)} .
   \label{eq:training-loss}
 \end{equation}
-姿态误差以旋转测地距离 \(d_{\SO(3)}(\hat R,R)\) 度量、而非旋转矩阵的欧氏差，使监督直接作用于 \(\SO(3)\) 流形上的几何偏离，并对脱离旋转群的非物理偏移保持敏感；\(\mathcal{L}_{\SO(3)}\) 为旋转矩阵的正交性与行列式正则项。各分量残差在计入前按其经验标准差归一，使不同量纲的状态分量在目标中可比；默认位置、姿态与相对速度项等权（权重 \(1\)），执行器项权重取 \(0.2\)、\(\SO(3)\) 正则权重取 \(10^{-3}\)，连同 AdamW 权重衰减 \(10^{-4}\) 等具体取值记录于运行配置。速度项以相对水速度为监督对象，与第~\ref{sec:state-current-contract} 节的速度契约一致；评估时预测轨迹经 \(\mathcal{T}_{m\to d}\) 回到数据态，终端位置、姿态与总体速度等可观测量在数据空间解释（第~\ref{subsec:metrics} 小节）。连续时间积分、优化器与网络容量等实现细节统一列于表~\ref{tab:experimental-config}。
+姿态误差以旋转测地距离 \(d_{\SO(3)}(\hat R,R)\) 度量、\(\mathcal{L}_{\SO(3)}\) 为旋转矩阵的正交性与行列式正则项，其几何理由（监督作用于旋转群流形而非欧氏差）见第~\ref{sec:structured-continuous-model} 节。各分量残差在计入前按其经验标准差归一，使不同量纲的状态分量在目标中可比；默认位置、姿态与相对速度项等权（权重 \(1\)），执行器项权重取 \(0.2\)、\(\SO(3)\) 正则权重取 \(10^{-3}\)，连同 AdamW 权重衰减 \(10^{-4}\) 等具体取值记录于运行配置。评估时预测轨迹经 \(\mathcal{T}_{m\to d}\) 回到数据态，终端位置、姿态与总体速度等可观测量在数据空间解释（第~\ref{subsec:metrics} 小节）。连续时间积分、优化器与网络容量等实现细节统一列于表~\ref{tab:experimental-config}。
 
 \begin{table}[htbp]
   \centering
