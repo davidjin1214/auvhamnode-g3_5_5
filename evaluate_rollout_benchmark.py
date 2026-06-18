@@ -26,6 +26,7 @@ from rollout_benchmark_engine import (
     summarize_time_series,
 )
 from rollout_benchmark_reporting import (
+    dump_example_trajectories,
     export_diagnostic_rollout_plots,
     format_wall_time,
     plot_error_growth,
@@ -376,6 +377,15 @@ def build_parser():
         default=6,
         help="Maximum number of per-case diagnostic plots to export",
     )
+    parser.add_argument(
+        "--dump_example_trajectories",
+        action="store_true",
+        help=(
+            "Read-only: also serialise the predicted vs ground-truth sequences of "
+            "the selected example rollouts to example_trajectories/*.npz for offline "
+            "figure rendering. Does not change any metric, threshold, or eval caliber."
+        ),
+    )
     return parser
 
 
@@ -603,6 +613,8 @@ def run_single_benchmark(
     )
     examples = select_example_rollouts(evaluations, max_horizon=max_rollout_time)
     plot_example_rollouts(examples, output_dir / "example_rollouts.png")
+    if getattr(args, "dump_example_trajectories", False):
+        dump_example_trajectories(examples, output_dir / "example_trajectories")
 
     summary_path = output_dir / "summary.txt"
     if summary_path.exists():

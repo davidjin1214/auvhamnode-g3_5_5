@@ -415,6 +415,43 @@ def plot_example_rollouts(evaluations, output_path):
     plt.close(fig)
 
 
+def dump_example_trajectories(evaluations, output_dir):
+    """Read-only serialisation of the predicted vs ground-truth sequences for the
+    selected example rollouts, for offline figure rendering.
+
+    This is purely additive: it writes out the arrays that ``plot_example_rollouts``
+    already holds in memory and touches no metric, threshold, rollout integration,
+    or evaluation caliber. Default benchmark behaviour is unchanged unless the
+    ``--dump_example_trajectories`` flag is set.
+    """
+    import numpy as np
+    from pathlib import Path
+
+    out = Path(output_dir)
+    out.mkdir(parents=True, exist_ok=True)
+    written = []
+    for evaluation in evaluations:
+        rollout = evaluation.rollout
+        path = out / f"{rollout.scenario}_seed{rollout.seed}.npz"
+        np.savez(
+            path,
+            scenario=rollout.scenario,
+            seed=rollout.seed,
+            time=rollout.time,
+            gt_pos=rollout.gt_pos,
+            pred_pos=rollout.pred_pos,
+            gt_rotation=rollout.gt_rotation,
+            pred_rotation_raw=rollout.pred_rotation_raw,
+            gt_nu=rollout.gt_nu,
+            pred_nu=rollout.pred_nu,
+            pred_energy=rollout.pred_energy,
+            completed_time=rollout.completed_time,
+            failure_reason=rollout.failure_reason,
+        )
+        written.append(path)
+    return written
+
+
 def find_evaluation_by_case(evaluations, case):
     for evaluation in evaluations:
         rollout = evaluation.rollout

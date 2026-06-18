@@ -77,6 +77,7 @@ MIRROR = "g3_5_5"
 SUPPLEMENT_CELLS = [
     ("ablate_diag_damping", "clean_train"),   # L2 ladder: coupled->diagonal damping
     ("ablate_bu_only", "clean_train"),        # L2 ladder: actuation conditioning
+    ("phnode_merged_force", "clean_train"),   # L2 ladder: force-decomposition axis (keep energy core, merge D/J/B)
     ("blackbox_fullstate", "noisy_train"),    # L1 stability under iid noise line
     ("se3_momentum_blackbox", "noisy_train"),
     ("se3_accel_blackbox", "noisy_train"),
