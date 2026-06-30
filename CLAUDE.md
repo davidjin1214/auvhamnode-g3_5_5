@@ -57,7 +57,7 @@ Pipeline: **Data → Training → Rollout Eval → Catalog/Analysis**
 
 ## Conventions
 
-- **Noise:** IC-only, profile-based. Profiles: `clean`, `nominal_train`, `nominal_eval`, `degraded_eval`, `heading_biased_eval`. Budgets are Remus100 DR/inertial-grounded — see `docs/noise_model_design.md`.
+- **Noise:** IC-only, profile-based. Profiles: `clean`, `nominal_train`, `nominal_eval`, `degraded_eval`, `heading_biased_eval`, `current_bias_eval` (OC checkpoints only; auto-selected only under the `remus100_ins` reference, not the default `remus100_dr`). Budgets are Remus100 DR/inertial-grounded — see `docs/noise_model_design.md`.
 - **Run artifacts:** every training run writes `config.json`, `training_history.pkl` (prefer over `.log`), `best_model.pt`, `block_evaluation.json`, `heldout_evaluation.json`. New evidence-bearing runs must also write `_audit_meta/{code_revision,environment}.txt`. Rollout outputs go under `rollout_benchmark/` in the same run dir.
 - **Catalog:** CSVs are generated — never hand-edit. The only hand-editable sidecar is `analysis/oc_data_catalog/evidence_status_overrides.csv`. Default to `canonical_rollout_*` tables; touch raw `rollout_*` only when all variants are needed.
 - **Evidence gate:** before citing any catalog row, check `evidence_status`. `phnode_full clean seed42/46` are `stale_environment_drift` — use the cleanrun v1 baseline instead (`docs/phase1a_oc_v4lite_cleanrun_v1_report.md`).

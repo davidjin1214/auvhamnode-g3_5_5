@@ -215,6 +215,7 @@ Important profiles:
 - `nominal_eval`
 - `degraded_eval`
 - `heading_biased_eval`
+- `current_bias_eval` (OC checkpoints only; auto-selected only under the `remus100_ins` reference)
 
 Recommended training profile:
 
