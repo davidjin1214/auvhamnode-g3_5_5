@@ -1,6 +1,6 @@
 # AUVHamNODE 学位论文章节写作入口
 
-> 更新时间：2026-05-31
+> 更新时间：2026-06-30
 > 目的：梳理 `paper/` 下 AUVHamNODE 中文学位论文章节相关文档的定位、阅读顺序和后续写作进度。
 > 使用原则：本目录中的指南和材料包服务于正式正文写作，但它们本身不是正文。正式正文应保留定义、假设、命题、实验协议、证据边界和讨论，避免保留“建议如何写”“后续再处理”等内部备忘录语气。
 
@@ -16,6 +16,9 @@
 | [auvhamnode_thesis_chapter_prewrite_pack_zh.md](auvhamnode_thesis_chapter_prewrite_pack_zh.md) | 学位论文章节开写前材料包 | 集中整理符号表、claim-evidence 表、理论到代码映射、实验矩阵、图表清单、正文种子段落和待补材料 | 真正开始写正文前，作为底稿索引和任务清单使用 |
 | [drafts/auvhamnode_thesis_chapter_review_notes_zh.md](drafts/auvhamnode_thesis_chapter_review_notes_zh.md) | 旧稿审查意见与重写约束 | 记录旧中间稿的问题、可保留素材、重写原则和新稿结构 | 继续写正文前，先确认不重复旧稿问题 |
 | [drafts/auvhamnode_thesis_chapter_structure_reaudit_20260530.md](drafts/auvhamnode_thesis_chapter_structure_reaudit_20260530.md) | 终稿级结构复审与重构追踪 | 复核第 1.4 节以后章节功能、理论重复、证据链和 `v4_lite` 口径问题，并给出后续修改追踪表 | 进入正文重构前，用作任务清单和进度追踪 |
+| [drafts/auvhamnode_section_1_6_energy_review_20260602.md](drafts/auvhamnode_section_1_6_energy_review_20260602.md) | 第 1.6 节专项复核与精修方案 | 记录“结构化模型的能量性质与功率关系”的机械核心边界、命题条件、海流附加功率项和图文一致性精修方案 | 修改第 1.6 节正文或机械核心功率图前使用 |
+| [drafts/figure_review_prompt_20260607.md](drafts/figure_review_prompt_20260607.md) | 新增两张插图的独立审查 prompt | 自包含审查指令：§1.3 `fig:method-architecture-overview` 与 §1.4 `fig:fossen-role-mapping` 两张图及 caption 草稿的审查范围、红线、维度与改进授权（含绕过沙箱的渲染路径与脚本/产物路径） | 在新对话中复审这两张方法图与图注、或据此重画时 |
+| [drafts/section_1_7_rewrite_draft_v10_zh.tex](drafts/section_1_7_rewrite_draft_v10_zh.tex)（含 v2–v9 逐版稿与 [v6](drafts/section_1_7_v6_review_report_20260616_zh.md)/[v7](drafts/section_1_7_v7_review_report_20260617_zh.md) 评审报告） | 第 1.7 节扩展重写工作稿 | 记录第 1.7 节『训练目标/实验设置/验证协议』从 v2 起的逐版扩展重写与三方独立评审反馈，作为并入主稿前的迭代底稿 | 修改第 1.7 节正文或核对其评审反馈时 |
 | [drafts/auvhamnode_thesis_chapter_zh.tex](drafts/auvhamnode_thesis_chapter_zh.tex) | 当前正式重写主稿 | 当前文件已形成 10 节完整章节初稿：第 1--7 节完成方法、能量性质和验证协议；第 8 节已按 current evidence、B1 anomaly 口径和两级结构证据框架写入结果；第 9--10 节已同步讨论和小结；PDF 已生成 | 后续终稿级复核、局部润色和图表补强的唯一主稿入口 |
 | [drafts/deprecated/auvhamnode_thesis_chapter_zh_framework_20260520.tex](drafts/deprecated/auvhamnode_thesis_chapter_zh_framework_20260520.tex) | 已降级旧框架稿 | 保留 2026-05-20 前 10 节框架、旧标题体系和已迁移正文素材 | 仅在追溯旧框架或迁移遗漏素材时查阅 |
 | [drafts/deprecated/auvhamnode_thesis_chapter_zh_intermediate_20260519.tex](drafts/deprecated/auvhamnode_thesis_chapter_zh_intermediate_20260519.tex) | 已降级旧中间稿 | 保留旧稿公式、段落和表格素材，但不再作为主稿逐句修改 | 仅在迁移素材时查阅 |
@@ -180,13 +183,14 @@
 | 旧中间稿审查与降级 | done | 审查意见文档 + deprecated 旧稿 | 旧稿只作素材库，不再逐句修改 |
 | 旧框架稿降级 | done | `drafts/deprecated/auvhamnode_thesis_chapter_zh_framework_20260520.tex` | 旧 10 节框架只作历史快照和素材备份 |
 | 正文草稿 | done（完整章节初稿） | `drafts/auvhamnode_thesis_chapter_zh.tex` 已形成 10 节完整章节：§1--7 完成方法、能量性质和验证协议；§8 已写入 current evidence 主表、鲁棒性表和内部诊断表；§9 讨论、§10 小结和摘要已同步两级证据口径；R9 正式中文表达优化和最新 PDF 编译已完成 | 下一步做终稿级复核：表格数值核对、引用/术语一致性、图表补强和必要时重新编译 |
+| 第 1.7–1.10 节终稿级扩展重写 | in_progress | 第 1.7 节『实验设置/验证协议』重写至 v6 并有 v7–v10 草稿与 v6/v7 评审报告；§1.8 已完成扩展重写落稿（6 小节重构 + 7 图嵌入 + headline 三轴细化），§1.9 治理判据按可复现性重述、A2/A4/M2 并入主消融不标来源，§1.10 同步 | 将 v7–v10 评审反馈并入主稿后做终稿级一致性复核与重新编译 |
 | 第 1--2 节文献支撑返工 | done | 第 1 节已重写为以 AUV 运动建模为中心、长期状态预测为任务场景的 introduction v4；第 2 节已扩写为长论文级“相关建模基础”v1，并补强 Fossen 功率边界、受控时序预测、Neural ODE、科学机器学习、哈密顿/端口哈密顿神经模型和文献角色归纳表；2026-05-23 复核中于第 2.5 节增补 SE(3) (p)H-NODE 与拉格朗日神经网络对标差异段及李群几何积分文献 | 对标文献著录已于 2026-05-23 核实补全（见“对标文献著录核实”项）；终稿前完成 2024--2026 citation audit |
 | 对标文献著录核实 | done | `duong2021se3hamnode`（RSS 2021，vol. XVII，DOI 10.15607/RSS.2021.XVII.086）与 `duong2024liegroupphnode`（IEEE T-RO，vol. 40，pp. 3695--3715，2024，DOI 10.1109/TRO.2024.3428433）著录已核实补全；Lagrangian NN/DeLaN/Finzi、李群几何积分等其余条目著录无误 | 注：当前 `plainnat.bst` 不打印 DOI；若终稿需显示 DOI，需换用支持 DOI 的样式或加载相应宏包 |
 | 问题定义正文 | done | 当前主稿第 3 节已扩写为完整正文 v1，加入三层速度变量关系图，并补充状态表示与外源变量假设、仿真基准可观测性边界 | 后续仅随模型章符号和外源变量定义调整做一致性修订 |
 | 前 3 节正式表达润色 | done | 已收束第 1 节过强文献空缺表述，改写第 2--3 节残留章节调度语气，并校正相对水速度/总体速度表述 | 前 3 节后续只随第 4--5 节符号、边界和引用一致性做局部修订 |
 | Fossen-to-structure 桥梁节 | done | 当前主稿第 4 节已全面修订为“从六自由度能量--功率关系到结构保持学习模型”，包含非编号结构映射和桥接表，明确 Fossen 功率角色如何转化为正定质量、势能、耗散、零功率耦合、广义力通道与 \(\nu_r\) 功率配对约束 | 后续只随第 1.5--1.6 节接口一致性做局部回修 |
-| 方法正文 | done | 当前主稿第 5 节“结构化连续时间动力学模型”已完成定义节纯化，并接入模型定义总览图；增强模型态、SE(3) 运动学、相对动量、机械存储、保守/非保守广义力、执行器通道和相对速度动力学已形成统一模型对象 | 下一步转入第 1.6 节能量性质与功率关系的终稿级复核，重点检查机械核心边界、命题条件和图文一致性 |
-| 能量性质正文 | done | 2026-05-24 将第 6 节按 4 子节展开（六自由度机械子系统与存储函数 / 耗散、零功率耦合与广义力功率 / 静水条件下的功率平衡命题和证明 / 海流、执行器与增强状态的适用范围），保留并复用第 5 节定义与公式、不重复推导，命题加 `\label` 可交叉引用，PDF 已重新编译 | 后续只随第 5/7 节符号与边界一致性做局部修订 |
+| 方法正文 | done | 当前主稿第 5 节“结构化连续时间动力学模型”已完成定义节纯化，并接入模型定义总览图；增强模型态、SE(3) 运动学、相对动量、机械存储、保守/非保守广义力、执行器通道和相对速度动力学已形成统一模型对象 | 第 1.6 节专项复核已完成；后续按专项文档做接口一致性局部精修 |
+| 能量性质正文 | done（待局部精修） | 2026-05-24 将第 6 节按 4 子节展开（六自由度机械子系统与存储函数 / 耗散、零功率耦合与广义力功率 / 静水条件下的功率平衡命题和证明 / 海流、执行器与增强状态的适用范围），保留并复用第 5 节定义与公式、不重复推导，命题加 `\label` 可交叉引用，PDF 已重新编译；2026-06-02 已建立第 1.6 专项复核文档 | 按 `drafts/auvhamnode_section_1_6_energy_review_20260602.md` 精修半正定耗散、深度上下文、海流附加功率项和机械核心功率图口径 |
 | 评估设置正文 | done | 2026-05-24 将第 7 节补强为 5 子节，把原合并子节拆为“基线模型与结构消融链条”（含模型比较表）与“结构消融设置”（4 项消融逐项映射到第 6 节结构性质）；随后已补齐 current evidence、证据状态、基线文献锚定和 v4_lite 协议敏感性边界 | 后续只随第 8 节表格和最终术语统一做局部一致性修订 |
 | T2 当前证据重跑 | done | 4 模型×{clean,iid,v4lite}×seed42-46 已回灌并分析；定向导出 `scripts/export_section8_t2_evidence.py` → `analysis/section8_current_evidence/{per_seed_long,aggregate}.csv`（builder 已加 `sweep_oc_phase1a_*` 护栏、本地 canonical 已洗净；§8 仍只读定向导出） | 见 §3 决策块 2026-05-25 第二/三条；结论触发 §8 叙事重定 |
 | 结果主表导出 | done（current evidence, B1） | per_seed_long.csv（300 行，含 `train_nbad`/`train_anomaly`）+ aggregate.csv（60 行，B1：剔 flagged seed 后 mean+median of seed-medians，留 `excluded_seeds`/`excluded_seed_posmed`）已出；clean phnode_full=0.68m(N=5)、no_lift=0.83m(N=4) | 已用于 §8 主表；终稿前复核 TeX 表格数值与 CSV 一致 |
@@ -294,7 +298,9 @@
 
 当前主稿已经完成从“证据就绪”到“结果落稿”的转换。第 8 节采用 current evidence 定向导出 `analysis/section8_current_evidence/`，并按 B1 训练异常、rollout 发散、co-primary 指标和两级结构证据框架写入结果；第 9 节和第 10 节已经按这些结果同步讨论与小结。因此后续不应再按“等待写 §8”推进，而应进入终稿级复核。
 
-2026-06-02 已完成第 1.5 节终稿级模型定义复核与模型定义总览图接入。该图采用少公式、强结构语义的英文标签，只作为第 1.5 的定义导航，不替代第 1.6 的机械核心功率图，也不表达完整航行器--执行器--环境系统的闭合储能结构。下一轮优先处理第 1.6 节：复核机械核心定义、功率角色、引理/命题证明、海流和执行器边界，并检查其与第 1.4 桥接表和第 1.5 向量场定义的一致性。
+2026-06-02 已完成第 1.5 节终稿级模型定义复核与模型定义总览图接入。该图采用少公式、强结构语义的英文标签，只作为第 1.5 的定义导航，不替代第 1.6 的机械核心功率图，也不表达完整航行器--执行器--环境系统的闭合储能结构。同日新增 `drafts/auvhamnode_section_1_6_energy_review_20260602.md`，用于追踪第 1.6 节机械核心定义、命题条件、海流附加功率项和图文一致性的局部精修方案。
+
+2026-06-30 §1.7–§1.10 终稿级扩展重写进展：第 1.7 节『实验设置/训练目标与验证协议』已重写至 v6 并产出 v7–v10 工作稿与 `drafts/section_1_7_v{6,7}_review_report_*_zh.md` 两份评审报告；第 1.8 节已完成扩展重写落稿（6 小节重构 + 7 图嵌入 + headline 三轴细化），§1.9 治理判据按可复现性重述、A2/A4/M2 并入主消融不标来源，§1.10 同步。v7–v10 评审反馈并入主稿后仍需做终稿级一致性复核与重新编译。
 
 2026-05-30 已完成本轮最小核查：
 

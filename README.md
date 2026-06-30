@@ -27,42 +27,9 @@ The current repo state already includes:
 - summary/report scripts for model sweeps
 - a structured result catalog under `analysis/oc_data_catalog/`
 - a human-readable experiment progress tracker
-- a `paper/` writing workspace for the AUVHamNODE thesis chapter, including current rewrite notes and the active LaTeX draft skeleton
+- a `paper/` writing workspace for the AUVHamNODE thesis chapter, including current rewrite notes and the active LaTeX draft (complete 10-section chapter, PDF compiled, under final-pass revision)
 
-If you are new to the repo, the most useful current documents are:
-
-- [EXPERIMENT_PROGRESS_TRACKER.md](/Users/xiangjin/Library/CloudStorage/OneDrive-Personal/我的/Code/auv_se3node/g3_5_5/EXPERIMENT_PROGRESS_TRACKER.md)
-  Current experiment status, citation status, and open follow-up work
-- [docs/repo_structure_audit.md](/Users/xiangjin/Library/CloudStorage/OneDrive-Personal/我的/Code/auv_se3node/g3_5_5/docs/repo_structure_audit.md)
-  Current map of active, generated, deprecated, smoke/probe, and delete-candidate files
-- [docs/experiment_stages_overview.md](/Users/xiangjin/Library/CloudStorage/OneDrive-Personal/我的/Code/auv_se3node/g3_5_5/docs/experiment_stages_overview.md)
-  Current phase-by-phase map of training era, cloud mirror, and evidence status
-- [docs/phnode_realistic_validation_plan.md](/Users/xiangjin/Library/CloudStorage/OneDrive-Personal/我的/Code/auv_se3node/g3_5_5/docs/phnode_realistic_validation_plan.md)
-  Current realism-oriented research plan
-- [docs/phnode_realistic_validation_execution_plan.md](/Users/xiangjin/Library/CloudStorage/OneDrive-Personal/我的/Code/auv_se3node/g3_5_5/docs/phnode_realistic_validation_execution_plan.md)
-  Current execution plan for realistic validation
-- [docs/phase1_realistic_validation_plan.md](/Users/xiangjin/Library/CloudStorage/OneDrive-Personal/我的/Code/auv_se3node/g3_5_5/docs/phase1_realistic_validation_plan.md)
-  Current Phase-1 validation plan
-- [docs/phase1a_oc_v4lite_cleanrun_v1_report.md](/Users/xiangjin/Library/CloudStorage/OneDrive-Personal/我的/Code/auv_se3node/g3_5_5/docs/phase1a_oc_v4lite_cleanrun_v1_report.md)
-  Phase-1A `v4-lite` cleanrun v1 decision package and limitations
-- [docs/provenance_audit_phnode_full_clean.md](/Users/xiangjin/Library/CloudStorage/OneDrive-Personal/我的/Code/auv_se3node/g3_5_5/docs/provenance_audit_phnode_full_clean.md)
-  Audit of catalog-era `phnode_full clean` seed42/46 fragility and its current citation status
-- [docs/noise_model_design.md](/Users/xiangjin/Library/CloudStorage/OneDrive-Personal/我的/Code/auv_se3node/g3_5_5/docs/noise_model_design.md)
-  Current noisy-IC design background
-- [docs/oc_experiments_comprehensive_report.md](/Users/xiangjin/Library/CloudStorage/OneDrive-Personal/我的/Code/auv_se3node/g3_5_5/docs/oc_experiments_comprehensive_report.md)
-  Main experiment summary
-- [docs/oc_followup_results_p1_p2.md](/Users/xiangjin/Library/CloudStorage/OneDrive-Personal/我的/Code/auv_se3node/g3_5_5/docs/oc_followup_results_p1_p2.md)
-  Follow-up results that update parts of the main summary
-- [docs/oc_data_catalog_plan.md](/Users/xiangjin/Library/CloudStorage/OneDrive-Personal/我的/Code/auv_se3node/g3_5_5/docs/oc_data_catalog_plan.md)
-  Data catalog design and current organization
-- [docs/oc_data_catalog_dictionary.md](/Users/xiangjin/Library/CloudStorage/OneDrive-Personal/我的/Code/auv_se3node/g3_5_5/docs/oc_data_catalog_dictionary.md)
-  Field dictionary for the catalog tables
-- [docs/oc_result_selection_policy.md](/Users/xiangjin/Library/CloudStorage/OneDrive-Personal/我的/Code/auv_se3node/g3_5_5/docs/oc_result_selection_policy.md)
-  Canonical rollout selection rules
-- [docs/oc_catalog_template_usage.md](/Users/xiangjin/Library/CloudStorage/OneDrive-Personal/我的/Code/auv_se3node/g3_5_5/docs/oc_catalog_template_usage.md)
-  Ready-to-use plotting/export templates
-- [paper/README.md](/Users/xiangjin/Library/CloudStorage/OneDrive-Personal/我的/Code/auv_se3node/g3_5_5/paper/README.md)
-  AUVHamNODE thesis chapter writing entrypoint, current draft status, and writing boundaries
+If you are new to the repo, see the **[Documentation map](#documentation-map)** near the end for an ordered reading path and the full doc index.
 
 ## Quick Start
 
@@ -132,30 +99,9 @@ python evaluate_rollout_benchmark.py \
   --output_dir ./checkpoints/<run>/rollout_benchmark
 ```
 
-## Recommended Entry Points
+### 4. Run a multi-model sweep (preferred)
 
-For most work, you do **not** need to manually orchestrate every step.
-
-### Dataset generation
-
-- `data_collection.py`
-
-### Single-run training
-
-- `train_auv_hamnode.py`
-
-### Rollout benchmark
-
-- `evaluate_rollout_benchmark.py`
-
-### Current recommended sweep wrappers
-
-For the current profile-based noisy-IC workflow, prefer:
-
-- `scripts/train_all_models_noise_profile.sh`
-- `scripts/eval_all_models_noise_profile.sh`
-
-Example:
+For profile-based noisy-IC work, prefer these wrappers over orchestrating runs by hand:
 
 ```bash
 bash scripts/train_all_models_noise_profile.sh \
@@ -167,16 +113,15 @@ bash scripts/eval_all_models_noise_profile.sh \
   --suite-dir ./checkpoints/<suite_name>
 ```
 
-### Sweep summary/report
+### 5. Summarize, report, and catalog
 
-- `scripts/summarize_sweep.py`
-- `scripts/build_experiment_report.py`
+```bash
+python scripts/summarize_sweep.py         --suite-dir ./checkpoints/<suite>
+python scripts/build_experiment_report.py --suite-dir ./checkpoints/<suite>
+python scripts/build_oc_data_catalog.py
+```
 
-### Result catalog and template exports
-
-- `scripts/build_oc_data_catalog.py`
-- `scripts/query_oc_catalog_examples.py`
-- `scripts/oc_catalog_templates.py`
+Catalog query/plot helpers (`scripts/query_oc_catalog_examples.py`, `scripts/oc_catalog_templates.py`) are covered under [Plotting and Export Templates](#plotting-and-export-templates).
 
 ## Project Layout
 
@@ -214,13 +159,13 @@ Important directories:
 - `analysis/oc_data_catalog/`
   Cataloged experiment tables and canonical views
 - `paper/`
-  Thesis-chapter writing materials, review notes, active draft skeleton, and deprecated intermediate drafts
+  Thesis-chapter writing materials, review notes, active LaTeX draft (complete 10-section chapter), and deprecated intermediate drafts
 - `original/bf3n/`
   Delete-candidate legacy reference material; not the active implementation
 
 For the current keep/deprecate/delete-candidate boundary, see:
 
-- [docs/repo_structure_audit.md](/Users/xiangjin/Library/CloudStorage/OneDrive-Personal/我的/Code/auv_se3node/g3_5_5/docs/repo_structure_audit.md)
+- [docs/repo_structure_audit.md](docs/repo_structure_audit.md)
 
 ## Main Experimental Axes
 
@@ -281,9 +226,9 @@ Recommended benchmark profiles for `oc`:
 
 For details, see:
 
-- [docs/noise_model_design.md](/Users/xiangjin/Library/CloudStorage/OneDrive-Personal/我的/Code/auv_se3node/g3_5_5/docs/noise_model_design.md)
-- [docs/noise_cli_parameter_reference.md](/Users/xiangjin/Library/CloudStorage/OneDrive-Personal/我的/Code/auv_se3node/g3_5_5/docs/noise_cli_parameter_reference.md)
-- [docs/noise_cli_command_templates.md](/Users/xiangjin/Library/CloudStorage/OneDrive-Personal/我的/Code/auv_se3node/g3_5_5/docs/noise_cli_command_templates.md)
+- [docs/noise_model_design.md](docs/noise_model_design.md)
+- [docs/noise_cli_parameter_reference.md](docs/noise_cli_parameter_reference.md)
+- [docs/noise_cli_command_templates.md](docs/noise_cli_command_templates.md)
 
 ## Training Outputs
 
@@ -309,18 +254,14 @@ These files are needed to distinguish code and environment drift when comparing 
 
 ## Result Catalog
 
-The repo now includes a structured result catalog for `oc` experiments:
+The repo includes a structured result catalog for `oc` experiments under [`analysis/oc_data_catalog/`](analysis/oc_data_catalog/), with generated CSVs in four groups:
 
-- [analysis/oc_data_catalog/run_inventory.csv](/Users/xiangjin/Library/CloudStorage/OneDrive-Personal/我的/Code/auv_se3node/g3_5_5/analysis/oc_data_catalog/run_inventory.csv)
-- [analysis/oc_data_catalog/file_inventory.csv](/Users/xiangjin/Library/CloudStorage/OneDrive-Personal/我的/Code/auv_se3node/g3_5_5/analysis/oc_data_catalog/file_inventory.csv)
-- [analysis/oc_data_catalog/training_history_long.csv](/Users/xiangjin/Library/CloudStorage/OneDrive-Personal/我的/Code/auv_se3node/g3_5_5/analysis/oc_data_catalog/training_history_long.csv)
-- [analysis/oc_data_catalog/block_eval_long.csv](/Users/xiangjin/Library/CloudStorage/OneDrive-Personal/我的/Code/auv_se3node/g3_5_5/analysis/oc_data_catalog/block_eval_long.csv)
-- [analysis/oc_data_catalog/heldout_eval_long.csv](/Users/xiangjin/Library/CloudStorage/OneDrive-Personal/我的/Code/auv_se3node/g3_5_5/analysis/oc_data_catalog/heldout_eval_long.csv)
-- [analysis/oc_data_catalog/rollout_summary_long.csv](/Users/xiangjin/Library/CloudStorage/OneDrive-Personal/我的/Code/auv_se3node/g3_5_5/analysis/oc_data_catalog/rollout_summary_long.csv)
-- [analysis/oc_data_catalog/rollout_outcomes_long.csv](/Users/xiangjin/Library/CloudStorage/OneDrive-Personal/我的/Code/auv_se3node/g3_5_5/analysis/oc_data_catalog/rollout_outcomes_long.csv)
-- [analysis/oc_data_catalog/rollout_run_registry.csv](/Users/xiangjin/Library/CloudStorage/OneDrive-Personal/我的/Code/auv_se3node/g3_5_5/analysis/oc_data_catalog/rollout_run_registry.csv)
-- [analysis/oc_data_catalog/canonical_rollout_summary_long.csv](/Users/xiangjin/Library/CloudStorage/OneDrive-Personal/我的/Code/auv_se3node/g3_5_5/analysis/oc_data_catalog/canonical_rollout_summary_long.csv)
-- [analysis/oc_data_catalog/canonical_rollout_outcomes_long.csv](/Users/xiangjin/Library/CloudStorage/OneDrive-Personal/我的/Code/auv_se3node/g3_5_5/analysis/oc_data_catalog/canonical_rollout_outcomes_long.csv)
+- **inventories** — `run_inventory.csv`, `file_inventory.csv`, `rollout_run_registry.csv`
+- **per-metric long tables** — `training_history_long.csv`, `block_eval_long.csv`, `heldout_eval_long.csv`
+- **raw rollout** — `rollout_summary_long.csv`, `rollout_outcomes_long.csv`
+- **canonical rollout** — `canonical_rollout_summary_long.csv`, `canonical_rollout_outcomes_long.csv`
+
+Field definitions: [docs/oc_data_catalog_dictionary.md](docs/oc_data_catalog_dictionary.md).
 
 Use these rules:
 
@@ -344,12 +285,12 @@ conda run -n mytorch1 python scripts/build_oc_data_catalog.py
 
 The `paper/` directory is the current workspace for writing the AUVHamNODE method as a Chinese doctoral thesis chapter. Start from:
 
-- [paper/README.md](/Users/xiangjin/Library/CloudStorage/OneDrive-Personal/我的/Code/auv_se3node/g3_5_5/paper/README.md)
+- [paper/README.md](paper/README.md)
   Writing entrypoint, document roles, progress board, and current chapter structure
-- [paper/drafts/auvhamnode_thesis_chapter_review_notes_zh.md](/Users/xiangjin/Library/CloudStorage/OneDrive-Personal/我的/Code/auv_se3node/g3_5_5/paper/drafts/auvhamnode_thesis_chapter_review_notes_zh.md)
+- [paper/drafts/auvhamnode_thesis_chapter_review_notes_zh.md](paper/drafts/auvhamnode_thesis_chapter_review_notes_zh.md)
   Strict review of the deprecated intermediate draft and constraints for rewriting
-- [paper/drafts/auvhamnode_thesis_chapter_zh.tex](/Users/xiangjin/Library/CloudStorage/OneDrive-Personal/我的/Code/auv_se3node/g3_5_5/paper/drafts/auvhamnode_thesis_chapter_zh.tex)
-  Active LaTeX rewrite skeleton for the formal thesis chapter
+- [paper/drafts/auvhamnode_thesis_chapter_zh.tex](paper/drafts/auvhamnode_thesis_chapter_zh.tex)
+  Active LaTeX draft of the formal thesis chapter — complete 10-section draft (PDF compiled), under final-pass revision
 
 The previous draft has been downgraded to `paper/drafts/deprecated/auvhamnode_thesis_chapter_zh_intermediate_20260519.tex`. Treat it as a source of formulas and reusable material only, not as the main text to polish line by line. The active thesis chapter should use a formal method definition before introducing `AUVHamNODE` as a shorthand, avoid internal writing-plan language, and keep experiment conclusions gated on current evidence status.
 
@@ -387,36 +328,31 @@ conda run -n mytorch1 python scripts/oc_catalog_templates.py \
 
 See:
 
-- [docs/oc_catalog_template_usage.md](/Users/xiangjin/Library/CloudStorage/OneDrive-Personal/我的/Code/auv_se3node/g3_5_5/docs/oc_catalog_template_usage.md)
+- [docs/oc_catalog_template_usage.md](docs/oc_catalog_template_usage.md)
 
-## Suggested First Reads
+## Documentation map
 
-If you only want a fast orientation, read in this order:
+The full doc index, in suggested reading order:
 
 1. `README.md`
-2. [EXPERIMENT_PROGRESS_TRACKER.md](/Users/xiangjin/Library/CloudStorage/OneDrive-Personal/我的/Code/auv_se3node/g3_5_5/EXPERIMENT_PROGRESS_TRACKER.md)
-3. [docs/repo_structure_audit.md](/Users/xiangjin/Library/CloudStorage/OneDrive-Personal/我的/Code/auv_se3node/g3_5_5/docs/repo_structure_audit.md)
-4. [docs/experiment_stages_overview.md](/Users/xiangjin/Library/CloudStorage/OneDrive-Personal/我的/Code/auv_se3node/g3_5_5/docs/experiment_stages_overview.md)
-5. [docs/provenance_audit_phnode_full_clean.md](/Users/xiangjin/Library/CloudStorage/OneDrive-Personal/我的/Code/auv_se3node/g3_5_5/docs/provenance_audit_phnode_full_clean.md)
-6. [docs/phase1a_oc_v4lite_cleanrun_v1_report.md](/Users/xiangjin/Library/CloudStorage/OneDrive-Personal/我的/Code/auv_se3node/g3_5_5/docs/phase1a_oc_v4lite_cleanrun_v1_report.md)
-7. [docs/phnode_realistic_validation_plan.md](/Users/xiangjin/Library/CloudStorage/OneDrive-Personal/我的/Code/auv_se3node/g3_5_5/docs/phnode_realistic_validation_plan.md)
-8. [docs/phnode_realistic_validation_execution_plan.md](/Users/xiangjin/Library/CloudStorage/OneDrive-Personal/我的/Code/auv_se3node/g3_5_5/docs/phnode_realistic_validation_execution_plan.md)
-9. [docs/phase1_realistic_validation_plan.md](/Users/xiangjin/Library/CloudStorage/OneDrive-Personal/我的/Code/auv_se3node/g3_5_5/docs/phase1_realistic_validation_plan.md)
-10. [docs/noise_model_design.md](/Users/xiangjin/Library/CloudStorage/OneDrive-Personal/我的/Code/auv_se3node/g3_5_5/docs/noise_model_design.md)
-11. [docs/oc_data_catalog_dictionary.md](/Users/xiangjin/Library/CloudStorage/OneDrive-Personal/我的/Code/auv_se3node/g3_5_5/docs/oc_data_catalog_dictionary.md)
-12. [docs/oc_result_selection_policy.md](/Users/xiangjin/Library/CloudStorage/OneDrive-Personal/我的/Code/auv_se3node/g3_5_5/docs/oc_result_selection_policy.md)
-13. [paper/README.md](/Users/xiangjin/Library/CloudStorage/OneDrive-Personal/我的/Code/auv_se3node/g3_5_5/paper/README.md)
+2. [EXPERIMENT_PROGRESS_TRACKER.md](EXPERIMENT_PROGRESS_TRACKER.md)
+3. [docs/repo_structure_audit.md](docs/repo_structure_audit.md)
+4. [docs/experiment_stages_overview.md](docs/experiment_stages_overview.md)
+5. [docs/provenance_audit_phnode_full_clean.md](docs/provenance_audit_phnode_full_clean.md)
+6. [docs/phase1a_oc_v4lite_cleanrun_v1_report.md](docs/phase1a_oc_v4lite_cleanrun_v1_report.md)
+7. [docs/phnode_realistic_validation_plan.md](docs/phnode_realistic_validation_plan.md)
+8. [docs/phnode_realistic_validation_execution_plan.md](docs/phnode_realistic_validation_execution_plan.md)
+9. [docs/phase1_realistic_validation_plan.md](docs/phase1_realistic_validation_plan.md)
+10. [docs/noise_model_design.md](docs/noise_model_design.md)
+11. [docs/oc_data_catalog_dictionary.md](docs/oc_data_catalog_dictionary.md)
+12. [docs/oc_result_selection_policy.md](docs/oc_result_selection_policy.md)
+13. [paper/README.md](paper/README.md)
 
-## Practical Notes
+### Deeper references
 
-- Keep `oc` or `noc` in dataset filenames. The code uses it to infer defaults.
-- Prefer `scripts/train_all_models_noise_profile.sh` and `scripts/eval_all_models_noise_profile.sh` for new noisy experiments.
-- Treat `scripts/train_all_models_noise.sh`, `scripts/eval_all_models_noise.sh`, and the `--noise_level` interface as deprecated compatibility paths.
-- Prefer `training_history.pkl` over `training.log` for plotting.
-- Prefer canonical rollout tables over raw rollout tables when making default figures.
-- Check `evidence_status` before citing catalog rows as current evidence.
-- `checkpoints/unused/` should not be treated as active experiment results; it used an older incorrect noise design.
-- Smoke/probe checkpoint directories are flow-validation-only and should not be used for headline conclusions.
+- [docs/oc_experiments_comprehensive_report.md](docs/oc_experiments_comprehensive_report.md) — main experiment summary
+- [docs/oc_followup_results_p1_p2.md](docs/oc_followup_results_p1_p2.md) — follow-up results that update parts of the main summary
+- [docs/oc_data_catalog_plan.md](docs/oc_data_catalog_plan.md) — catalog design and organization
 
 ## Validation and Testing
 
@@ -434,3 +370,6 @@ When modifying the repo, validate the smallest affected workflow:
 - Generated artifacts under `data/`, `checkpoints/`, and `analysis/oc_data_catalog/` are working outputs, not source code.
 - Do not hand-edit generated catalog CSV files; regenerate them from scripts. The explicit sidecar exception is `analysis/oc_data_catalog/evidence_status_overrides.csv`.
 - The repo contains many historical experiment files. When in doubt, treat `docs/` and the catalog tables as the authoritative orientation layer, not random checkpoint subdirectories.
+- Keep `oc` or `noc` in dataset filenames — the code infers trainer defaults from it.
+- `scripts/train_all_models_noise.sh`, `scripts/eval_all_models_noise.sh`, and the `--noise_level` interface are deprecated compatibility paths; prefer the `*_noise_profile.sh` wrappers.
+- `checkpoints/unused/` is not active evidence (older incorrect noise design), and smoke/probe checkpoint dirs are flow-validation only — neither belongs in headline conclusions.

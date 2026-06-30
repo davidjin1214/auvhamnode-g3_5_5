@@ -68,3 +68,11 @@ Pipeline: **Data → Training → Rollout Eval → Catalog/Analysis**
 - `original/bf3n/` — legacy reference, not active code.
 - `checkpoints/unused/` — old noise design, invalid for current evidence.
 - smoke/probe checkpoint dirs — flow-validation only, not paper evidence.
+
+## Project Claude tooling (`.claude/`)
+
+Repo-local skills that wrap the workflows above (prefer over reconstructing the steps by hand):
+- `/catalog-refresh [suite_dir]` — runs the 3-step catalog rebuild (catalog → summary → report) as one step; prevents downstream tables drifting when a step is skipped. Use instead of the three Analysis commands above.
+- `/provenance-snapshot <run_dir>` — writes the reproducibility snapshot (git SHA, dataset checksum, env, config hash) to `<run_dir>/provenance/`.
+
+The `provenance-auditor` and `catalog-consistency-reviewer` subagents (auto-listed in the agent registry) cover single-run and catalog consistency audits.
