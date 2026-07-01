@@ -284,7 +284,7 @@ REMUS100 simulation
 | **needs_recheck** | 部分依赖 fragility，但有独立证据支持，需在 cleanrun v1 ≡ current main 基线下重新背书 |
 
 1. 在 `oc` clean setting 下，`baseline/phnode_qforce` 是当前 all-seed 最强整体模型。 **[current]**
-2. 在 PHNODE family 内，clean all-seed 下 `ablation/ablate_no_lift` 当前最稳。 **[needs_recheck]** — catalog `ablate_no_lift seed43 clean` 也存在异常（best_epoch=19, best_loss=0.22, 60s ≈ 44 m），与 seed46 fragility 同环境，应在 cleanrun v1 ≡ current main 重训后重新判断。
+2. 在 PHNODE family 内，clean all-seed 下 `ablation/ablate_no_lift` 当前最稳。 **[current，2026-07-01 背书]** — catalog `ablate_no_lift seed43 clean` 异常（best_epoch=19, best_loss=0.22, 60s ≈ 44 m）已由 `notebook/t2supp_nolift_seedscan_completed.ipynb` 独立确认为**真实可复现脆弱、与环境无关**（恰与 phnode_full seed42/46 环境漂移相反），非漂移。论文按剔除该单次异常（N=4）处理其中心趋势，seed43 单列披露。故此结论不再依赖 WP-Frag 重训背书（WP-Frag 决议不启动，见 §7.B 工单 A）。
 3. ~~`main/phnode_full` 有强 stable cluster，但存在真实 bad-outlier seeds：`42` 与 `46`。~~ **[stale_environment_drift]** — seed42/46 outlier 是 catalog 时代云端 g3_5_5 镜像环境（PyTorch/CUDA/cuDNN 版本未记录）下的偶然训练发散；在 cleanrun v1（g3_5_7 镜像）与 Phase 3 audit（current main on g3_5_7）下两 seed 均收敛正常，不应继续作为模型脆弱性论据。
 4. noisy training 不是普适增强；它与模型结构强耦合。 **[needs_recheck]** — 该结论原本依赖 §7.5 「noisy training 修复 seed46」，§7.5 stale 后需以 ablate_no_lift seed44 / ablate_no_mass_prior 收益等独立证据重新背书。
 5. ~~noisy training 对 `phnode_full` 的主要收益是修复 `seed46`，不是普遍降低全部 seed 的误差。~~ **[stale_environment_drift]** — 「待修复的 seed46 脆弱性」本身已被 audit 推翻；该因果链不再成立。
@@ -292,14 +292,35 @@ REMUS100 simulation
 7. `ablate_bu_only` 的退化是结构性的，actuation-conditioning 相关结构应保留。 **[current]**
 8. coupled damping 有明确价值。 **[current]**
 9. 当前 mass prior 尚未显示出不可替代性。 **[current]**
-10. `v4-lite` 目前只能写成已实现并通过 smoke/probe 的协议方向，不能写成已完成正式决策实验。 **[current]**
+10. ~~`v4-lite` 目前只能写成已实现并通过 smoke/probe 的协议方向，不能写成已完成正式决策实验。~~ **[decided 2026-07-01]** — 正式决策实验已由 B 区 `t2_wpfrag` 决策套件完成（4 结构化模型 × {clean, iid_noisy_ic, v4_lite} × 5 种子，含 rollout），结论=两条噪声训练线对稳定结构化模型**等价**、排序不随协议改变，已写入论文 §1.8 协议表。决议不再补跑、不升级为「v4_lite 更优」的更强 claim。详见 §7.B 工单 B。
 
 ### 7.A 修订后的 fragility 表述
 
 - catalog `phnode_full clean seed42/46` 60s rollout 11 m 5-seed mean **不应作为模型脆弱性证据**。
 - 同口径锁定（clean+clean, 60s, 5-seed mean of pos_err_median）下，正确基线是 cleanrun v1 ≡ current main = **0.6767 m**。
 - 若需引用 catalog 时代该数据，必须同时引用 [docs/provenance_audit_phnode_full_clean.md](docs/provenance_audit_phnode_full_clean.md) 作为环境耦合说明。
-- WP-Frag（在新基线下重训 catalog §12 矩阵）作为可选工单留待用户决策启动；不启动也不影响调查闭环。
+- WP-Frag（在新基线下重训 catalog §12 矩阵）**决议不启动**（2026-07-01）：实质等价工作已由 B 区 `t2_wpfrag` 决策套件在受控 g3_5_7 基线下完成，R-A 合并口径已规定重叠实验取可复现的 B 区、不再引用 A 区 catalog 漂移行。详见 §7.B 工单 A。
+
+### 7.B 可选工单决议闭环（2026-07-01）
+
+以下两项曾长期挂为「可选工单待用户决策」。经证据核对，**实质工作均已完成**、论文所需 claim 已被现有数据覆盖，现固定决议，不再回头调查是否启动。
+
+**工单 A — WP-Frag（在新基线下重训 catalog §12 矩阵）：决议不启动。**
+
+- 实质等价工作已由 B 区 `t2_wpfrag` 决策套件在受控 g3_5_7 clean 基线下完成：`decision_clean_t2_wpfrag`（7 模型 × 5 种子 = 35 run）+ `decision_iid`（4 模型 × 20 run）+ `decision_v4lite`（4 模型 × 20 run），均含 rollout；执行版 notebook `notebook/t2_wpfrag_*_completed.ipynb` 已入库。
+- 已提交的 R-A 合并口径（`docs/section8_evidence_merge_plan.md`）规定：重叠实验取可逐位复现的 B 区，论文不再引用 A 区 catalog 漂移行——「重训旧 catalog」在证据上已被取代。
+- 唯一残留是**可选**目录簿记：把 catalog `ablate_no_lift seed43 clean` 行标 `stale_environment_drift`（`docs/oc_data_catalog_dictionary.md:478`）。其科学问题已由 `notebook/t2supp_nolift_seedscan_completed.ipynb` 解答（真实可复现脆弱、与环境无关）。此簿记不烧算力、不影响论文，留作可选。
+- 重启条件：仅当论文改口径、确需「同镜像纯净 A 区 catalog 数字」时——当前论文不需要。
+
+**工单 B — v4-lite 正式决策实验：决议视为已完成，不再补跑、不升级 claim。**
+
+- 决策数据已存在：B 区 `t2_wpfrag` 决策套件对 4 个结构化模型（`phnode_full` / `phnode_qforce` / `ablate_no_lift` / `ablate_no_mass_prior`）完成 {clean, iid_noisy_ic, v4_lite} × 5 种子，含 rollout。论文 §1.8 协议表（`tab:s8-protocol`）即基于此。
+- 结论=两条噪声训练线对稳定结构化模型**等价**（相对差 ≤ ~5%）、模型排序不随训练协议改变；论文据此将噪声初值训练作为**单一鲁棒性轴**处理。
+- 缺的 3 个黑箱 / SE(3) 基线的 iid/v4lite run **决议不补**：协议表本就声明黑箱仅有 clean、不参与噪声线比较。
+- **不**把 v4_lite 升级为「确认更优的最终协议」：数据显示等价而非更优，`AGENTS.md` 论文边界亦禁止此断言。
+- 连带闭环 §6.2 Phase-1B：其触发条件是「Phase-1A 显示 v4-lite 改变排序/退化/失败模式」；Phase-1A 显示等价（未改变），故 **Phase-1B 决议不进入**（与 `docs/phase1a_oc_v4lite_cleanrun_v1_report.md` 判定一致）。
+
+> 注：§5.1 / §6.1 / §6.2 的旧「smoke/probe · 尚未闭环」表述停留在早期 Phase-1A 计划口径，晚于其的 `t2_wpfrag` 决策套件与本节决议为准。
 
 ## 8. 长期跟踪办法
 
@@ -333,3 +354,4 @@ REMUS100 simulation
 | 2026-04-25 11:44:54 CST (+0800) | 创建初版，完成 README、docs、catalog、checkpoint report 状态梳理。 |
 | 2026-04-25 11:50:10 CST (+0800) | 新增机器可读进展表 `analysis/experiment_progress_log.csv`，并将长期跟踪方案落地为 Markdown + CSV 双层结构。 |
 | 2026-05-13 CST (+0800) | 完成 phnode_full clean provenance audit（详见 [docs/provenance_audit_phnode_full_clean.md](docs/provenance_audit_phnode_full_clean.md)）。§7 受影响结论按 stale_environment_drift / needs_recheck / current 三档标注。catalog 时代 seed42/46 fragility 不再可作为模型脆弱性引用，新基线为 cleanrun v1 ≡ current main = 0.6767 m。 |
+| 2026-07-01 CST (+0800) | 固定两项可选工单决议（新增 §7.B）：**WP-Frag 决议不启动**（实质已由 B 区 `t2_wpfrag` 决策套件完成、R-A 口径取代旧 catalog）；**v4-lite 正式决策实验决议视为已完成**（4 结构化模型数据已入论文 §1.8 协议表，结论=协议等价）、Phase-1B 不进入。同步更新结论 10（改标 decided）、结论 2（no_lift seed43 改 current 背书、去除重训依赖）、§7.A WP-Frag 行。另：`.claude/settings.local.json` 停止跟踪并加入 `.gitignore`（本机个人配置）。 |
