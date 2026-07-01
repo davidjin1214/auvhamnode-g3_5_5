@@ -1,70 +1,67 @@
 # Repository Guidelines
 
-## Purpose
-This repository is an active research codebase for **AUV dynamics modeling on `SE(3)`**, centered on:
+## Role And Scope
 
-- structured port-Hamiltonian Neural ODE models
-- ocean-current (`oc`) vs no-current (`noc`) datasets
-- clean vs noisy initial-condition training
-- long-horizon rollout benchmark evaluation
+This is an active research codebase for **AUV dynamics modeling on `SE(3)`**, using structured port-Hamiltonian Neural ODEs, ablations, black-box baselines, clean/noisy initial-condition training, and long-horizon rollout benchmarks. It also contains the `paper/` workspace for the AUVHamNODE thesis chapter.
 
-The repo already contains substantial experiment artifacts and a structured result catalog. When orienting yourself, prefer the documented workflow and catalog tables over ad hoc inspection of old checkpoint folders.
+Treat this file as an agent operating guide, not as a replacement for `README.md`, `docs/`, experiment reports, or paper notes. Keep future updates concise and move detailed evidence narratives into the appropriate documentation.
 
-## Current Orientation Layer
-Before diving into random files, start from these:
+## Operating Rules
+
+- Work from an expert, evidence-aware perspective. Do not turn a number into a claim until its source, protocol, and evidence status are clear.
+- Run local Python/experiment commands in the Conda environment `mytorch1`; `deepxiv` is the routine exception.
+- Prefer documented workflows, catalog/current-evidence tables, and provenance notes over ad hoc checkpoint browsing.
+- Keep code clean, concise, modular, and consistent with local style. Comments must be in English and only explain non-obvious logic.
+- Do not rewrite or delete user/generated research artifacts unless explicitly asked.
+
+## Orientation
+
+Start here for current repo state:
 
 - `README.md`
 - `EXPERIMENT_PROGRESS_TRACKER.md`
 - `docs/repo_structure_audit.md`
 - `docs/experiment_stages_overview.md`
-- `docs/phnode_realistic_validation_plan.md`
-- `docs/phnode_realistic_validation_execution_plan.md`
-- `docs/phase1_realistic_validation_plan.md`
-- `docs/phase1a_oc_v4lite_cleanrun_v1_report.md`
+
+Use these for evidence and catalog interpretation:
+
 - `docs/provenance_audit_phnode_full_clean.md`
-- `docs/noise_model_design.md`
-- `docs/oc_experiments_comprehensive_report.md`
-- `docs/oc_followup_results_p1_p2.md`
-- `docs/oc_data_catalog_plan.md`
-- `docs/oc_data_catalog_dictionary.md`
+- `docs/phase1a_oc_v4lite_cleanrun_v1_report.md`
 - `docs/oc_result_selection_policy.md`
+- `docs/oc_data_catalog_dictionary.md`
+- `analysis/oc_data_catalog/`
 
-For current result lookup, prefer:
+Use these for protocol and command details:
 
-- `analysis/oc_data_catalog/canonical_run_inventory.csv`
-- `analysis/oc_data_catalog/run_inventory.csv`
-- `analysis/oc_data_catalog/rollout_run_registry.csv`
-- `analysis/oc_data_catalog/canonical_rollout_summary_long.csv`
-- `analysis/oc_data_catalog/canonical_rollout_outcomes_long.csv`
-- `analysis/oc_data_catalog/evidence_status_overrides.csv`
+- `docs/noise_experiment_runbook.md`
+- `docs/noise_cli_parameter_reference.md`
+- `docs/noise_cli_command_templates.md`
 
-Before using catalog rows as current evidence, check `evidence_status`. In particular, catalog-era `phnode_full clean seed42/46` rows are `stale_environment_drift`; do not use the old ~11 m 5-seed mean as model-fragility evidence. Use the provenance audit and the cleanrun v1 / current-main aligned baseline instead.
+For thesis-chapter work, start from:
 
-## Project Structure & Module Organization
-This is a flat Python repo. Important active files:
+- `paper/README.md`
+- `paper/drafts/auvhamnode_thesis_chapter_zh.tex`
 
+## Active Code Map
+
+- `remus100_core.py`: REMUS100 simulator core
+- `data_collection.py`: dataset generation
 - `AUVHamNODE.py`: main structured model
 - `auv_baselines.py`: baselines and ablations
 - `auv_model_registry.py`: model registry
-- `train_auv_hamnode.py`: training entrypoint
-- `train_utils.py`: config parsing, logging, checkpoint I/O, evaluation helpers
-- `data_collection.py`: dataset generation
-- `evaluate_rollout_benchmark.py`: rollout benchmark entrypoint
-- `rollout_benchmark_engine.py`: benchmark execution
-- `rollout_benchmark_reporting.py`: benchmark summaries
+- `train_auv_hamnode.py`, `train_utils.py`: training entrypoint and utilities
+- `evaluate_rollout_benchmark.py`, `rollout_benchmark_engine.py`, `rollout_benchmark_reporting.py`: rollout benchmark stack
+- `scripts/train_all_models_noise_profile.sh`, `scripts/eval_all_models_noise_profile.sh`: current sweep wrappers
+- `scripts/build_oc_data_catalog.py`: OC catalog generation
+- `scripts/export_section8_t2_evidence.py`: thesis §8 current-evidence export
 
-Important directories:
+Legacy/reference boundaries:
 
-- `scripts/`: batch workflows, summaries, catalog tools, export templates
-- `docs/`: experiment notes, runbooks, reports, catalog docs
-- `data/`: generated datasets
-- `checkpoints/`: trained runs and sweep suites
-- `analysis/oc_data_catalog/`: normalized experiment tables and canonical views
-- `analysis/provenance_audit/`: preserved investigation notes for the `phnode_full clean` provenance audit
-- `original/bf3n/`: delete-candidate legacy reference material, not the active implementation
+- `original/bf3n/`: legacy reference, not active implementation
+- `checkpoints/unused/`: old incorrect noise design, invalid for current evidence
+- smoke/probe checkpoint directories: flow validation only, not paper evidence
 
-## Preferred Commands
-Run all local commands in the Conda environment `mytorch1`.
+## Commands
 
 ```bash
 conda activate mytorch1
@@ -73,104 +70,84 @@ conda activate mytorch1
 Single-run workflow:
 
 ```bash
-python data_collection.py --num_traj 500 --blocks 150 --save_dir ./data/oc --workers 4 --ocean_current
+python data_collection.py --num_traj 500 --blocks 150 --seed 42 --save_dir ./data/oc --workers 4 --ocean_current --current_speed_max 0.5
 python train_auv_hamnode.py --dataset ./data/oc/<dataset>.pkl --model_type phnode_full --save_dir ./checkpoints
 python train_auv_hamnode.py --dataset ./data/oc/<dataset>.pkl --model_type phnode_full --save_dir ./checkpoints --noise_profile nominal_train --noise_warmup_epochs 20 --noise_ramp 80 --noise_mix_ratio 0.5
-python evaluate_rollout_benchmark.py --checkpoint ./checkpoints/<run>/best_model.pt --output_dir ./checkpoints/<run>/rollout_benchmark --mode resampled --noise_profiles clean nominal_eval degraded_eval heading_biased_eval
+python evaluate_rollout_benchmark.py --checkpoint ./checkpoints/<run>/best_model.pt --mode resampled --noise_profiles clean nominal_eval degraded_eval heading_biased_eval --output_dir ./checkpoints/<run>/rollout_benchmark
 ```
 
-Current recommended sweep workflow:
+Recommended sweep and reporting workflow:
 
 ```bash
 bash scripts/train_all_models_noise_profile.sh --profile oc --group core --noise-profile nominal_train
 bash scripts/eval_all_models_noise_profile.sh --suite-dir ./checkpoints/<suite>
-```
-
-Summaries and catalog:
-
-```bash
 python scripts/summarize_sweep.py --suite-dir ./checkpoints/<suite>
 python scripts/build_experiment_report.py --suite-dir ./checkpoints/<suite>
 python scripts/build_oc_data_catalog.py
 ```
 
-Template utilities:
+Deprecated paths:
 
-```bash
-python scripts/query_oc_catalog_examples.py ...
-python scripts/oc_catalog_templates.py ...
-```
+- `scripts/train_all_models_noise.sh`
+- `scripts/eval_all_models_noise.sh`
+- training CLI `--noise_level`
 
-## Workflow Preferences
-For new work:
+## Evidence Rules
 
-- Prefer `scripts/train_all_models_noise_profile.sh` and `scripts/eval_all_models_noise_profile.sh` for noisy `oc` experiments.
-- Treat `scripts/train_all_models_noise.sh`, `scripts/eval_all_models_noise.sh`, and `--noise_level` as deprecated compatibility paths.
-- Prefer `training_history.pkl` over `training.log` for training curves.
-- Prefer `canonical_rollout_summary_long.csv` and `canonical_rollout_outcomes_long.csv` for default plotting and reporting.
-- Check `evidence_status` before treating catalog rows as current paper evidence.
-- Use raw rollout tables only when you intentionally need all rollout variants.
-- Treat `checkpoints/unused/` as non-active and invalid for current evidence because it used an older incorrect noise design.
-- Treat smoke/probe checkpoint directories as flow-validation-only, not as current evidence for model ranking or paper conclusions.
-- Treat `docs/phase1a_oc_v4lite_cleanrun_v1_report.md` as a protocol-sensitivity decision package, not as a drop-in replacement for the canonical catalog.
-- For new evidence-bearing runs, record `_audit_meta/code_revision.txt` and `_audit_meta/environment.txt` so catalog comparisons can distinguish code and environment drift.
+- Before citing catalog rows, check `evidence_status` and `analysis/oc_data_catalog/evidence_status_overrides.csv`.
+- `is_canonical = 1` means “selected default rollout,” not “safe current paper evidence.”
+- Catalog-era `phnode_full clean seed42/46` rows are `stale_environment_drift`; do not use the old ~11 m 5-seed mean as current model-fragility evidence.
+- Use `analysis/section8_current_evidence/aggregate.csv` and `per_seed_long.csv` for thesis §8 current-evidence claims; regenerate them via `scripts/export_section8_t2_evidence.py`.
+- Phase-1A/T2 results are separate from the canonical OC catalog. `scripts/build_oc_data_catalog.py` intentionally excludes `sweep_oc_phase1a_*` suites to prevent smoke/decision suites from leaking into canonical views.
+- For new evidence-bearing runs, record `_audit_meta/code_revision.txt` and `_audit_meta/environment.txt`.
 
-## Coding Style & Naming Conventions
-Follow current Python style:
+## Generated Files
 
-- 4-space indentation
-- `snake_case` for functions and variables
-- `PascalCase` for classes
-- concise module docstrings where useful
-
-Keep code modular. Prefer small helper functions over long inline logic. Comments must be in English and only added when the code would otherwise be hard to parse.
-
-No formatter or linter is enforced in the repo, so stay PEP 8-aligned and consistent with surrounding files.
-
-## Editing and Generated Files
-Do not hand-edit generated outputs such as:
+Do not hand-edit generated outputs:
 
 - `data/*`
 - `checkpoints/*`
 - generated `analysis/oc_data_catalog/*.csv`
+- generated `analysis/section8_current_evidence/*.csv`
 
-The explicit catalog sidecar exception is:
+The hand-editable catalog sidecar is:
 
 - `analysis/oc_data_catalog/evidence_status_overrides.csv`
 
-If you need catalog changes, modify:
+If catalog behavior must change, edit the relevant script, then regenerate:
 
 - `scripts/build_oc_data_catalog.py`
 - `scripts/query_oc_catalog_examples.py`
 - `scripts/oc_catalog_templates.py`
 
-then regenerate.
+If thesis §8 evidence behavior must change, edit `scripts/export_section8_t2_evidence.py`, then regenerate `analysis/section8_current_evidence/`.
 
-## Testing and Validation
-There is no dedicated `tests/` directory yet. Validate changes with the smallest affected workflow:
+## Paper Boundaries
 
-- data logic: run `data_collection.py`
-- model/trainer logic: run a single training job
-- benchmark/report logic: run a single evaluation or sweep summary
-- catalog logic: rebuild `analysis/oc_data_catalog/`
+For `paper/` work:
 
-When changing experiment logic, record:
+- The method contribution is AUV structured continuous-time dynamics modeling; long-horizon state prediction is the validation task.
+- Do not claim a fully closed, strict port-Hamiltonian AUV system.
+- Do not claim ordinary ODE integration strictly preserves `SO(3)`.
+- Do not present `B_net` as a standard port-Hamiltonian input matrix `G(q)u`.
+- Do not model ocean current as a closed Hamiltonian environment subsystem.
+- Do not present `v4_lite` as a confirmed superior final training protocol.
+- Formal Chinese thesis prose must not contain internal planning notes, implementation labels, or memo-style guidance.
 
-- the command used
-- the relevant output path
-- key structured outputs such as `config.json`, `heldout_evaluation.json`, or rollout `summary.json`
+## Style And Validation
 
-## Commit & PR Guidelines
-Keep commits short and task-focused. Recent history often uses concise Chinese subjects; concise English imperative messages are also fine.
+- Python style: 4-space indentation, `snake_case` for functions/variables, `PascalCase` for classes, concise module docstrings where useful.
+- No dedicated `tests/` directory exists. Validate with the smallest affected workflow: one data generation, one training job, one rollout, one sweep summary, one catalog rebuild, or one §8 export as appropriate.
+- For docs-only edits, inspect the diff and verify referenced paths/commands exist.
+- When changing experiment logic, record the command, output path, and key structured outputs such as `config.json`, `heldout_evaluation.json`, rollout `summary.json`, or exported CSVs.
+
+## Commit And PR
+
+Keep commits short and task-focused. Concise Chinese or English subjects are both fine.
 
 Examples:
 
 - `Refine OC catalog canonical export`
 - `更新 noisy sweep 汇总逻辑`
 
-PRs should explain:
-
-- the motivation
-- the modified entrypoints
-- the validation commands actually run
-- any changed reports, plots, or catalog outputs
+PRs should explain motivation, modified entrypoints, validation commands actually run, and any changed reports, plots, or catalog outputs.
