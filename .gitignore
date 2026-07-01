@@ -79,6 +79,11 @@ paper/**/*.xdv
 paper/**/*.tiff
 paper/**/*.tif
 
+# Claude Code local (personal) settings — machine-specific permission allowlist
+# with local absolute paths. Shared repo tooling under .claude/ (agents/, skills/)
+# stays tracked; only this per-machine file is ignored.
+.claude/settings.local.json
+
 # Project specific
 results/
 checkpoints/
