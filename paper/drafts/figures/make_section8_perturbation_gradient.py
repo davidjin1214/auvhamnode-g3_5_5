@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
-"""Figure 3 (§1.8): 60 s terminal position error across the increasing initial-
-condition perturbation gradient (clean -> nominal -> degraded -> heading-biased),
-clean training. The structured accuracy lead is clearest under clean / mild
-perturbation and narrows under the strongest perturbation, where the structured
-models and the SE(3) momentum black box converge. Geometry stability holds
-throughout; the full-state black box diverges under every profile.
+"""Figure 3 (§1.8): 60 s terminal position error across the initial-condition
+perturbation profiles (clean -> nominal -> degraded -> heading-biased, ordered by
+induced error rather than a single intensity axis -- heading-biased is a
+systematic yaw-offset profile), clean training. The structured accuracy lead is
+clearest under clean / mild perturbation and narrows under the highest-error
+profile, where the structured models and the SE(3) momentum black box converge.
+Geometry stability holds throughout; the full-state black box diverges under
+every profile.
 
 Reads figure_data/perturbation_gradient.csv (export_section8_horizon_curves.py).
 """
@@ -62,7 +64,7 @@ def draw():
     ax.set_xticklabels([PROFILE_LABEL[p] for p in PROFILES], fontsize=6.0)
     ax.set_xlim(-0.3, 3.3)
     ax.set_ylim(0, 5.0)
-    ax.set_xlabel("initial-condition perturbation (increasing)", fontsize=6.8)
+    ax.set_xlabel("initial-condition perturbation profile", fontsize=6.8)
     ax.set_ylabel("60 s terminal position error / m", fontsize=6.8)
     ax.grid(True, color=S.PALETTE["rule"], lw=0.5)
     ax.set_axisbelow(True)

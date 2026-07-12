@@ -4,7 +4,7 @@ degradation multipliers against the single full-model baseline (0.68 m).
 
 The ladder separates three structural stories so the headline stays exact:
   - within the inertial-energy sub-prior group the energy core dominates and the
-    effect decreases monotonically (config force 5.5x > mass prior 1.9x >
+    effect decreases monotonically (config force 5.6x > mass prior 1.9x >
     lift 1.2x);
   - the merged-force baseline isolates the value of decomposing the
     non-conservative forces (energy core kept) -- a separate axis (~2.2x);
@@ -61,25 +61,37 @@ def draw():
     fig.subplots_adjust(left=0.265, right=0.975, bottom=0.135, top=0.975)
 
     y = list(range(len(rows), 0, -1))
-    DIVERGE_X = 8.2  # placeholder bar length for the divergent ablation
+    # Multipliers are recomputed from the exact medians (not the pre-rounded
+    # multiplier_vs_full column) to avoid double rounding -- e.g. the config-force
+    # ratio 5.5511 rounds to 5.6x directly, but its 2-dp stored value 5.55 rounds
+    # down to 5.5x under a second :.1f pass.
+    full_med = float(rows[0]["clean_median"])
     for yy, r in zip(y, rows):
         m = r["model_type"]
         color = S.MODEL_COLOR[m]
-        diverged = r["status"] != "ok"
-        med = DIVERGE_X if diverged else float(r["clean_median"])
-        ax.barh(yy, med, height=0.60, color=color, alpha=0.32 if diverged else 0.9,
-                edgecolor=color, linewidth=0.9, hatch="////" if diverged else None, zorder=3)
-        if not diverged:
-            p95 = float(r["clean_p95"])
-            ax.plot([med, p95], [yy, yy], color=S.PALETTE["ink"], lw=0.7, solid_capstyle="round", zorder=4)
-            ax.plot([p95, p95], [yy - 0.16, yy + 0.16], color=S.PALETTE["ink"], lw=0.7, zorder=4)
-            mult = r["multiplier_vs_full"]
-            tag = "baseline" if m == "phnode_full" else f"{float(mult):.1f}x"
-            ax.text(p95 + 0.18, yy, tag, va="center", ha="left", fontsize=5.8,
-                    color=color, fontweight="bold")
-        else:
-            ax.text(DIVERGE_X / 2, yy, "diverges", va="center", ha="center", fontsize=6.0,
+        if r["status"] != "ok":
+            # Off-scale: the six repeats all diverge to tens of metres (18--54 m).
+            # A hatched bar plus an open-ended arrow breaking through the right axis
+            # marks the value as out of range, so it is not misread as a finite
+            # ~8 m median terminating inside the plot.
+            ax.barh(yy, 11.6, height=0.60, color=color, alpha=0.30, edgecolor=color,
+                    linewidth=0.9, hatch="////", zorder=3)
+            ax.annotate("", xy=(13.7, yy), xytext=(11.6, yy),
+                        arrowprops=dict(arrowstyle="-|>", color=color, lw=1.5,
+                                        mutation_scale=11),
+                        annotation_clip=False, zorder=6)
+            ax.text(5.6, yy, "diverges (tens of m)", va="center", ha="center", fontsize=5.8,
                     color=color, fontweight="bold", style="italic")
+            continue
+        med = float(r["clean_median"])
+        p95 = float(r["clean_p95"])
+        ax.barh(yy, med, height=0.60, color=color, alpha=0.9,
+                edgecolor=color, linewidth=0.9, zorder=3)
+        ax.plot([med, p95], [yy, yy], color=S.PALETTE["ink"], lw=0.7, solid_capstyle="round", zorder=4)
+        ax.plot([p95, p95], [yy - 0.16, yy + 0.16], color=S.PALETTE["ink"], lw=0.7, zorder=4)
+        tag = "baseline" if m == "phnode_full" else f"{med / full_med:.1f}x"
+        ax.text(p95 + 0.18, yy, tag, va="center", ha="left", fontsize=5.8,
+                color=color, fontweight="bold")
 
     # left-margin labels: model name (bold) over structural-axis tag (small, muted)
     ax.set_yticks(y)
