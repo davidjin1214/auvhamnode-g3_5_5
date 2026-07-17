@@ -130,7 +130,7 @@ def draw_contract_band(ax):
                  color=PALETTE["muted"])
 
     box(0.030, 0.215, "Data space", r"$s$", r"over-ground velocity $\nu_b$")
-    box(0.300, 0.235, "Augmented state", r"$y$", r"relative-water velocity $\nu_r$")
+    box(0.300, 0.235, "Augmented state", r"$y$", r"water-relative velocity $\nu_r$")
     box(0.755, 0.215, "Output", r"$\hat s$", r"over-ground velocity $\nu_b$")
 
     arrow(ax, (0.245, BAND_Y + BAND_H * 0.5), (0.300, BAND_Y + BAND_H * 0.5),

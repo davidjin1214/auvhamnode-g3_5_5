@@ -275,7 +275,7 @@ def draw() -> None:
         ax,
         0.380,
         0.286,
-        "Hydrostatic balance",
+        "Energy balance",
         size=TITLE_SIZE,
         weight="bold",
         color=PALETTE["ink"],

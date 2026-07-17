@@ -59,7 +59,7 @@ def draw():
     ax.set_xlim(6, 78)
     ax.set_ylim(0, 4.2)
     ax.set_xlabel("prediction horizon / s", fontsize=6.8)
-    ax.set_ylabel("60 s terminal position error / m", fontsize=6.8)
+    ax.set_ylabel("terminal position error / m", fontsize=6.8)
     ax.grid(True, color=S.PALETTE["rule"], lw=0.5)
     ax.set_axisbelow(True)
     for sp in ("top", "right"):
