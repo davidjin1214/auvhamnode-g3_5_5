@@ -6,9 +6,11 @@ never preserved; this script reconstructs it from the shipped PDF so the
 manuscript figure has a tracked source. Differences against the thesis-chapter
 generator, matching the manuscript's own terminology and multiplier convention:
 
-  - multiplier annotations format the pre-rounded ``multiplier_vs_full`` column
-    (config force prints 5.5x, matching the manuscript text), instead of
-    recomputing from the exact medians (which prints 5.6x);
+  - multiplier annotations recompute from the exact clean medians with one-step
+    rounding (config force prints 5.6x), the same convention as the
+    thesis-chapter generator; the manuscript text adopted this convention in the
+    2026-07-18 revision (previously both sides printed the pre-rounded
+    ``multiplier_vs_full`` column, i.e. 5.5x);
   - the divergent ablation is display-named "Force Conditioning" with axis tag
     "force interface" (manuscript contrast A4), not "Narrow Actuation";
   - the divergent row is a full-axis-width pale hatched band (alpha 0.12) with
@@ -71,6 +73,7 @@ def draw():
         except ValueError:
             return (1, 1e9)
     rows = sorted(rows, key=sort_key)
+    ref_med = next(float(r["clean_median"]) for r in rows if r["model_type"] == "phnode_full")
 
     fig, ax = plt.subplots(figsize=(WIDTH_MM * S.MM_TO_IN, HEIGHT_MM * S.MM_TO_IN), facecolor="white")
     fig.subplots_adjust(left=0.265, right=0.975, bottom=0.135, top=0.975)
@@ -93,8 +96,7 @@ def draw():
                 edgecolor=color, linewidth=0.9, zorder=3)
         ax.plot([med, p95], [yy, yy], color=S.PALETTE["ink"], lw=0.7, solid_capstyle="round", zorder=4)
         ax.plot([p95, p95], [yy - 0.16, yy + 0.16], color=S.PALETTE["ink"], lw=0.7, zorder=4)
-        mult = r["multiplier_vs_full"]
-        tag = "baseline" if m == "phnode_full" else f"{float(mult):.1f}x"
+        tag = "baseline" if m == "phnode_full" else f"{med / ref_med:.1f}x"
         ax.text(p95 + 0.18, yy, tag, va="center", ha="left", fontsize=5.8,
                 color=color, fontweight="bold")
 
