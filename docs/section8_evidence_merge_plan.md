@@ -43,7 +43,7 @@
 | **T-L1 几何稳定性** | blackbox vs SE(3) 黑箱 vs 结构化，clean 训练 + iid 噪声训练 | clean 列 = **B 区**；iid-噪声列 = **A 区**（B 区无黑箱噪声训练） | 跨镜像，但结论为定性"发散/有限"，对偏移免疫 |
 | **T-L2 能量精度阶梯** | full / no_lift / no_mass_prior / qforce / diag_damping / bu_only，clean | full,no_lift,no_mass_prior,qforce = **B 区**；diag_damping,bu_only = **A 区** | 倍数**同镜像内**计算（见 A.4） |
 | **T-rob 跨评估鲁棒性** | 4 结构化 + SE(3) 黑箱，clean 训练，四 profile | **B 区**（结构化、blackbox、se3_*）+ **A 区**（黑箱噪声训练的稳定性旁证可选） | 单镜像主表，最干净 |
-| **T-L3 噪声协议等价性** | clean / iid / v4lite，4 结构化，nominal_eval | **全部 B 区** | 论文核心发现：iid≈v4lite，排名不随协议变 |
+| **T-L3 噪声协议敏感性** | clean / iid / v4lite，4 结构化，nominal_eval | **全部 B 区** | 完整模型与无质量先验消融 iid≈v4lite；无升力耦合消融和配置广义力基线是显式例外；分层排序不变 |
 | **T-disc 透明度披露** | 所有被排除/失败种子 + 类别 | A 区 + B 区 | 体现 A.2 分类法 |
 
 ## A.4 同镜像倍数规则
@@ -125,7 +125,7 @@ clean 列 = clean 训练 / clean 评估；iid-噪声列 = iid_noisy_ic 训练 / 
 
 **结论（可写）**：精度领先在初值扰动增强时收敛（heading 下各结构化模型与 se3_momentum 互相趋近）；但几何稳定性优势（blackbox 全发散 vs 保几何有限）在**所有** profile 下稳健。
 
-## 表 4（T-L3）噪声协议等价性（nominal_eval / iid 评估，60s 中位数/m，B 区）
+## 表 4（T-L3）噪声协议敏感性与条件等价（nominal_eval / iid 评估，60s 中位数/m，B 区）
 
 | 模型 | clean 训练 | **iid 训练** | **v4lite 训练** | iid↔v4lite 差 |
 |---|---|---|---|---|
@@ -134,7 +134,7 @@ clean 列 = clean 训练 / clean 评估；iid-噪声列 = iid_noisy_ic 训练 / 
 | `ablate_no_lift` | 1.05 | 1.00 | 1.27 | 26%（v4lite 单种子尾部，强扰动下收敛 <8%） |
 | `phnode_qforce` | 3.74 | 2.63 | 1.59 | 40%（qforce 高方差，两协议种子跨度均 ~3m） |
 
-**结论（可写）**：① 对稳定结构化主力模型（phnode_full、no_mass_prior）**iid≈v4lite**（≤7%）；② 模型**排名不随训练协议改变**（full/no_lift 在 top-1/2 并列，no_mass_prior 第 3，qforce 末位）；③ 噪声-IC 训练并不系统性优于 clean。→ 据此把 v4-lite 与 iid **并列为两条噪声线**，并指出"长时结果对噪声-IC 协议选择不敏感"是结论本身，无需全因子覆盖。
+**结论（可写）**：① 对完整模型和无质量先验消融，**iid≈v4lite**（≤约 5%）；无升力耦合消融与配置广义力基线分别有 26% 与 40% 的显式差异，不能概括为四模型普遍等价；② 模型的**分层排序**不随训练协议改变（full/no_lift 保持头部组但精确次序可互换，no_mass_prior 居中，qforce 居后）；③ 噪声-IC 训练并不系统性优于 clean。→ 因此只在稳定主力模型和分层排序意义下把 v4-lite 与 iid 并列为两条噪声线，不升级为普适协议等价或 v4-lite 更优。
 
 ## 表 5（T-disc）逐种子异常透明度披露
 
