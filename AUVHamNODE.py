@@ -115,9 +115,10 @@ class AUVHamNODE(nn.Module):
     """
     Open port-Hamiltonian Neural ODE for AUV dynamics on SE(3).
 
-    The mechanical pH core evolves on (q, p_r), while actuator states follow
-    first-order lag dynamics. ``u_cmd`` and optional ``v_c^n`` are carried
-    exogenous channels with zero derivative over one integration window.
+    The six-DOF mechanical subsystem evolves on (q, p_r), while actuator states
+    follow first-order lag dynamics. ``u_cmd`` and optional ``v_c^n`` are
+    carried exogenous variables with zero derivative over one integration
+    window.
     """
 
     POSE_DIM = 12

@@ -113,13 +113,13 @@
 6. **“分支”**：神经网络的耗散分支、斜对称分支和广义力分支具有明确的网络输出对象，属于可识别的模型组成，予以保留。
 7. **“端口哈密顿”连接号**：沿用全文和模型名称中的现行写法，没有为纯排版偏好作全局改动。
 8. **`CHIRP`**：只按数据标签保留并明确其对应的正文场景；未据标签改变激励信号定义。
-9. **“正定耗散”**：相关建模基础和可辨识性讨论中各保留一处原文“正定耗散”，而模型定义及公式使用“半正定耗散”与 `D_θ\succeq0`。二者涉及矩阵性质和命题强度，不能作为普通近义词自动统一；需作者确认前两处是否应改为“半正定耗散”。该项记为 A—中。
+9. **“正定耗散”**：本项已于 2026-07-26 完成技术闭环。当前实现通过对下三角因子的对角线施加严格正变换和正下界，得到 `D_θ=L_θL_θ^\top\succ0`；对角消融同样保持严格正对角。能量命题和一般端口哈密顿功率不等式只需较弱条件 `D_θ\succeq0`。因此正文按“实现性质用正定、理论充分条件用半正定”区分，不再将二者视作待作者选择的近义表达。详见 [auvhamnode_thesis_terminology_closure_20260726_zh.md](auvhamnode_thesis_terminology_closure_20260726_zh.md)。
 
-## 8. 需作者另行确认或另行授权的图内术语
+## 8. 图内术语历史问题及后续闭环
 
-正文、图题和图注已经使用规范术语，但下列文字位于已生成的独立 PDF 图件内部。本轮只授权修改标准、审查记录、正式 TeX 主稿及其编译 PDF，不授权修改图件脚本、SVG 或独立 PDF，故未改动。
+下表记录的是本次审查当时尚未获授权修改图源时的原始问题。2026-07-26 已按建议修订相应 Python 生成脚本，并重新导出 SVG、PDF 和 PNG；最终英文显示名以闭环记录为准。
 
-| 图件 | 图内当前表达 | 问题 | 建议 |
+| 图件 | 审查时的图内表达 | 问题 | 建议 |
 |---|---|---|---|
 | `figures/method_overview_hero.pdf` | `over-ground velocity, ν_b`、`water-relative velocity, ν_r` | `over-ground velocity` 通常指线速度，不能准确覆盖六维 `ν_b`；图内名称与正文“绝对广义速度/相对水体广义速度”不一致 | 改为 `absolute generalized velocity, ν_b`、`water-relative generalized velocity, ν_r` |
 | 同上 | `Open six-DOF mechanical core` | 与正文“开放式六自由度机械子系统”不一致 | 改为 `Open six-DOF mechanical subsystem` |
@@ -133,7 +133,7 @@
 | `figures/section8_ablation_ladder.pdf` | `Config Force`、`Narrow Actuation`、`actuation conditioning` | 旧模型描述名和“条件化”标签与正文 M1、A4 名称不一致 | 改为 `Configuration-force baseline` 或与中文 M1 对应的正式英文名；A4 改为 `Restricted force-branch inputs` |
 | `figures/section8_diagnostics.pdf` 等复用显示名的结果图 | `Config Force` | 与正文“位形广义力基线”不一致 | 统一采用经作者确认的 M1 英文显示名 |
 
-上述问题中，`Force port` 可能造成端口对象误解，记为 A—高；`mechanical core`、`conditioning` 和旧消融显示名记为 B/C—高。若作者授权修改图件，应修改相应生成脚本并重新生成 PDF，而不应只覆盖最终图片文字。
+上述风险分级保留为历史审计依据。2026-07-26 的处理没有覆盖最终图片文字，而是修改图件生成脚本后重新生成全部受影响产物；`τ_θ` 现标作外部广义力，并与功率配对 `ν_r^\top\tau_θ` 同时显示。处理范围和验证证据见 [auvhamnode_thesis_terminology_closure_20260726_zh.md](auvhamnode_thesis_terminology_closure_20260726_zh.md)。
 
 ## 9. 保护项与验证结果
 
@@ -153,5 +153,5 @@
 - 日志保留一处参考文献段落 Underfull `\hbox`（`auvhamnode_thesis_chapter_zh.bbl` 第 336--339 行，badness 1735），与仓库 `paper/README.md` 所记既有状态一致，不属于术语修改引起的内容错误；
 - PDF 转换阶段的 `xdvipdfmx` 输出两次 `Object @page.1 already defined` 警告；最新 PDF 可正常读取并完整渲染 58 页，未发现由该警告造成的页面缺失、重复或版面异常。本轮不改动页码和超链接结构；
 - 视觉检查：使用 Poppler 将最新 PDF 的 58 页全部渲染为 PNG，并检查五张联系表；另逐页检查包含速度表示、Fossen 对应、主模型、机械子系统功率关系、结构消融和内部诊断图的关键页面。未发现裁切、重叠、乱码、黑块、图表越界或明显异常分页；
-- 图内术语：确认第 8 节所列旧英文标签在最新 PDF 中仍可见；因其源文件不在本轮授权范围内，未修改并已明确记录。
-- 最终 Git 范围：仅正式 TeX 主稿、由其生成的 PDF、术语审查标准和术语审查记录四个授权文件发生变化；未见无关文件改动。
+- 图内术语：本条是该轮审查时的历史结果；第 8 节所列旧英文标签已在 2026-07-26 的后续闭环中从图源和重新生成的产物中移除。
+- 该轮审查时的最终 Git 范围：仅正式 TeX 主稿、由其生成的 PDF、术语审查标准和术语审查记录四个授权文件发生变化；未见无关文件改动。

@@ -3,14 +3,15 @@ remove-one marginal effect of each structural prior on 60 s clean accuracy, all
 degradation multipliers against the single full-model baseline (0.68 m).
 
 The ladder separates three structural stories so the headline stays exact:
-  - within the inertial-energy sub-prior group the energy core dominates and the
-    effect decreases monotonically (config force 5.6x > mass prior 1.9x >
+  - within the inertial-energy sub-prior group the scalar-potential structure
+    dominates and the effect decreases monotonically (configuration-force
+    baseline 5.6x > mass prior 1.9x >
     lift 1.2x);
   - the merged-force baseline isolates the value of decomposing the
     non-conservative forces (energy core kept) -- a separate axis (~2.2x);
-  - coupled damping and actuation conditioning are two further independent
-    structural necessities: diagonal-only damping degrades ~6x, and over-narrow
-    actuation conditioning diverges outright.
+  - coupled damping and force-branch input scope are two further independent
+    structural factors: diagonal-only damping degrades ~6x, and restricting
+    force-branch inputs too far leads to divergence.
 
 Reads figure_data/ablation_ladder.csv (scripts/export_section8_ablation_ladder.py).
 """
@@ -34,7 +35,7 @@ AXIS_TAG = {
     "inertial_energy": "inertial-energy prior",
     "force_decomp": "force decomposition",
     "damping": "damping structure",
-    "actuation": "actuation conditioning",
+    "actuation": "force-branch inputs",
 }
 
 
@@ -62,7 +63,8 @@ def draw():
 
     y = list(range(len(rows), 0, -1))
     # Multipliers are recomputed from the exact medians (not the pre-rounded
-    # multiplier_vs_full column) to avoid double rounding -- e.g. the config-force
+    # multiplier_vs_full column) to avoid double rounding -- e.g. the
+    # configuration-force
     # ratio 5.5511 rounds to 5.6x directly, but its 2-dp stored value 5.55 rounds
     # down to 5.5x under a second :.1f pass.
     full_med = float(rows[0]["clean_median"])

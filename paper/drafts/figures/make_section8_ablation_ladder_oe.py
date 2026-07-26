@@ -7,12 +7,13 @@ manuscript figure has a tracked source. Differences against the thesis-chapter
 generator, matching the manuscript's own terminology and multiplier convention:
 
   - multiplier annotations recompute from the exact clean medians with one-step
-    rounding (config force prints 5.6x), the same convention as the
+    rounding (the configuration-force baseline prints 5.6x), the same
+    convention as the
     thesis-chapter generator; the manuscript text adopted this convention in the
     2026-07-18 revision (previously both sides printed the pre-rounded
     ``multiplier_vs_full`` column, i.e. 5.5x);
-  - the divergent ablation is display-named "Force Conditioning" with axis tag
-    "force interface" (manuscript contrast A4), not "Narrow Actuation";
+  - the divergent ablation is display-named "Restricted Force Inputs" with axis
+    tag "force-branch inputs" (manuscript contrast A4);
   - the divergent row is a full-axis-width pale hatched band (alpha 0.12) with
     the centred annotation "no finite 60 s run" -- the manuscript's run-level
     accounting phrase -- instead of the arrow-through-axis "diverges" marker;
@@ -45,11 +46,11 @@ AXIS_TAG = {
     "inertial_energy": "inertial-energy prior",
     "force_decomp": "force decomposition",
     "damping": "damping structure",
-    "actuation": "force interface",
+    "actuation": "force-branch inputs",
 }
 
 # Manuscript-side overrides against the shared thesis-chapter naming.
-DISPLAY_OVERRIDE = {"ablate_bu_only": "Force Conditioning"}
+DISPLAY_OVERRIDE = {"ablate_bu_only": "Restricted Force Inputs"}
 # A3 probes the zero-power coupling branch (skew J_theta); the manuscript groups
 # it with A2 on the dissipation / zero-power coupling axis (review item A-2).
 AXIS_TAG_OVERRIDE = {"ablate_no_lift": "coupling structure"}

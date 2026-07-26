@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Draw a compact mechanical-core power schematic for the thesis chapter."""
+"""Draw the six-DOF mechanical-subsystem power schematic."""
 
 from __future__ import annotations
 
@@ -209,7 +209,7 @@ def draw() -> None:
         ax,
         core_x + 0.024,
         core_y + core_h - 0.050,
-        "Open six-DOF mechanical core",
+        "Open six-DOF mechanical subsystem",
         size=TITLE_SIZE,
         weight="bold",
         color=PALETTE["ink"],
@@ -222,7 +222,7 @@ def draw() -> None:
         y=0.660,
         w=0.215,
         h=0.135,
-        title="Core state",
+        title="Mechanical state",
         body="configuration\nmomentum",
         face=PALETTE["state_pale"],
         edge=PALETTE["state"],
@@ -299,14 +299,14 @@ def draw() -> None:
     labeled_box(
         ax,
         x=0.790,
-        y=0.330,
+        y=0.300,
         w=0.165,
-        h=0.145,
-        title="Force port",
-        body="external\ngeneralized force",
+        h=0.200,
+        title="External generalized\nforce",
+        body=r"power input" + "\n" + r"$\nu_r^\top\tau_\theta$",
         face=PALETTE["power_pale"],
         edge=PALETTE["power"],
-        title_size=TITLE_SIZE,
+        title_size=BODY_SIZE - 0.4,
         body_size=BODY_SIZE,
         title_y=0.70,
     )
@@ -317,7 +317,7 @@ def draw() -> None:
     arrow(ax, (0.215, 0.455), (0.270, 0.340), color=PALETTE["muted"])
     arrow(ax, (0.540, 0.455), (0.490, 0.340), color=PALETTE["power"])
     arrow(ax, (0.790, 0.400), (0.595, 0.265), color=PALETTE["power"])
-    arrow(ax, (0.870, 0.610), (0.870, 0.475), color=PALETTE["muted"], linestyle=(0, (3, 2)))
+    arrow(ax, (0.870, 0.610), (0.870, 0.500), color=PALETTE["muted"], linestyle=(0, (3, 2)))
     arrow(ax, (0.790, 0.700), (0.730, 0.540), color=PALETTE["muted"], linestyle=(0, (3, 2)))
 
     for suffix, kwargs in [

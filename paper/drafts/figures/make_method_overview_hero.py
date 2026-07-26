@@ -2,9 +2,9 @@
 """AUVHamNODE core-method hero figure for §1.5 (merged model overview).
 
 Composition: top contract loop (s -> y -> [field] -> y_hat(t) -> s_hat),
-center structured vector field with the OPEN six-DOF mechanical core (7 modules,
-3-class colour coding) and the exogenous open ports INSIDE the field container
-(they are channels of y / part of F_theta) but OUTSIDE the dashed mechanical core.
+center structured vector field with the open six-DOF mechanical subsystem
+(7 modules, 3-class colour coding) and exogenous variables inside the field
+container but outside the dashed mechanical-subsystem boundary.
 Vertical spacing enlarged so the in-core assembly arrows are clearly visible.
 """
 
@@ -126,12 +126,16 @@ def draw_contract_band(ax):
                  weight="bold", color=PALETTE["ink"])
         add_text(ax, x + w / 2, BAND_Y + BAND_H * 0.45, sym, size=MATH_SIZE - 0.4,
                  color=PALETTE["ink"])
-        add_text(ax, x + w / 2, BAND_Y + BAND_H * 0.16, note, size=SMALL_SIZE,
-                 color=PALETTE["muted"])
+        add_text(ax, x + w / 2, BAND_Y + BAND_H * 0.16, note,
+                 size=SMALL_SIZE - 0.3, color=PALETTE["muted"],
+                 linespacing=0.92)
 
-    box(0.030, 0.215, "Data space", r"$s$", r"over-ground velocity $\nu_b$")
-    box(0.300, 0.235, "Augmented state", r"$y$", r"water-relative velocity $\nu_r$")
-    box(0.755, 0.215, "Output", r"$\hat s$", r"over-ground velocity $\nu_b$")
+    box(0.030, 0.215, "Data space", r"$s$",
+        "absolute generalized\n" + r"velocity $\nu_b$")
+    box(0.300, 0.235, "Augmented state", r"$y$",
+        "water-relative generalized\n" + r"velocity $\nu_r$")
+    box(0.755, 0.215, "Output", r"$\hat s$",
+        "absolute generalized\n" + r"velocity $\nu_b$")
 
     arrow(ax, (0.245, BAND_Y + BAND_H * 0.5), (0.300, BAND_Y + BAND_H * 0.5),
           color=PALETTE["state"])
@@ -164,7 +168,8 @@ def draw_vector_field(ax):
     mx, my, mw, mh = 0.085, 0.300, 0.830, 0.330
     rounded_box(ax, mx, my, mw, mh, face=PALETTE["paper"], edge=PALETTE["ink"],
                 radius=0.012, lw=1.0, linestyle=CORE_DASH, zorder=0)
-    add_text(ax, mx + 0.018, my + mh - 0.020, "Open six-DOF mechanical core",
+    add_text(ax, mx + 0.018, my + mh - 0.020,
+             "Open six-DOF mechanical subsystem",
              size=BODY_SIZE, weight="bold", color=PALETTE["ink"], ha="left")
 
     bw, bh = 0.165, 0.075
@@ -180,7 +185,7 @@ def draw_vector_field(ax):
     module_box(ax, x=col_x[0], y=row_bot, w=bw, h=bh, title="Conservative force",
                tag=r"$V_\theta\!\to\!f_\theta^{V}$", learned=True)
     module_box(ax, x=col_x[1], y=row_bot, w=bw, h=bh, title="Dissipation",
-               tag=r"$D_\theta\!\succeq\!0$", learned=True)
+               tag=r"$D_\theta\!\succ\!0$", learned=True)
     module_box(ax, x=col_x[2], y=row_bot, w=bw, h=bh, title="Skew coupling",
                tag=r"$J_\theta\!=\!-J_\theta^{\top}$", learned=True)
 
@@ -188,9 +193,11 @@ def draw_vector_field(ax):
     fp_w, fp_h = 0.250, (row_top + bh) - row_bot
     rounded_box(ax, fp_x, fp_y, fp_w, fp_h, face=PALETTE["state_pale"],
                 edge=PALETTE["state"], lw=1.5, zorder=2)
-    add_text(ax, fp_x + fp_w / 2, fp_y + fp_h * 0.72, "Force port",
+    add_text(ax, fp_x + fp_w / 2, fp_y + fp_h * 0.72,
+             "External generalized force",
              size=BODY_SIZE, weight="bold", color=PALETTE["ink"])
-    add_text(ax, fp_x + fp_w / 2, fp_y + fp_h * 0.50, "external port",
+    add_text(ax, fp_x + fp_w / 2, fp_y + fp_h * 0.50,
+             r"mechanical power $\nu_r^\top\tau_\theta$",
              size=SMALL_SIZE, color=PALETTE["muted"])
     tw, th = fp_w * 0.80, 0.044
     tx = fp_x + (fp_w - tw) / 2
@@ -208,7 +215,8 @@ def draw_vector_field(ax):
         arrow(ax, (cx + bw / 2, row_bot), (cx + bw / 2, coll_y), **flow)
     arrow(ax, (fp_x + fp_w / 2, fp_y), (fp_x + fp_w / 2, coll_y), **flow)
 
-    # exogenous open ports band (inside field container, below the core)
+    # Exogenous-variable band inside the field container but outside the
+    # mechanical-subsystem boundary.
     band_y, band_h = 0.205, 0.060
     ports = [
         (0.105, 0.165, "Actuator lag", r"first-order  $u_c\!\to\!u_a$"),
@@ -243,7 +251,7 @@ def draw_legend(ax):
         (0.400, PALETTE["power_pale"], PALETTE["power"],
          "learned shape (structure-preserving)"),
         (0.730, PALETTE["aux_pale"], PALETTE["muted"],
-         "exogenous open port"),
+         "exogenous variable or state"),
     ]
     for x, face, edge, label in items1:
         rounded_box(ax, x, y1 - sw / 2, sw, sw, face=face, edge=edge,
@@ -255,11 +263,12 @@ def draw_legend(ax):
     rounded_box(ax, 0.030, y2 - sw / 2, sw, sw, face=PALETTE["paper"],
                 edge=PALETTE["ink"], radius=0.004, lw=0.9, linestyle=CORE_DASH,
                 zorder=2)
-    add_text(ax, 0.030 + sw + 0.010, y2, "dashed box = open six-DOF mechanical core",
+    add_text(ax, 0.030 + sw + 0.010, y2,
+             "dashed box = open six-DOF mechanical subsystem",
              size=SMALL_SIZE, color=PALETTE["ink"], ha="left")
     arrow(ax, (0.520, y2), (0.560, y2), color=PALETTE["muted"], lw=0.9,
           linestyle=COND_DASH, scale=7.0, zorder=2)
-    add_text(ax, 0.572, y2, "dashed arrow = conditioning input", size=SMALL_SIZE,
+    add_text(ax, 0.572, y2, "dashed arrow = context input", size=SMALL_SIZE,
              color=PALETTE["ink"], ha="left")
 
 

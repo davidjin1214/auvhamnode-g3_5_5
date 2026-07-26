@@ -56,9 +56,9 @@ DISPLAY = {
     "ablate_no_lift": "No Lift",
     "ablate_no_mass_prior": "No Mass Prior",
     "ablate_diag_damping": "Diagonal Damping",
-    "ablate_bu_only": "Narrow Actuation",
+    "ablate_bu_only": "Restricted Force Inputs",
     "phnode_merged_force": "Merged Force",
-    "phnode_qforce": "Config Force",
+    "phnode_qforce": "Configuration-force",
     "se3_momentum_blackbox": "SE(3) mom.",
     "se3_accel_blackbox": "SE(3) accel",
     "blackbox_fullstate": "Full-state",
@@ -70,9 +70,9 @@ AXIS_DISPLAY = {
     "ablate_no_lift": "No Lift",
     "ablate_no_mass_prior": "No Mass\nPrior",
     "ablate_diag_damping": "Diagonal\nDamping",
-    "ablate_bu_only": "Narrow\nActuation",
+    "ablate_bu_only": "Restricted\nForce Inputs",
     "phnode_merged_force": "Merged\nForce",
-    "phnode_qforce": "Config\nForce",
+    "phnode_qforce": "Configuration\nForce",
     "se3_momentum_blackbox": "SE(3)\nMomentum",
     "se3_accel_blackbox": "SE(3)\nAccel",
     "blackbox_fullstate": "Full-state",
@@ -84,7 +84,7 @@ MODEL_COLOR = {
     "ablate_no_lift": PALETTE["energy"],
     "ablate_no_mass_prior": PALETTE["bar_energy"],
     "ablate_diag_damping": "#6E5BA6",       # damping structure -- violet
-    "ablate_bu_only": PALETTE["risk"],       # actuation conditioning -- brown (diverges)
+    "ablate_bu_only": PALETTE["risk"],       # restricted force inputs -- brown (diverges)
     "phnode_merged_force": PALETTE["accent"],
     "phnode_qforce": PALETTE["bar_qforce"],
     "se3_momentum_blackbox": PALETTE["muted"],

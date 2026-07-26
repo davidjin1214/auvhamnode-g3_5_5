@@ -13,19 +13,16 @@ fossen_role_mapping.pdf).
 
 Original description follows.
 
-A two-column power-role transfer diagram: classical (phenomenological) Fossen
-terms on the left map to the geometric, structure-preserving AUVHamNODE
-
-A two-column power-role transfer diagram: classical (phenomenological) Fossen
-terms on the left map to the geometric, structure-preserving AUVHamNODE
-components on the right. This is a red-line-safe remake that corrects three
+A two-column mapping by power properties: classical phenomenological Fossen
+terms on the left map to geometric, structure-preserving AUVHamNODE components.
+This is a red-line-safe remake that corrects three
 errors of an earlier "Fossen -> port-Hamiltonian" sketch:
 
   1. Lift is NOT conservative hydrodynamics: it is carried by the zero-power
      skew-symmetric coupling J_theta (non-conservative, non-dissipative).
-  2. Actuation is NOT a fixed input matrix G(q)u / B u: it is the external
-     generalized-force port tau_theta, drawn as a boundary port, with the
-     explicit assertion tau_theta != G(q)u.
+  2. Actuation is NOT a fixed input matrix G(q)u / B u: tau_theta is an
+     external generalized-force term, paired with nu_r to define mechanical
+     power, with the explicit assertion tau_theta != G(q)u.
   3. No closed port-Hamiltonian form x_dot = (J - R) grad H + G u appears. The
      right column uses the open structured form, and a footnote states that the
      full vehicle-actuator-environment system is open, not a closed pH system.
@@ -250,8 +247,9 @@ def component_box(ax, x, y_centre, w, title, *, tag="", learned=False, port=Fals
     """Right structure-preserving component box: name + <=1 short tag.
 
     Blue edge = construction-guaranteed structural prior. A gold tag (learned or
-    a port) marks the data-learned shape / external port. The force port is drawn
-    with a thicker boundary to read as a port rather than an interior module.
+    boundary term) marks the data-learned shape or external generalized force.
+    The force term uses a thicker boundary to distinguish it from an interior
+    module.
     """
     y = y_centre - ROW_H / 2
     edge = PALETTE["state"]
@@ -296,8 +294,10 @@ def draw_headers(ax) -> None:
 
     # Middle transfer label.
     mid_x = (LEFT_X + LEFT_W + RIGHT_X) / 2
-    add_text(ax, mid_x, head_y + 0.030, "power-role", size=SMALL_SIZE - 0.3, color=PALETTE["muted"])
-    add_text(ax, mid_x, head_y + 0.012, "transfer", size=SMALL_SIZE - 0.3, color=PALETTE["muted"])
+    add_text(ax, mid_x, head_y + 0.030, "mapping by", size=SMALL_SIZE - 0.3,
+             color=PALETTE["muted"])
+    add_text(ax, mid_x, head_y + 0.012, "power properties",
+             size=SMALL_SIZE - 0.3, color=PALETTE["muted"])
 
 
 def draw_rows(ax) -> None:
@@ -307,7 +307,8 @@ def draw_rows(ax) -> None:
     map_arrow(ax, LY_INERTIA)
 
     # Row 2: Coriolis -> fork into coadjoint (structure) + skew coupling (learned).
-    left_box(ax, LY_CORIOLIS, "Coriolis", r"$C(\nu)\nu$", note="zero-power")
+    left_box(ax, LY_CORIOLIS, "Coriolis and centripetal",
+             r"$C(\nu)\nu$", note="zero-power")
     # Upper right box: coadjoint (pure structure, blue, plain grey tag).
     component_box(ax, RIGHT_X, RY_COADJ, RIGHT_W, "Coadjoint coupling", note=r"$\mathrm{ad}^{*}_{\nu_r}p_r$",
                   tag="fixed · zero-power", learned=False)
@@ -325,7 +326,8 @@ def draw_rows(ax) -> None:
 
     # Row 3: Damping -> dissipation.
     left_box(ax, LY_DAMPING, "Damping", r"$D(\nu)\nu$")
-    component_box(ax, RIGHT_X, RY_DISS, RIGHT_W, "Dissipation", tag=r"$D_\theta\!\succeq\!0$", learned=True)
+    component_box(ax, RIGHT_X, RY_DISS, RIGHT_W, "Dissipation",
+                  tag=r"$D_\theta\!\succ\!0$", learned=True)
     map_arrow(ax, LY_DAMPING)
 
     # Row 4: Restoring -> potential.
@@ -333,9 +335,11 @@ def draw_rows(ax) -> None:
     component_box(ax, RIGHT_X, RY_POT, RIGHT_W, "Potential", tag=r"$V_\theta\!\to\!f_\theta^{V}$", learned=True)
     map_arrow(ax, LY_RESTORING)
 
-    # Row 5: External force -> force port (boundary port, gold tag, != G(q)u).
+    # Row 5: External force -> learned generalized-force term.
     left_box(ax, LY_EXTERNAL, "External force", r"$\tau$")
-    component_box(ax, RIGHT_X, RY_PORT, RIGHT_W, "Force port", note="external",
+    component_box(ax, RIGHT_X, RY_PORT, RIGHT_W,
+                  "External generalized force",
+                  note=r"power $\nu_r^\top\tau_\theta$",
                   tag=r"$\tau_\theta\!\neq\!G(q)u$", port=True)
     map_arrow(ax, LY_EXTERNAL)
 
@@ -362,7 +366,8 @@ def draw_anchors_and_footnote(ax) -> None:
         color=PALETTE["ink"],
         ha="left",
     )
-    add_text(ax, 0.905, 0.236, "external port", size=SMALL_SIZE - 0.6, color=PALETTE["power"], ha="center")
+    add_text(ax, 0.905, 0.236, "external force term",
+             size=SMALL_SIZE - 0.6, color=PALETTE["power"], ha="center")
 
     # Power-pairing velocity note between/below the two forms.
     add_text(
@@ -389,7 +394,7 @@ def draw_anchors_and_footnote(ax) -> None:
     # Red-line footnote (single grey line; open-system / not closed pH).
     ax.plot([0.035, 0.965], [0.150, 0.150], color=PALETTE["rule"], lw=0.7, zorder=0)
     foot = (
-        "Mechanical-core power roles; current / actuator / depth are exogenous. "
+        "Mechanical-subsystem power properties; current / actuator / depth are exogenous. "
         "The full vehicle–actuator–environment system is open — not a closed\n"
         r"port-Hamiltonian system, and $\tau_\theta\neq G(q)u$."
     )

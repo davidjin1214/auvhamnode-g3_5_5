@@ -53,7 +53,7 @@ DISPLAY = {
     "ablate_no_mass_prior": "No Mass Prior",
     "se3_momentum_blackbox": "SE(3) mom.",
     "se3_accel_blackbox": "SE(3) accel",
-    "phnode_qforce": "pH q-Force",
+    "phnode_qforce": "Configuration-force",
     "blackbox_fullstate": "Full-state",
 }
 
@@ -63,7 +63,7 @@ AXIS_DISPLAY = {
     "ablate_no_mass_prior": "No Mass\nPrior",
     "se3_momentum_blackbox": "SE(3)\nMomentum",
     "se3_accel_blackbox": "SE(3)\nAccel",
-    "phnode_qforce": "pH q-Force",
+    "phnode_qforce": "Configuration\nForce",
 }
 
 
