@@ -6,8 +6,11 @@ submission (2026-07-17, review items A-1/B-8.4): the restoring term and the
 explicit force sum print $g(q)$ -- the manuscript's configuration symbol used
 in Eqs. (14)/(17) and Supplement Eq. (S1) -- instead of Fossen's $g(\\eta)$,
 which the manuscript never defines (the thesis chapter keeps $g(\\eta)$, so the
-shared generator is unchanged); and the power-pairing note reads
-"(water-relative)" in the manuscript's standard word order. Writes
+shared generator is unchanged); and the power-conjugate velocity note reads
+"(water-relative)" in the manuscript's standard word order. Fix applied
+2026-08-01: that note reads "power-conjugate" rather than "power-pairing",
+matching the manuscript's terminology (the thesis chapter keeps the shared
+generator's wording). Writes
 fossen_role_mapping_oe.* (copied into the manuscript repository as
 fossen_role_mapping.pdf).
 
@@ -374,7 +377,7 @@ def draw_anchors_and_footnote(ax) -> None:
         ax,
         0.500,
         0.214,
-        r"power-pairing velocity $\nu\to\nu_r$ (water-relative)",
+        r"power-conjugate velocity $\nu\to\nu_r$ (water-relative)",
         size=SMALL_SIZE,
         color=PALETTE["muted"],
         ha="center",

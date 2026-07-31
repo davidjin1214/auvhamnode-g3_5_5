@@ -15,8 +15,12 @@ generator, matching the manuscript's own terminology and multiplier convention:
   - the divergent ablation is display-named "Restricted Force Inputs" with axis
     tag "force-branch inputs" (manuscript contrast A4);
   - the divergent row is a full-axis-width pale hatched band (alpha 0.12) with
-    the centred annotation "no finite 60 s run" -- the manuscript's run-level
-    accounting phrase -- instead of the arrow-through-axis "diverges" marker;
+    the centred annotation "no non-divergent 60 s run" -- the manuscript's
+    run-level outcome phrase (fix applied 2026-08-01: "non-divergent" replaces
+    "finite", because the manuscript's divergence criterion is a non-finite *or*
+    >10 m run-level median, so "finite" names the wrong complement; the thesis
+    chapter keeps the shared generator's wording) -- instead of the
+    arrow-through-axis "diverges" marker;
   - fix applied 2026-07-17 (review item A-2): the "No Lift" (A3) axis sub-label
     reads "coupling structure", consistent with the manuscript's grouping of A3
     under dissipation and zero-power coupling; the thesis chapter keeps A3 in
@@ -88,7 +92,7 @@ def draw():
             # 60 s result for any repetition of this contrast.
             ax.barh(yy, 13.0, height=0.60, color=color, alpha=0.12,
                     edgecolor=color, linewidth=0.7, hatch="////", zorder=2)
-            ax.text(6.5, yy, "no finite 60 s run", va="center", ha="center",
+            ax.text(6.5, yy, "no non-divergent 60 s run", va="center", ha="center",
                     fontsize=5.8, color=color, fontweight="bold", style="italic")
             continue
         med = float(r["clean_median"])

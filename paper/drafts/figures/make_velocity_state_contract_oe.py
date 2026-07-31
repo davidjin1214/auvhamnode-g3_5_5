@@ -5,7 +5,10 @@ Copy of ``make_velocity_state_contract.py`` with the state-vector expansions
 written in the manuscript's notation (fix 2026-07-17, review item B-8.3): the
 first element is the inertial position $p^n$, matching manuscript Eqs. (7)/(8),
 whereas the thesis chapter writes the same element as $x$. The .tiff export is
-dropped (the manuscript embeds the vector PDF only). Writes
+dropped (the manuscript embeds the vector PDF only). Fix applied 2026-08-01:
+the data-space role line reads "evaluation metrics" rather than "rollout
+metrics", matching the manuscript's terminology (the thesis chapter keeps the
+shared generator's wording). Writes
 velocity_state_contract_oe.* (copied into the manuscript repository as
 velocity_state_contract.pdf).
 """
@@ -243,7 +246,7 @@ def draw() -> None:
         style=StateStyle(PALETTE["state_pale"], PALETTE["state"]),
         title="Data / evaluation space",
         equation=r"$s=[p^n,R,\nu_b,u_a,u_c,v_c^n,z_{\rm ref}]$",
-        role=r"pose kinematics, rollout metrics",
+        role=r"pose kinematics, evaluation metrics",
         velocity=r"$\nu_b$",
     )
 
