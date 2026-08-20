@@ -10,10 +10,15 @@ Orientation: `AGENTS.md` (full workflow), `EXPERIMENT_PROGRESS_TRACKER.md` (time
 
 ## Working copies
 
-Two local copies with different jobs: `D:\Codes\g3_5_5` (outside OneDrive) for writing,
-LaTeX and git; the OneDrive path for the heavy run artifacts (`checkpoints/`, `data/`,
-`analysis/oc_data_catalog/`) that are not in version control. Never compile LaTeX under
-the OneDrive path — that is where the `*-A Mac mini.aux` conflict copies came from.
+`D:\Codes\g3_5_5` (outside OneDrive) is the working copy and the only place work
+happens: writing, LaTeX, code changes and all git operations. `origin` (GitHub) is the
+only push target.
+
+The OneDrive path is a read-only backup plus the source of the heavy run artifacts
+(`checkpoints/`, `data/`, `analysis/oc_data_catalog/`) that are not in version control.
+Since 2026-08-20 it is no longer pushed to, so its git state is stale by design — never
+read it to judge what changed recently. Never compile LaTeX under the OneDrive path
+either — that is where the `*-A Mac mini.aux` conflict copies came from.
 Details in `docs/repo_structure_audit.md` §6.2.
 
 ## Commands
