@@ -1,0 +1,8 @@
+model_type,axis_group,clean_median,clean_p95,multiplier_vs_full,status,n_used
+phnode_full,reference,0.6767,1.7741,1.0,ok,5
+ablate_no_lift,inertial_energy,0.8288,2.1538,1.22,ok,4
+ablate_no_mass_prior,inertial_energy,1.2966,4.3103,1.92,ok,5
+phnode_merged_force,force_decomp,1.4991,4.1611,2.22,ok,3
+phnode_qforce,inertial_energy,3.7564,11.2481,5.55,ok,5
+ablate_diag_damping,damping,4.1659,10.2901,6.16,ok,6
+ablate_bu_only,actuation,,,,stability_failure,0

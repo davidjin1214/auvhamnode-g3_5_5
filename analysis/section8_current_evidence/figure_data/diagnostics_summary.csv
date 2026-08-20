@@ -1,0 +1,8 @@
+model_type,so3_orth_max,energy_span_median,energy_defined,n_energy_seeds
+phnode_full,1.409e-05,17.8284,1,5
+ablate_no_lift,1.279e-05,18.6552,1,4
+ablate_no_mass_prior,1.270e-05,1.8605,1,5
+se3_momentum_blackbox,1.244e-05,,0,0
+se3_accel_blackbox,1.423e-05,,0,0
+phnode_qforce,3.397e-04,,0,0
+blackbox_fullstate,1.459e+02,,0,0

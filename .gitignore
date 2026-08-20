@@ -97,6 +97,7 @@ wandb/
 analysis/*
 !analysis/experiment_progress_log.csv
 !analysis/provenance_audit/
+!analysis/section8_current_evidence/
 !analysis/oc_data_catalog/
 analysis/oc_data_catalog/*
 !analysis/oc_data_catalog/evidence_status_overrides.csv
