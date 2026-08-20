@@ -268,6 +268,12 @@ Phase-1A cleanrun v1 相关的 `checkpoints/sweep_oc_phase1a_*_phase1a_oc_v4lite
 
 清单由 `scripts/build_checkpoints_retention_manifest.py` 生成，可重跑；`referenced_by` 列记录哪些 tracked 文档提到了该 run，删除前应先看这一列。
 
+### 6.1 已识别的可清理项
+
+**rollout 绘图（4.84 GB，已列清单，未执行）。** `checkpoints/**/rollout_benchmark/**/*.png` 共 8,655 张，其中 8,625 张可删——它们由同一 profile 目录下的 `.csv` / `summary.json` 画出，数据本身不动；全仓库没有任何代码读取 PNG；论文插图走的是 `analysis/section8_current_evidence/figure_data/` → `paper/drafts/figures/make_*.py` 这条独立链路。逐文件清单见 `docs/checkpoints_png_purge_manifest.csv`（`scripts/build_checkpoints_png_purge_manifest.py` 生成）。保留的 30 张分三类：不在 `rollout_benchmark/` 下的旧式布局、被 `docs/oc_model_evaluation_overview.md` 链接的、以及所在 profile 目录没有任何 metrics 文件（图是仅存产物）的。
+
+**中间 epoch 检查点。** `checkpoint_{50,100,150,200,250}.pt` 原有 1,390 个 / 0.97 GB。这类文件不可再生但 `best_model.pt` 已单独存在，只有续训或训练动力学分析才会用到。**2026-08-20 已删除 `checkpoints/unused/` 下的 270 个（0.20 GB）**——该目录整体为 `delete-candidate`；其余 1,120 个（约 0.77 GB，主要在 `sweep_oc_all`、`sweep_oc_all_noise`、`smoke3_*`）保持原状。
+
 **同步层注意事项**：
 
 - 重建 `analysis/oc_data_catalog/` 需要把 `checkpoints/` 全量拉回本地（`scripts/build_oc_data_catalog.py` 走 `rglob("runs.tsv")` 扫描），代价是 14 GB 的按需下载，非必要不要触发。
