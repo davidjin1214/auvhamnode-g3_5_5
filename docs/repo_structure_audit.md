@@ -280,7 +280,7 @@ Phase-1A cleanrun v1 相关的 `checkpoints/sweep_oc_phase1a_*_phase1a_oc_v4lite
 
 | | 路径 | 职责 |
 |---|---|---|
-| **工作副本** | `C:\Code\g3_5_5`（Windows 本机，非 OneDrive） | 论文写作与 LaTeX 编译、图脚本、代码改动、全部 git 操作。约 118 MB（其中 `.git` 92 MB） |
+| **工作副本** | `D:\Codes\g3_5_5`（Windows 本机，非 OneDrive；与 `D:\Codes\rl_v2` 同一约定） | 论文写作与 LaTeX 编译、图脚本、代码改动、全部 git 操作。约 118 MB（其中 `.git` 92 MB） |
 | **数据归档** | `C:\Users\jinxiang\OneDrive\我的\Code\auv_se3node\g3_5_5` | 重实验产物：`checkpoints/`（14 GB）、`data/`（795 MB）、`analysis/oc_data_catalog/`（1.45 GB）。跨机同步、按需下载 |
 
 工作副本的 remote：`origin` = GitHub，`onedrive` = 上表的 OneDrive 路径（可直接 `git pull onedrive main`）。

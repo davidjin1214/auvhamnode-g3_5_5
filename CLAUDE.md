@@ -10,7 +10,7 @@ Orientation: `AGENTS.md` (full workflow), `EXPERIMENT_PROGRESS_TRACKER.md` (time
 
 ## Working copies
 
-Two local copies with different jobs: `C:\Code\g3_5_5` (outside OneDrive) for writing,
+Two local copies with different jobs: `D:\Codes\g3_5_5` (outside OneDrive) for writing,
 LaTeX and git; the OneDrive path for the heavy run artifacts (`checkpoints/`, `data/`,
 `analysis/oc_data_catalog/`) that are not in version control. Never compile LaTeX under
 the OneDrive path — that is where the `*-A Mac mini.aux` conflict copies came from.
