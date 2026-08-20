@@ -62,12 +62,15 @@ Pipeline: **Data → Training → Rollout Eval → Catalog/Analysis**
 - **Catalog:** CSVs are generated — never hand-edit. The only hand-editable sidecar is `analysis/oc_data_catalog/evidence_status_overrides.csv`. Default to `canonical_rollout_*` tables; touch raw `rollout_*` only when all variants are needed.
 - **Evidence gate:** before citing any catalog row, check `evidence_status`. `phnode_full clean seed42/46` are `stale_environment_drift` — use the cleanrun v1 baseline instead (`docs/phase1a_oc_v4lite_cleanrun_v1_report.md`).
 - **Catalog deep-dives:** field defs `docs/oc_data_catalog_dictionary.md`; selection rules `docs/oc_result_selection_policy.md`; active audit `docs/provenance_audit_phnode_full_clean.md`.
+- **Checkpoint retention:** per-run classes in `docs/checkpoints_retention_manifest.csv` (regenerate with `scripts/build_checkpoints_retention_manifest.py`). Check `retention_class` before deleting or citing a run dir; storage/OneDrive facts in `docs/repo_structure_audit.md` §6.
 
 ## Off-limits / Stale
 
 - `original/bf3n/` — legacy reference, not active code.
 - `checkpoints/unused/` — old noise design, invalid for current evidence.
-- smoke/probe checkpoint dirs — flow-validation only, not paper evidence.
+- `smoke1` / `probe` / `smoke_v4lite` checkpoint dirs — flow-validation only, not paper evidence.
+  Do **not** generalize this to every dir with `smoke` in the name: `sweep_oc_phase1a_smoke3_*_cleanrun_v1`
+  holds 27 of the 45 cleanrun-v1 decision runs and is evidence-bearing. Go by `retention_class`, not by name.
 
 ## Project Claude tooling (`.claude/`)
 

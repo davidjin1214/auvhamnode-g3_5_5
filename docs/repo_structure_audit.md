@@ -4,6 +4,8 @@
 
 本文档只定义逻辑状态，不代表已经物理删除任何文件。
 
+> 体积、OneDrive 同步状态与 `checkpoints/` 的逐 run 保留级别见 §6 与 `docs/checkpoints_retention_manifest.csv`。
+
 ## 1. 当前主线
 
 当前仓库的主流程是：
@@ -114,6 +116,13 @@ REMUS100 simulation
 
 Phase-1A cleanrun v1 相关的 `checkpoints/sweep_oc_phase1a_*_phase1a_oc_v4lite_cleanrun_v1/` 目录属于协议敏感性 decision package。使用时必须同时查看 `docs/phase1a_oc_v4lite_cleanrun_v1_report.md` 中关于 `ablate_no_lift seed43 clean` 和 provenance 限制的说明，不能直接当作 canonical catalog 的替代。
 
+**2026-08-20 补充——论文正文的主证据不在上列 A 区四个 sweep 里。** 按 `docs/section8_evidence_merge_plan.md` 的 R-A 口径，重叠实验一律取可逐位复现的 B 区，A 区只补 B 区未覆盖的单元（`ablate_diag_damping`、`ablate_bu_only`、黑箱噪声训练线）。因此 evidence-bearing 目录实际分两区：
+
+- **B 区（§8 主证据，120 run / 7.87 GB）**：`checkpoints/sweep_oc_phase1a_decision_*_t2_wpfrag_*/`（clean 7 模型 × 5 种子 + iid/v4lite 各 4 模型 × 5 种子 = 75 run）、`checkpoints/sweep_oc_phase1a_smoke3_*_phase1a_oc_v4lite_cleanrun_v1/`（27 run）、`checkpoints/sweep_oc_phase1a_decision_extra43-45_*_phase1a_oc_v4lite_cleanrun_v1/`（18 run）。
+- **A 区（catalog 时代，84 run / 4.58 GB）**：上列四个 sweep，对应 catalog 98 run 中除 smoke/other 桶之外的部分。
+
+逐 run 的保留级别见 `docs/checkpoints_retention_manifest.csv`。
+
 ### 2.6 `flow-validation-only`
 
 以下目录只用于证明流程、协议或 smoke/probe 实验跑通，不应作为当前论文结论或模型排序依据：
@@ -129,6 +138,8 @@ Phase-1A cleanrun v1 相关的 `checkpoints/sweep_oc_phase1a_*_phase1a_oc_v4lite
 - `checkpoints/sweep_oc_main_noise_seed42_smoke/`
 
 这些原始产物可在未来物理清理时删除，但删除前应先确认是否已有最终记录文档。若删除后仍保留现有 `analysis/oc_data_catalog/`，catalog 中部分 `source_file` 会成为历史路径，而不是当前磁盘上可直接打开的文件。
+
+**不要按名字里的 `smoke` 判断保留级别。** `checkpoints/sweep_oc_phase1a_smoke3_*_phase1a_oc_v4lite_cleanrun_v1/` 名字带 smoke，实际持有 cleanrun v1 决策包 45 个 run 中的 27 个物理 checkpoint（`docs/experiment_full_inventory_zh.md` §B.2 / §B.6），属 evidence-bearing。真正的 flow-validation 只有 `smoke1`（单模型单种子）、`smoke_v4lite/`（ep=3 纯 code smoke）与上列 probe/smoke 目录，合计 42 run / 1.27 GB。判定一律以 `docs/checkpoints_retention_manifest.csv` 的 `retention_class` 为准。
 
 ### 2.7 `deprecated`
 
@@ -167,6 +178,16 @@ Phase-1A cleanrun v1 相关的 `checkpoints/sweep_oc_phase1a_*_phase1a_oc_v4lite
 - `docs/phase1_realistic_validation_plan.md`
 
 旧版和修订版噪声设计文档仍有研究演化记录价值。后续如需整理，优先增加索引和状态说明，而不是删除内容。
+
+### 2.11 `not-in-git-but-unrecoverable`
+
+体积很小但无法重建、因此必须进版本控制的产物：
+
+- `analysis/section8_current_evidence/`（16 文件 / 2.9 MB）——论文正文每个数字与每张图的来源；`paper/drafts/figures/make_section8_*.py` 直接读其中的 `figure_data/*.csv`。**2026-08-20 起已纳入 git**（`.gitignore` 中以 `!analysis/section8_current_evidence/` 放行）。此前它被 `analysis/*` 规则挡在版本控制外，而重建它需要多 GB 的 `checkpoints/sweep_oc_phase1a_decision_*`，实际不可重建。
+
+以下仍在版本控制之外，属待定决策项：
+
+- `exports/phnode_full_oc_clean/`——自包含的 `phnode_full` OC clean（seed 45）可移植导出包，含 README / requirements / tests。被 `.gitignore` 的 `exports/` 规则忽略，目前只存在于 OneDrive 一处。若打算对外分发或作为论文补充材料，应单独入库或独立成仓库。
 
 ## 3. 推荐阅读顺序
 
@@ -213,3 +234,42 @@ Phase-1A cleanrun v1 相关的 `checkpoints/sweep_oc_phase1a_*_phase1a_oc_v4lite
 2. 给 deprecated 脚本加明显提示，但暂不移除。
 3. 给 smoke/probe 目录保留最终说明文档后，再决定是否物理删除原始产物。
 4. 若需要代码结构重构，优先拆分 `train_utils.py`，并抽出共享的 state layout / state conversion 工具。
+
+## 6. 存储层现状（2026-08-20 实测）
+
+`du` 在本仓库会严重低估体积：OneDrive 按需下载的文件在本地占 0 块，但逻辑大小照算。实测 43,725 个文件、16.35 GB，其中 42,977 个文件 / 14.87 GB 是**未下载的云端占位符**，本地实际下载的只有 1.48 GB（且其中 1.45 GB 是 `analysis/oc_data_catalog/` 的三个大 CSV）。
+
+| 目录 | 逻辑体积 | 文件数 | 说明 |
+|---|---:|---:|---|
+| `checkpoints/` | 14.0 GB | 43,120 | 见下表 |
+| `data/` | 795 MB | 47 | 3 个 `.pkl` 数据集，全部为云端占位符 |
+| `analysis/oc_data_catalog/` | 1.45 GB | 18 | 生成产物；`training_history_long.csv` 550 MB、`rollout_summary_long.csv` 478 MB、`canonical_rollout_summary_long.csv` 425 MB |
+| `paper/` | 26 MB | — | 含一个 16 MB 的 `velocity_state_contract.tiff`（已被 `.gitignore` 排除） |
+| tracked 工作面 | ~25 MB | 240 | 代码 + 文档 + 论文 + notebook，`git ls-files` 全集 |
+
+`checkpoints/` 内部构成（按扩展名）：
+
+| 类型 | 文件数 | 体积 | 性质 |
+|---|---:|---:|---|
+| `.png` | 8,655 | 4.85 GB | rollout 评估绘图，**可从同目录 CSV 再生** |
+| `.pkl` | 20,020 | 4.72 GB | rollout 逐轨迹转储 + `training_history.pkl` |
+| `.csv` | 8,262 | 3.30 GB | rollout 指标表，绘图的数据源 |
+| `.pt` | 1,690 | 1.20 GB | `best_model.pt`（无中间 epoch 检查点） |
+| 其余 | 4,493 | 0.15 GB | `config.json` / 评估 JSON / 日志 / `runs.tsv` |
+
+按保留级别（`docs/checkpoints_retention_manifest.csv`，300 个 run 目录全覆盖）：
+
+| retention_class | run 数 | 体积 |
+|---|---:|---:|
+| `evidence-bearing-B` | 120 | 7.87 GB |
+| `evidence-bearing-A` | 84 | 4.58 GB |
+| `flow-validation-only` | 42 | 1.27 GB |
+| `delete-candidate` | 54 | 0.25 GB |
+
+清单由 `scripts/build_checkpoints_retention_manifest.py` 生成，可重跑；`referenced_by` 列记录哪些 tracked 文档提到了该 run，删除前应先看这一列。
+
+**同步层注意事项**：
+
+- 重建 `analysis/oc_data_catalog/` 需要把 `checkpoints/` 全量拉回本地（`scripts/build_oc_data_catalog.py` 走 `rglob("runs.tsv")` 扫描），代价是 14 GB 的按需下载，非必要不要触发。
+- 删除 OneDrive 占位符是真删除，会同步到云端，没有本地回收站兜底。
+- 不要在 OneDrive 路径下编译 LaTeX：`paper/drafts/` 曾出现 `auvhamnode_thesis_chapter_zh-A Mac mini.{aux,out,toc}` 这类设备名冲突副本，来源是两台机器同时写 LaTeX 中间产物。
