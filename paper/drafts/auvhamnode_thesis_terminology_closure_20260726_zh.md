@@ -76,12 +76,12 @@ D_\theta(\xi)\succeq0
 
 修改的主要图源为：
 
-- `figures/make_method_overview_hero.py`；
-- `figures/make_mechanical_core_power_structure.py`；
-- `figures/make_fossen_role_mapping.py` 及 OE 变体；
-- `figures/_section8_style.py`；
-- `figures/make_section8_ablation_ladder.py` 及 OE 变体；
-- `figures/make_section8_two_level_evidence.py`。
+- `paper/drafts/figures/make_method_overview_hero.py`；
+- `paper/drafts/figures/make_mechanical_core_power_structure.py`；
+- `paper/drafts/figures/make_fossen_role_mapping.py` 及 OE 变体；
+- `paper/drafts/figures/_section8_style.py`；
+- `paper/drafts/figures/make_section8_ablation_ladder.py` 及 OE 变体；
+- `paper/drafts/figures/make_section8_two_level_evidence.py`。
 
 随后在非交互式 Matplotlib `Agg` 后端重新生成 11 组 Python 图件。受共享显示名影响的第 8 节图也一并重新导出，保证 SVG、PDF 和 PNG 三种产物来自同一图源。正式章节 PDF 由更新后的 TeX 和图件重新编译。
 

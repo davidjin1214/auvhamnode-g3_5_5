@@ -16,7 +16,7 @@
 
 如果你想直接按标准流程跑实验，请优先看：
 
-- [`docs/noise_experiment_runbook.md`](/Users/xiangjin/Library/CloudStorage/OneDrive-Personal/我的/Code/auv_se3node/g3_5_5/docs/noise_experiment_runbook.md)
+- [`docs/noise_experiment_runbook.md`](docs/noise_experiment_runbook.md)
 
 ---
 

@@ -11,20 +11,20 @@
 
 ### 1.1 P1-1 noisy extra seeds
 
-- [checkpoints/sweep_oc_main_noise_nominal_train_remus100_dr_extra_42-46-47](/Users/xiangjin/Library/CloudStorage/OneDrive-Personal/我的/Code/auv_se3node/g3_5_5/checkpoints/sweep_oc_main_noise_nominal_train_remus100_dr_extra_42-46-47)
-- [checkpoints/sweep_oc_key_ablation_noise_nominal_train_remus100_dr_extra_42-46-47](/Users/xiangjin/Library/CloudStorage/OneDrive-Personal/我的/Code/auv_se3node/g3_5_5/checkpoints/sweep_oc_key_ablation_noise_nominal_train_remus100_dr_extra_42-46-47)
+- [checkpoints/sweep_oc_main_noise_nominal_train_remus100_dr_extra_42-46-47](checkpoints/sweep_oc_main_noise_nominal_train_remus100_dr_extra_42-46-47)
+- [checkpoints/sweep_oc_key_ablation_noise_nominal_train_remus100_dr_extra_42-46-47](checkpoints/sweep_oc_key_ablation_noise_nominal_train_remus100_dr_extra_42-46-47)
 
 ### 1.2 P1-2 matched clean-train evaluation
 
 这一步对以下 clean-trained suites 补跑了 `clean / nominal_eval / degraded_eval / heading_biased_eval`：
 
-- [sweep_oc_core_default_auv_oc_traj1000_blk150_s23_d0be9434_s42-43-44_20260404_115414](</Users/xiangjin/Library/CloudStorage/OneDrive-Personal/我的/Code/auv_se3node/g3_5_5/checkpoints/sweep_oc_all/sweep_oc_core_default_auv_oc_traj1000_blk150_s23_d0be9434_s42-43-44_20260404_115414>)
-- [sweep_oc_ablation_default_auv_oc_traj1000_blk150_s23_d0be9434_s42-43-44_20260404_143830](</Users/xiangjin/Library/CloudStorage/OneDrive-Personal/我的/Code/auv_se3node/g3_5_5/checkpoints/sweep_oc_all/sweep_oc_ablation_default_auv_oc_traj1000_blk150_s23_d0be9434_s42-43-44_20260404_143830>)
-- [sweep_oc_phnode_focus_extra3_auv_oc_traj1000_blk150_s23_d0be9434_s45-46-47](</Users/xiangjin/Library/CloudStorage/OneDrive-Personal/我的/Code/auv_se3node/g3_5_5/checkpoints/sweep_oc_all/sweep_oc_phnode_focus_extra3_auv_oc_traj1000_blk150_s23_d0be9434_s45-46-47>)
+- [sweep_oc_core_default_auv_oc_traj1000_blk150_s23_d0be9434_s42-43-44_20260404_115414](<checkpoints/sweep_oc_all/sweep_oc_core_default_auv_oc_traj1000_blk150_s23_d0be9434_s42-43-44_20260404_115414>)
+- [sweep_oc_ablation_default_auv_oc_traj1000_blk150_s23_d0be9434_s42-43-44_20260404_143830](<checkpoints/sweep_oc_all/sweep_oc_ablation_default_auv_oc_traj1000_blk150_s23_d0be9434_s42-43-44_20260404_143830>)
+- [sweep_oc_phnode_focus_extra3_auv_oc_traj1000_blk150_s23_d0be9434_s45-46-47](<checkpoints/sweep_oc_all/sweep_oc_phnode_focus_extra3_auv_oc_traj1000_blk150_s23_d0be9434_s45-46-47>)
 
 批量运行日志：
 
-- [checkpoints/p1_2_clean_matched_eval_live_20260413_124225.log](/Users/xiangjin/Library/CloudStorage/OneDrive-Personal/我的/Code/auv_se3node/g3_5_5/checkpoints/p1_2_clean_matched_eval_live_20260413_124225.log)
+- [checkpoints/p1_2_clean_matched_eval_live_20260413_124225.log](checkpoints/p1_2_clean_matched_eval_live_20260413_124225.log)
 
 ## 2. P1-1：补齐 noisy `42/46/47` 后，原结论被改写
 

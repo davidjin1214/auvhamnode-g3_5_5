@@ -1,7 +1,7 @@
 # 前代仓库 g3_5_4 — noc/oc 实验完整清单 + 模型命名映射
 
 生成时间：2026-05-30  
-对象仓库：`/Users/xiangjin/Library/CloudStorage/OneDrive-Personal/我的/Code/auv_se3node/g3_5_4`（当前 `g3_5_5` 的前代）  
+对象仓库：`../g3_5_4`（当前 `g3_5_5` 的前代）  
 本文件存放位置：`g3_5_5/docs/`（作为当前主线清单 [experiment_full_inventory_zh.md](experiment_full_inventory_zh.md) 的前代补充）。
 
 > **2026-05-30 跨仓库复核更新**：本文档保留为 g3_5_4 的**模型命名映射（§1）+ 训练配方/`best_loss`（§3）+ 报告散文结论（§4）**的详细参考。新增的**统一口径 60s rollout 数值（noc 10 / oc 20 逐 run）、noc/oc 专节、异常分类与跨仓库总账对账表**已并入主清单 [experiment_full_inventory_zh.md](experiment_full_inventory_zh.md) 的 **§K / §L**（rollout 数值经从 g3_5_4 磁盘独立重取核验）。引用 60s 数字请以主清单 §K 为准。
@@ -101,9 +101,9 @@
 
 ## 4. 实验目的与各报告结论（标注来源）
 
-findings 文档在各 suite 下的 `*.md`（8 份）+ `docs/experiment_command_matrix.md`。
+findings 文档在各 suite 下的 `*.md`（8 份）+ `../g3_5_4/docs/experiment_command_matrix.md`。
 
-**大 batch 配方（`docs/experiment_command_matrix.md` §7）：**
+**大 batch 配方（`../g3_5_4/docs/experiment_command_matrix.md` §7）：**
 - bs2048 配方：`lr5e-3, min_lr1e-4, warmup300, total_steps7000, epochs200`（仓库声明的默认大 batch 配方）。
 - bs4096 配方：`lr6e-3, min_lr1e-4, warmup400, total_steps5000, epochs300`。
 - 比较规则：只有当 4096 在不损失 heldout/rollout 指标的前提下改善 wall-clock 才优先。
@@ -118,7 +118,7 @@ findings 文档在各 suite 下的 `*.md`（8 份）+ `docs/experiment_command_m
 
 **oc aligned（`oc_aligned_vs_confirm.md`）：** 严格对齐 `bs4096, lr4.5e-3, wu300, steps7000` vs confirm2048。aligned4096 四 seed 全稳定，mean best_test 0.98×、resampled 60s pos median 0.923×、rot median 0.879× 更好；confirm2048 在 heldout 30s median/completion/发散率略优、且快约 30%。结论："去掉配方失配后，4096 不再需要旧的稳定性论据；权衡变为 60s 精度 vs 效率/发散裕度"。
 
-（另有 `docs/current_ocean_performance_analysis.md`，是**海流场景物理/架构退化分析**——螺旋桨入流 `‖nu‖`→`nu_r[0]`、B_net 条件化、D/J 海流条件化、actuator loss——不是 batch 配方报告，故不在此归入配方数字。）
+（另有 `../g3_5_4/docs/current_ocean_performance_analysis.md`，是**海流场景物理/架构退化分析**——螺旋桨入流 `‖nu‖`→`nu_r[0]`、B_net 条件化、D/J 海流条件化、actuator loss——不是 batch 配方报告，故不在此归入配方数字。）
 
 ---
 

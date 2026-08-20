@@ -6,7 +6,7 @@
 
 - 当前代码实现已经继续演进到基于 `noise_reference` 的 v3 版本。
 - 如果你要查和当前代码一致的推荐预算，请优先看：
-  [`docs/noise_design_v3_remus100_reference_grounded.md`](/Users/xiangjin/Library/CloudStorage/OneDrive-Personal/我的/Code/auv_se3node/g3_5_5/docs/noise_design_v3_remus100_reference_grounded.md)
+  [`docs/noise_design_v3_remus100_reference_grounded.md`](docs/noise_design_v3_remus100_reference_grounded.md)
 
 这份文档描述的是**当前代码实现**已经采用的噪声接口。
 
@@ -24,7 +24,7 @@ IC-only, profile-based, ODE-space-consistent noise
 
 更完整的设计背景和取舍，请参见：
 
-- [docs/noise_robustness_experiment_design_codex.md](/Users/xiangjin/Library/CloudStorage/OneDrive-Personal/我的/Code/auv_se3node/g3_5_5/docs/noise_robustness_experiment_design_codex.md)
+- [docs/noise_robustness_experiment_design_codex.md](docs/noise_robustness_experiment_design_codex.md)
 
 ---
 

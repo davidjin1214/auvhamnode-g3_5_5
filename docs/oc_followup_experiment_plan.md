@@ -96,7 +96,7 @@ bash scripts/eval_all_models_noise_profile.sh \
 - `checkpoints/sweep_oc_main_noise_seed42_smoke/main_phnode_full_seed42/config.json`
 - `checkpoints/sweep_oc_main_noise_seed42_smoke/main_phnode_full_seed42/noise_budgets.json`
 - `checkpoints/sweep_oc_main_noise_seed42_smoke/main_phnode_full_seed42/heldout_evaluation.json`
-- `checkpoints/sweep_oc_main_noise_seed42_smoke/main_phnode_full_seed42/rollout_benchmark_results/.../summary.json`
+- `checkpoints/sweep_oc_main_noise_seed42_smoke/main_phnode_full_seed42/rollout_benchmark/.../summary.json`
 
 ### 4.4 通过标准
 

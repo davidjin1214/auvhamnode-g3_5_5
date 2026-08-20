@@ -15,20 +15,20 @@
 
 当前实现中，只有 `delta_nu_r` 明确依赖训练集统计，来源如下：
 
-- [`StateNormalizer.from_dataset()`](/Users/xiangjin/Library/CloudStorage/OneDrive-Personal/我的/Code/auv_se3node/g3_5_5/train_utils.py#L361) 从训练集计算 `std_vel`
-- [`train_auv_hamnode.py`](/Users/xiangjin/Library/CloudStorage/OneDrive-Personal/我的/Code/auv_se3node/g3_5_5/train_auv_hamnode.py#L545) 先把 `oc` 数据适配到模型空间，再统计 `std_vel`
-- [`summarize_noise_budget()`](/Users/xiangjin/Library/CloudStorage/OneDrive-Personal/我的/Code/auv_se3node/g3_5_5/train_utils.py#L758) 和 [`build_noisy_initial_condition()`](/Users/xiangjin/Library/CloudStorage/OneDrive-Personal/我的/Code/auv_se3node/g3_5_5/train_utils.py#L944) 都使用
+- [`StateNormalizer.from_dataset()`](train_utils.py#L361) 从训练集计算 `std_vel`
+- [`train_auv_hamnode.py`](train_auv_hamnode.py#L545) 先把 `oc` 数据适配到模型空间，再统计 `std_vel`
+- [`summarize_noise_budget()`](train_utils.py#L758) 和 [`build_noisy_initial_condition()`](train_utils.py#L944) 都使用
   `nu_r_std = scale * max(alpha * std_vel, floor)`
 
 对应 profile 系数是固定表：
 
-- [`_profile_alpha()`](/Users/xiangjin/Library/CloudStorage/OneDrive-Personal/我的/Code/auv_se3node/g3_5_5/train_utils.py#L614): `nominal_train=0.03`, `nominal_eval=0.05`, `degraded_eval=0.10`
+- [`_profile_alpha()`](train_utils.py#L614): `nominal_train=0.03`, `nominal_eval=0.05`, `degraded_eval=0.10`
 
 其余几类噪声当前是固定表，不依赖训练集统计：
 
-- 姿态随机误差与 `heading_biased_eval`：[`train_utils.py`](/Users/xiangjin/Library/CloudStorage/OneDrive-Personal/我的/Code/auv_se3node/g3_5_5/train_utils.py#L623)
-- current 误差与 `current_bias_eval`：[`train_utils.py`](/Users/xiangjin/Library/CloudStorage/OneDrive-Personal/我的/Code/auv_se3node/g3_5_5/train_utils.py#L658)
-- 执行器误差：[`train_utils.py`](/Users/xiangjin/Library/CloudStorage/OneDrive-Personal/我的/Code/auv_se3node/g3_5_5/train_utils.py#L680)
+- 姿态随机误差与 `heading_biased_eval`：[`train_utils.py`](train_utils.py#L623)
+- current 误差与 `current_bias_eval`：[`train_utils.py`](train_utils.py#L658)
+- 执行器误差：[`train_utils.py`](train_utils.py#L680)
 
 ### 1.2 典型 REMUS100 的导航链路
 
@@ -273,7 +273,7 @@ sigma_ang_i = constant
 
 | 项目 | 旧版 | v3 建议 | 变化原因 | 来源 |
 |---|---|---|---|---|
-| 结构 | `max(floor, alpha * std_dataset)` | `sqrt(floor^2 + (ratio * (state))^2)` | 去掉数据集依赖，改成传感器型误差结构 | 旧版实现见 [`train_utils.py`](/Users/xiangjin/Library/CloudStorage/OneDrive-Personal/我的/Code/auv_se3node/g3_5_5/train_utils.py#L944)，结构依据见 [S2][S3][S4] |
+| 结构 | `max(floor, alpha * std_dataset)` | `sqrt(floor^2 + (ratio * (state))^2)` | 去掉数据集依赖，改成传感器型误差结构 | 旧版实现见 [`train_utils.py`](train_utils.py#L944)，结构依据见 [S2][S3][S4] |
 | nominal_eval 线速度 | 由训练集决定 | floor `[0.003, 0.003, 0.004]`, ratio `0.003` | 物理意义固定 | [S2][S3][S4] + 工程推断 |
 | degraded_eval 线速度 | 由训练集决定 | floor `[0.006, 0.006, 0.008]`, ratio `0.006` | 压力测试仍保留物理解释 | [S2][S3][S4] + 工程推断 |
 | 角速度 | 由训练集角速度 std 放大 | 固定 budget | 陀螺误差更适合独立预算 | 工程推断 |
@@ -282,24 +282,24 @@ sigma_ang_i = constant
 
 | 项目 | 旧版 | v3-DR 建议 | 变化原因 | 来源 |
 |---|---|---|---|---|
-| nominal_eval | 基础量级 `0.005 rad`，再映射 yaw-dominant | `[0.002, 0.002, 0.010] rad` | 明确区分 roll/pitch 与 yaw | 旧版实现见 [`train_utils.py`](/Users/xiangjin/Library/CloudStorage/OneDrive-Personal/我的/Code/auv_se3node/g3_5_5/train_utils.py#L623)，场景依据见 [S1][S5][S6][S7] |
+| nominal_eval | 基础量级 `0.005 rad`，再映射 yaw-dominant | `[0.002, 0.002, 0.010] rad` | 明确区分 roll/pitch 与 yaw | 旧版实现见 [`train_utils.py`](train_utils.py#L623)，场景依据见 [S1][S5][S6][S7] |
 | degraded_eval | 基础量级 `0.012 rad` | `[0.004, 0.004, 0.025] rad` | 对 DR 压力测试更有辨识度 | [S1][S5] + 工程推断 |
-| heading bias | `0.015 rad` | `0.035 rad` | 旧版偏保守 | 旧版实现见 [`train_utils.py`](/Users/xiangjin/Library/CloudStorage/OneDrive-Personal/我的/Code/auv_se3node/g3_5_5/train_utils.py#L647)，量级依据见 [S1][S5] + 工程推断 |
+| heading bias | `0.015 rad` | `0.035 rad` | 旧版偏保守 | 旧版实现见 [`train_utils.py`](train_utils.py#L647)，量级依据见 [S1][S5] + 工程推断 |
 
 ## 5.3 `delta_u_act`
 
 | 项目 | 旧版 | v3 建议 | 变化原因 | 来源 |
 |---|---|---|---|---|
-| nominal_eval | `[0.003, 0.003, 5 rpm]` | 保持不变 | 旧版已基本合理 | 旧版实现见 [`train_utils.py`](/Users/xiangjin/Library/CloudStorage/OneDrive-Personal/我的/Code/auv_se3node/g3_5_5/train_utils.py#L680)，执行器时间常数见 [`remus100_core.py`](/Users/xiangjin/Library/CloudStorage/OneDrive-Personal/我的/Code/auv_se3node/g3_5_5/remus100_core.py#L153) |
+| nominal_eval | `[0.003, 0.003, 5 rpm]` | 保持不变 | 旧版已基本合理 | 旧版实现见 [`train_utils.py`](train_utils.py#L680)，执行器时间常数见 [`remus100_core.py`](remus100_core.py#L153) |
 | degraded_eval | `[0.008, 0.008, 15 rpm]` | `[0.004, 0.004, 10 rpm]` | 旧版压力测试略重，收紧后更像反馈偏差而非执行器故障 | 同上 + 工程推断 |
 
 ## 5.4 `delta_v_c`
 
 | 项目 | 旧版 | v3-DR 建议 | v3-INS 建议 | 变化原因 | 来源 |
 |---|---|---|---|---|---|
-| nominal_eval | `[0.012, 0.012, 0.006] m/s` | 默认不作为主状态预算 | `[0.030, 0.030, 0.010] m/s` | 避免把 `current-observable` 写成默认现实 | 旧版实现见 [`train_utils.py`](/Users/xiangjin/Library/CloudStorage/OneDrive-Personal/我的/Code/auv_se3node/g3_5_5/train_utils.py#L669)，场景约束见 [S1]，数值为工程推断 |
+| nominal_eval | `[0.012, 0.012, 0.006] m/s` | 默认不作为主状态预算 | `[0.030, 0.030, 0.010] m/s` | 避免把 `current-observable` 写成默认现实 | 旧版实现见 [`train_utils.py`](train_utils.py#L669)，场景约束见 [S1]，数值为工程推断 |
 | degraded_eval | `[0.030, 0.030, 0.015] m/s` | 非默认 | `[0.060, 0.060, 0.020] m/s` | current-state 预算应只在增强配置下出现 | 同上 |
-| current bias | `[0.015, 0.015, 0.005] m/s` | 非默认 | `[0.050, 0.050, 0.020] m/s` | 旧版 bias 偏轻，且不应默认启用 | 旧版实现见 [`train_utils.py`](/Users/xiangjin/Library/CloudStorage/OneDrive-Personal/我的/Code/auv_se3node/g3_5_5/train_utils.py#L658)，数值为工程推断 |
+| current bias | `[0.015, 0.015, 0.005] m/s` | 非默认 | `[0.050, 0.050, 0.020] m/s` | 旧版 bias 偏轻，且不应默认启用 | 旧版实现见 [`train_utils.py`](train_utils.py#L658)，数值为工程推断 |
 
 ---
 
@@ -310,7 +310,7 @@ sigma_ang_i = constant
 - `REMUS100` 标准 DR 由 `ADCP + compass/rate gyro` 支撑，增强配置可加 `T-16 INS`，见 [S1]
 - DVL / ADCP 速度误差通常采用“百分比 + floor”的规格表达，见 [S2][S3][S4]
 - AHRS 与 tactical INS 的 heading 精度存在明显等级差异，见 [S5][S6][S7]
-- 本仓库当前噪声实现只有 `nu_r` 仍依赖训练集统计，见 [`train_utils.py`](/Users/xiangjin/Library/CloudStorage/OneDrive-Personal/我的/Code/auv_se3node/g3_5_5/train_utils.py#L944)
+- 本仓库当前噪声实现只有 `nu_r` 仍依赖训练集统计，见 [`train_utils.py`](train_utils.py#L944)
 
 ### 6.2 工程推断
 

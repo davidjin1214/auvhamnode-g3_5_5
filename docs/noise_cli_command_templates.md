@@ -4,8 +4,8 @@
 
 配套参数说明请查：
 
-- [`docs/noise_cli_parameter_reference.md`](/Users/xiangjin/Library/CloudStorage/OneDrive-Personal/我的/Code/auv_se3node/g3_5_5/docs/noise_cli_parameter_reference.md)
-- [`docs/noise_experiment_runbook.md`](/Users/xiangjin/Library/CloudStorage/OneDrive-Personal/我的/Code/auv_se3node/g3_5_5/docs/noise_experiment_runbook.md)
+- [`docs/noise_cli_parameter_reference.md`](docs/noise_cli_parameter_reference.md)
+- [`docs/noise_experiment_runbook.md`](docs/noise_experiment_runbook.md)
 
 ---
 

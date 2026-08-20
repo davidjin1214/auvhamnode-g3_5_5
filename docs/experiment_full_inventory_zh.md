@@ -1,7 +1,7 @@
 # AUV SE(3) 仓库 — 全部实验与结果完整清单
 
 生成时间：2026-05-30  
-工作区：`/Users/xiangjin/Library/CloudStorage/OneDrive-Personal/我的/Code/auv_se3node/g3_5_5`  
+工作区：`.`  
 分支：`provenance-audit-phnode_full`
 
 ## 0. 本文档定位
@@ -233,7 +233,8 @@ v4-lite 是面向**纯动力学模型**的轨迹一致噪声-IC 协议。相对 
 来源：`docs/experiment_stages_overview.md`（Stage D）。性质 `flow_validation_only`，永不作为模型证据。
 
 - A 分区内：`sweep_oc_smoke/`（含 `sweep_oc_v4lite_protocol_smoke_*`）、`sweep_oc_main_noise_seed42_smoke`、`sweep_oc_phase1_probe_{clean,iid,v4lite}_*`、`sweep_oc_phase1_smoke_clean_fix_*`。
-- B 分区内：所有 `phase1a_smoke{1,3}_*`、`smoke_v4lite/`。smoke3 种子 42/44/46 与 Stage B 决策包物理重叠（有意设计）。
+- B 分区内：`phase1a_smoke1_*`（单模型/单种子）、`smoke_v4lite/`（ep=3 纯 code smoke）。
+- **`phase1a_smoke3_*` 不属于本节。** 它名字带 smoke，但持有 cleanrun v1 决策包 45 个 run 中的 27 个物理 checkpoint（见 §B.2 / §B.6），属 evidence-bearing，删除会直接损毁决策包。逐 run 判定以 `docs/checkpoints_retention_manifest.csv` 的 `retention_class` 为准。
 - 散落日志/pid（`checkpoints/` 顶层）：`p1_2_clean_matched_eval_*` 的 5 个 `.log/.pid` 是 2026-04-13 后台 P1-2 "matched clean→noisy 评估" 批作业的痕迹——前两次为空/停滞误启动，`_live_` 那次（8612 行）为完成 run。非证据。
 
 ---
@@ -390,7 +391,7 @@ v4-lite 是面向**纯动力学模型**的轨迹一致噪声-IC 协议。相对 
 
 - **`largebatch_noc_report.md`**：报告称 "**bs=2048 是 noc 更好的默认大 batch 配方**"。bs4096 唯一优势是 wall-clock（0.784×），代价是 best val loss 劣化 2.16×、heldout 30s 位置中位 1.50×、resampled 60s 位置中位 1.52×；训练期 solver failure / invalid prediction / SO(3) 违例均为 0（**非数值不稳定，是优化质量问题**）。报告称严格说只能主张"当前 bs4096 配方劣于当前 bs2048 配方"，不过度推广。推荐默认 `bs2048, lr5e-3, min_lr1e-4, wu300, total_steps7000, epochs200`。
 - **`largebatch_followup.md`（noc 部分）**：报告称 followup noc_4096 的最优（stability-first）配方为 `bs4096, lr0.005, wu400, steps7000`（best 1.424e-04）；`lr0.006, wu400, steps7000` **发散**（`reach_target=0`、`step_coverage=0.105`、`no_success_epoch_warnings=383`）。
-- **`docs/experiment_command_matrix.md` §7**：noc 配方定义——bs2048：`lr5e-3/min_lr1e-4/wu300/ts7000/epochs200`；bs4096：`lr6e-3/min_lr1e-4/wu400/ts5000/epochs300`。
+- **`../g3_5_4/docs/experiment_command_matrix.md` §7**：noc 配方定义——bs2048：`lr5e-3/min_lr1e-4/wu300/ts7000/epochs200`；bs4096：`lr6e-3/min_lr1e-4/wu400/ts5000/epochs300`。
 
 ## K.4 oc 专节（20 run，单一 `ph_se3_full`）
 
@@ -429,7 +430,7 @@ v4-lite 是面向**纯动力学模型**的轨迹一致噪声-IC 协议。相对 
 - **`oc_aligned_vs_confirm.md`**：严格对齐 `aligned bs4096, lr4.5e-3/wu300/ts7000` vs confirm2048。报告称 aligned4096 四 seed 全稳定，best_test/速度 RMSE/resampled 60s 中位/p95/rot 中位更好；confirm2048 在 heldout 30s 中位/completion/发散率/效率（快约 30%）略优。结论："去掉配方失配后，4096 不再需要旧的稳定性论据；权衡变为 **60s 精度 vs 效率/发散裕度**"。
 - **`largebatch_followup.md`（oc 部分）**：oc_2048_stability 最佳 `bs2048, lr4.5e-3, wu300, steps7000`（best 3.719e-03）；`lr4e-3, wu400` **发散**（ep10，best 0.1322，60s 中位 34.15）。报告称**驱动发散的是 lr/warmup 选择，而非单独的 batch size**。
 
-### K.4.3 海流物理退化分析（`docs/current_ocean_performance_analysis.md`，单独摘录）
+### K.4.3 海流物理退化分析（`../g3_5_4/docs/current_ocean_performance_analysis.md`，单独摘录）
 
 该文是**海流场景物理/架构退化分析**（根目录代码相对 `original/` 版本为何在海流下变差），**不是 batch 配方报告**，故不计入上面的配方数字。报告分层结论（标注来源）：
 

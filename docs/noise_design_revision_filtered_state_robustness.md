@@ -6,7 +6,7 @@
 
 - 这份文档保留了对旧版 profile 语义的审查过程。
 - 当前代码已经进一步落地为 v3 reference-based 方案；如需查看与代码一致的推荐预算，请优先看：
-  [`docs/noise_design_v3_remus100_reference_grounded.md`](/Users/xiangjin/Library/CloudStorage/OneDrive-Personal/我的/Code/auv_se3node/g3_5_5/docs/noise_design_v3_remus100_reference_grounded.md)
+  [`docs/noise_design_v3_remus100_reference_grounded.md`](docs/noise_design_v3_remus100_reference_grounded.md)
 
 这份文档重新梳理当前项目的噪声设计问题，并统一回答下面四个问题：
 
@@ -760,7 +760,7 @@ current-unobservable 作为面向真实部署可用性的可选扩展保留。
 ## 参考信息来源
 
 - 当前噪声设计文档：`docs/noise_model_design.md`
-- 当前推荐量级推导：`docs/noise_robustness_experiment_design_codex.md`
+- 当前推荐量级推导：`docs/unused/noise_robustness_experiment_design_codex.md`
 - 项目内 REMUS100 执行器限幅：`remus100_core.py`
 - 项目内数据生成速度与 RPM 范围：`data_collection.py`
 - REMUS100 参考平台与仿真参数：

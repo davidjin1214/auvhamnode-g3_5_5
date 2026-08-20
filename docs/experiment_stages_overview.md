@@ -24,7 +24,7 @@
 | **A** | Catalog 时代 | 2026-04-04 ~ 04-21 | `auvhamnode/g3_5_5` | 完整产物 | `checkpoints/sweep_oc_all/`、`checkpoints/sweep_oc_all_noise/`、`checkpoints/sweep_oc_main_noise_*_extra_*`、`checkpoints/sweep_oc_key_ablation_noise_*_extra_*` | 部分被环境漂移污染（详见 §2） |
 | **B** | Cleanrun v1（Phase-1A 决策套件） | 2026-04-24 ~ 04-26 | `auvhamnode/g3_5_7` | **manifest only**（runs.tsv） | `checkpoints/sweep_oc_phase1a_*_cleanrun_v1/`、`checkpoints/phase1a_metadata_phase1a_oc_v4lite_cleanrun_v1/` | 当前 main 上比特相同可复现 |
 | **C** | Provenance audit retrain | 2026-05-12 | `auvhamnode/g3_5_7`（取证） | tarball + 报告 | `analysis/provenance_audit/phase3_retrain/audit_phase3_seed46_clean_20260512_095957/` | 取证用 1 个 run，已落 `findings.md` |
-| **D** | Smoke / probe | 2026-04-21 ~ 04-24 | g5/g7/本地皆有 | 完整产物 | `checkpoints/sweep_oc_smoke/`、`checkpoints/smoke_v4lite/`、`checkpoints/sweep_oc_phase1_probe_*`、`checkpoints/sweep_oc_phase1_smoke_*`、`checkpoints/sweep_oc_phase1a_smoke{1,3}_*` | 仅 flow-validation，不用作模型证据 |
+| **D** | Smoke / probe | 2026-04-21 ~ 04-24 | g5/g7/本地皆有 | 完整产物 | `checkpoints/sweep_oc_smoke/`、`checkpoints/smoke_v4lite/`、`checkpoints/sweep_oc_phase1_probe_*`、`checkpoints/sweep_oc_phase1_smoke_*`、`checkpoints/sweep_oc_phase1a_smoke1_*` | 仅 flow-validation，不用作模型证据。**`smoke3_*` 不在此列**——它持有 cleanrun v1 决策包 45 run 中的 27 个（见 §5 与 §3.4），属 evidence-bearing |
 | **E** | Unused / legacy | 2026-04-06 之前 | `auvhamnode/g3_5_5` | 完整产物 | `checkpoints/unused/`、`original/bf3n/` | 已废弃 noise v1 设计 |
 
 ## 2. 阶段 A — Catalog 时代
