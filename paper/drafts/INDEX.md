@@ -9,9 +9,9 @@
 
 | 文件 | 最后提交 | 内容 |
 |---|---|---|
-| `auvhamnode_refs.bib` | 2026-05-30 | 参考文献库 |
-| `auvhamnode_thesis_chapter_zh.pdf` | 2026-08-11 | 主稿编译产物 |
-| `auvhamnode_thesis_chapter_zh.tex` | 2026-08-11 | 章节正文主稿（LaTeX 源） |
+| `auvhamnode_refs.bib` | 2026-08-20 | 参考文献库 |
+| `auvhamnode_thesis_chapter_zh.pdf` | 2026-08-20 | 主稿编译产物 |
+| `auvhamnode_thesis_chapter_zh.tex` | 2026-08-20 | 章节正文主稿（LaTeX 源） |
 
 ## 已并入主稿的迭代底稿（只读，勿再单独修改）
 
