@@ -274,6 +274,23 @@ Phase-1A cleanrun v1 相关的 `checkpoints/sweep_oc_phase1a_*_phase1a_oc_v4lite
 
 **中间 epoch 检查点。** `checkpoint_{50,100,150,200,250}.pt` 原有 1,390 个 / 0.97 GB。这类文件不可再生但 `best_model.pt` 已单独存在，只有续训或训练动力学分析才会用到。**2026-08-20 已删除 `checkpoints/unused/` 下的 270 个（0.20 GB）**——该目录整体为 `delete-candidate`；其余 1,120 个（约 0.77 GB，主要在 `sweep_oc_all`、`sweep_oc_all_noise`、`smoke3_*`）保持原状。
 
+### 6.2 两份工作副本的分工（2026-08-20 起）
+
+仓库现在有两份本地副本，职责不同：
+
+| | 路径 | 职责 |
+|---|---|---|
+| **工作副本** | `C:\Code\g3_5_5`（Windows 本机，非 OneDrive） | 论文写作与 LaTeX 编译、图脚本、代码改动、全部 git 操作。约 118 MB（其中 `.git` 92 MB） |
+| **数据归档** | `C:\Users\jinxiang\OneDrive\我的\Code\auv_se3node\g3_5_5` | 重实验产物：`checkpoints/`（14 GB）、`data/`（795 MB）、`analysis/oc_data_catalog/`（1.45 GB）。跨机同步、按需下载 |
+
+工作副本的 remote：`origin` = GitHub，`onedrive` = 上表的 OneDrive 路径（可直接 `git pull onedrive main`）。
+
+规则：
+
+- **不要在 OneDrive 路径下编译 LaTeX。** 两台机器同时写 `.aux`/`.toc` 会产生 `*-A Mac mini.aux` 这类设备名冲突副本。
+- 需要读 `checkpoints/` 或重建 catalog 时，在 OneDrive 那份里做——工作副本没有这些数据（它们本就不在版本控制内）。
+- 代码与文档改动一律在工作副本提交，再经 `origin` 或 `onedrive` remote 同步回去。
+
 **同步层注意事项**：
 
 - 重建 `analysis/oc_data_catalog/` 需要把 `checkpoints/` 全量拉回本地（`scripts/build_oc_data_catalog.py` 走 `rglob("runs.tsv")` 扫描），代价是 14 GB 的按需下载，非必要不要触发。
