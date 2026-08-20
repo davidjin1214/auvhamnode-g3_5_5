@@ -1,9 +1,11 @@
 # AUV SE(3) 实验进展跟踪总表
 
 生成时间：2026-04-25 11:44:54 CST (+0800)  
-最近核对：2026-07-25 CST (+0800)
-工作区：`C:\Users\jinxiang\OneDrive\我的\Code\auv_se3node\g3_5_5`
-状态口径：基于 `README.md`、`docs/`、`analysis/oc_data_catalog/` 与 `checkpoints/` 中可见的本地文件状态。
+最近核对：2026-08-20 CST (+0800)
+工作副本：`D:\Codes\g3_5_5`（论文写作、LaTeX 编译、代码改动与全部 git 操作）  
+数据归档：`C:\Users\jinxiang\OneDrive\我的\Code\auv_se3node\g3_5_5`（`checkpoints/`、`data/`、`analysis/oc_data_catalog/` 等非版本控制产物）  
+两副本分工见 [docs/repo_structure_audit.md](docs/repo_structure_audit.md) §6.2
+状态口径：基于 `README.md`、`docs/` 与版本控制内的 `analysis/section8_current_evidence/`；涉及 `analysis/oc_data_catalog/` 与 `checkpoints/` 的条目以数据归档副本中可见的文件状态为准。
 
 ## 1. 文档目的
 
@@ -50,6 +52,8 @@ REMUS100 simulation
 | 噪声设计与协议 | [docs/noise_model_design.md](docs/noise_model_design.md), [docs/noise_design_v3_remus100_reference_grounded.md](docs/noise_design_v3_remus100_reference_grounded.md), [docs/noise_design_v4_dr_ekf_output.md](docs/noise_design_v4_dr_ekf_output.md), [docs/noise_design_v4_lite_traj_consistent_ic.md](docs/noise_design_v4_lite_traj_consistent_ic.md), [docs/v4_lite_protocol_spec.md](docs/v4_lite_protocol_spec.md), [docs/v4_b1_implementation_checklist.md](docs/v4_b1_implementation_checklist.md) | profile-based 与 `v4_lite` 已落代码；`v4_lite` 决策实验已闭环，`v4-B1` 仍为远期设计 |
 | 噪声运行手册 | [docs/noise_experiment_runbook.md](docs/noise_experiment_runbook.md), [docs/noise_cli_parameter_reference.md](docs/noise_cli_parameter_reference.md), [docs/noise_cli_command_templates.md](docs/noise_cli_command_templates.md) | 操作说明，不是结果报告 |
 | Catalog 体系 | [docs/oc_data_catalog_plan.md](docs/oc_data_catalog_plan.md), [docs/oc_data_catalog_dictionary.md](docs/oc_data_catalog_dictionary.md), [docs/oc_result_selection_policy.md](docs/oc_result_selection_policy.md), [docs/oc_catalog_template_usage.md](docs/oc_catalog_template_usage.md) | 已落地 |
+| 存储与保留清单 | [docs/repo_structure_audit.md](docs/repo_structure_audit.md) §6, [docs/checkpoints_retention_manifest.csv](docs/checkpoints_retention_manifest.csv), [docs/checkpoints_png_purge_manifest.csv](docs/checkpoints_png_purge_manifest.csv) | 2026-08-20 建立；生成产物，改 `checkpoints/` 前先查 `retention_class` 与 `referenced_by` |
+| 论文稿件清单 | [paper/README.md](paper/README.md), [paper/drafts/INDEX.md](paper/drafts/INDEX.md) | 写作决策与进度看板在前者，`paper/drafts/` 的活稿与历史记录分类在后者 |
 | 历史归档 | [docs/unused/](docs/unused/) | 旧方案/旧审查，不作为当前主线依据 |
 
 ## 4. 已完成并已有正式报告记录
@@ -359,4 +363,5 @@ REMUS100 simulation
 | 2026-04-25 11:50:10 CST (+0800) | 新增机器可读进展表 `analysis/experiment_progress_log.csv`，并将长期跟踪方案落地为 Markdown + CSV 双层结构。 |
 | 2026-05-13 CST (+0800) | 完成 phnode_full clean provenance audit（详见 [docs/provenance_audit_phnode_full_clean.md](docs/provenance_audit_phnode_full_clean.md)）。§7 受影响结论按 stale_environment_drift / needs_recheck / current 三档标注。catalog 时代 seed42/46 fragility 不再可作为模型脆弱性引用，新基线为 cleanrun v1 ≡ current main = 0.6767 m。 |
 | 2026-07-01 CST (+0800) | 固定两项可选工单决议（新增 §7.B）：**WP-Frag 决议不启动**（实质已由 B 区 `t2_wpfrag` 决策套件完成、R-A 口径取代旧 catalog）；**v4-lite 正式决策实验决议视为已完成**（4 结构化模型数据已入论文 §1.8 协议表，当时概括为“协议等价”，后于 2026-07-25 收紧为条件等价）、Phase-1B 不进入。同步更新结论 10（改标 decided）、结论 2（no_lift seed43 改 current 背书、去除重训依赖）、§7.A WP-Frag 行。另：`.claude/settings.local.json` 停止跟踪并加入 `.gitignore`（本机个人配置）。 |
+| 2026-08-20 CST (+0800) | 仓库治理轮次（`01a3fd2`..`0f7be4e`），不涉及任何实验结论或数字口径变动：`analysis/section8_current_evidence/` 纳入版本控制，论文 §1.8 图数据链路进入 git；新增 `docs/checkpoints_retention_manifest.csv`（300 个 run 全覆盖，四级 `retention_class`）与 `docs/checkpoints_png_purge_manifest.csv`（8,655 张 rollout 绘图中 8,625 张可删，**清单已出、删除未执行**），生成脚本为 `scripts/build_checkpoints_retention_manifest.py` 与 `scripts/build_checkpoints_png_purge_manifest.py`；已删除 `checkpoints/unused/` 下 270 个中间 epoch 检查点（0.20 GB）；修复 17 份文档的路径漂移并新增 `paper/drafts/INDEX.md`；确立工作副本与数据归档两份本地副本的分工（见文首与 `docs/repo_structure_audit.md` §6.2）。 |
 | 2026-07-25 CST (+0800) | 重新以 `analysis/section8_current_evidence/` 与执行版 notebook 核对全表：catalog inventory 更新为 98 run；Phase-1A 改为已闭环、Phase-1B 改为决议不进入；current clean headline 改为 `phnode_full=0.6767 m (N=5)`，`ablate_no_lift=0.8288 m (N=4)` 并披露 seed43；废止 qforce/no_lift 的历史“当前最强/最稳”表述及 no-mass noisy 稳定获益结论；协议结论收紧为“完整模型与无质量先验消融近似等价、四模型分层排序不变但存在两项明确例外”。同步机器可读进度表与论文 README。 |
